@@ -1,0 +1,13 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "skyrim-quickarmorrebalance",
+  "version-string": "0.0.1",
+  "dependencies": [
+    "commonlibsse-ng",
+    "rapidjson",
+    {
+      "name": "imgui",
+      "features": [ "dx11-binding", "win32-binding" ]
+    }
+  ]
+}

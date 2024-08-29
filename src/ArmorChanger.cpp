@@ -137,7 +137,7 @@ void QuickArmorRebalance::MakeArmorChanges(const ArmorChangeParams& params) {
                 weight += v.weightUsed;
             }
         }
-        asdf
+
         if (itemBase) {
             float rel = itemBase->weightBase > 0 ? (float)weight / itemBase->weightBase : 0.0f;
             Value changes(kObjectType);

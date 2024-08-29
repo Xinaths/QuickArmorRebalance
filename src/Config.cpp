@@ -97,7 +97,7 @@ bool QuickArmorRebalance::Config::Load() {
             }
             if (!g_Config.acParams.curve) g_Config.acParams.curve = &g_Config.curves[0].second;
 
-            auto loot = config["loot"]["profile"].value_or("Universal");
+            auto loot = config["loot"]["profile"].value_or("Treasure - Universal");
             if (g_Config.lootProfiles.contains(loot))
                 g_Config.acParams.distProfile = g_Config.lootProfiles.find(loot)->c_str();
             else if (!lootProfiles.empty())
@@ -188,6 +188,17 @@ bool QuickArmorRebalance::Config::LoadFile(std::filesystem::path path) {
             }
         } else
             ConfigFileWarning(path, "blacklist expected to be an array");
+    }
+
+    if (d.HasMember("requires")) {
+        const auto& jsonRequires = d["requires"];
+        if (jsonRequires.IsString()) {
+            if (!dataHandler->LookupModByName(jsonRequires.GetString())) {
+                logger::debug("{}: Lacking required mod \"{}\", skipping",
+                              path.filename().generic_string(), jsonRequires.GetString());
+                return true;
+            }
+        }
     }
 
     if (d.HasMember("keywords")) {

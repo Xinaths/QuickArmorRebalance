@@ -9,7 +9,7 @@
 #include "rapidjson/filereadstream.h"
 #include "rapidjson/stringbuffer.h"
 
-#define SETTINGS_FILE "QuickArmorReplacer.toml"
+#define SETTINGS_FILE "QuickArmorRebalance.toml"
 
 #include "LootLists.h"
 
@@ -68,6 +68,8 @@ bool QuickArmorRebalance::Config::Load() {
 
     // UI configs
     {
+        const char* lootProfile = "Treasure - Universal";
+
         auto config = toml::parse_file((std::filesystem::current_path() / PATH_ROOT SETTINGS_FILE).generic_string());
         if (config) {
             g_Config.acParams.bModifyKeywords = config["modifyKeywords"].value_or(true);
@@ -86,8 +88,6 @@ bool QuickArmorRebalance::Config::Load() {
                 }
             }
 
-            if (!g_Config.acParams.armorSet) g_Config.acParams.armorSet = &g_Config.armorSets[0];
-
             auto curve = config["curve"].value_or("QAR");
             for (auto& i : g_Config.curves) {
                 if (!_stricmp(curve, i.first.c_str())) {
@@ -95,13 +95,8 @@ bool QuickArmorRebalance::Config::Load() {
                     break;
                 }
             }
-            if (!g_Config.acParams.curve) g_Config.acParams.curve = &g_Config.curves[0].second;
 
-            auto loot = config["loot"]["profile"].value_or("Treasure - Universal");
-            if (g_Config.lootProfiles.contains(loot))
-                g_Config.acParams.distProfile = g_Config.lootProfiles.find(loot)->c_str();
-            else if (!lootProfiles.empty())
-                g_Config.acParams.distProfile = lootProfiles.begin()->c_str();
+            lootProfile = config["loot"]["profile"].value_or("Treasure - Universal");
             g_Config.acParams.bDistribute = config["loot"]["enable"].value_or(false);
             g_Config.acParams.bDistAsPieces = config["loot"]["pieces"].value_or(true);
             g_Config.acParams.bDistAsSet = config["loot"]["sets"].value_or(true);
@@ -134,6 +129,14 @@ bool QuickArmorRebalance::Config::Load() {
 
             spdlog::set_level((spdlog::level::level_enum)g_Config.verbosity);
         }
+
+        if (!g_Config.acParams.armorSet) g_Config.acParams.armorSet = &g_Config.armorSets[0];
+        if (!g_Config.acParams.curve) g_Config.acParams.curve = &g_Config.curves[0].second;
+        if (g_Config.lootProfiles.contains(lootProfile))
+            g_Config.acParams.distProfile = g_Config.lootProfiles.find(lootProfile)->c_str();
+        else if (!lootProfiles.empty())
+            g_Config.acParams.distProfile = lootProfiles.begin()->c_str();
+
     }
 
     ValidateLootConfig();
@@ -393,13 +396,14 @@ toml::table SavePermissions(const QuickArmorRebalance::Permissions& p) {
 void QuickArmorRebalance::Config::Save() {
     auto iCurve = g_Config.curves.begin();
     while (iCurve != g_Config.curves.end() && &iCurve->second != g_Config.acParams.curve) iCurve++;
+    if (iCurve == g_Config.curves.end()) iCurve = g_Config.curves.begin();
 
     auto tbl = toml::table{
         {"modifyKeywords", g_Config.acParams.bModifyKeywords},
         {"modifyArmor", g_Config.acParams.bModifyArmor},
         {"modifyValue", g_Config.acParams.bModifyValue},
         {"modifyWeight", g_Config.acParams.bModifyWeight},
-        {"armorset", g_Config.acParams.armorSet->name},
+        {"armorset", g_Config.acParams.armorSet ? g_Config.acParams.armorSet->name : "error"},
         {"curve", iCurve->first},
         {"temper", toml::table{{"modify", g_Config.acParams.temper.bModify},
                                {"new", g_Config.acParams.temper.bNew},
@@ -411,7 +415,7 @@ void QuickArmorRebalance::Config::Save() {
                              {"pieces", g_Config.acParams.bDistAsPieces},
                              {"sets", g_Config.acParams.bDistAsSet},
                              {"matching", g_Config.acParams.bMatchSetPieces},
-                             {"profile", g_Config.acParams.distProfile}}},
+                             {"profile", g_Config.acParams.distProfile ? g_Config.acParams.distProfile : "error"}}},
         {"settings",
          toml::table{
              {"verbosity", g_Config.verbosity},

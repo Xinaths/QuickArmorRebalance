@@ -2,5 +2,6 @@
 
 namespace QuickArmorRebalance
 {
-    std::vector<RE::TESObjectARMO*> BuildSetFrom(RE::TESObjectARMO* baseItem, const std::vector<RE::TESObjectARMO*>& items);
+    std::vector<RE::TESObjectARMO*> BuildSetFrom(RE::TESBoundObject* baseItem,
+                                                 const std::vector<RE::TESBoundObject*>& items);
 }

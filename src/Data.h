@@ -2,21 +2,39 @@
 
 namespace QuickArmorRebalance
 {
+    using ArmorSlot = unsigned int;
+    using ArmorSlots = unsigned int;
+
+    static RE::TESForm* FindIn(const RE::TESFile* mod, const char* str, bool* pOtherFile = nullptr) {
+        if (pOtherFile) *pOtherFile = false;
+        if (!strncmp(str, "0x", 2)) {
+            RE::FormID id = GetFullId(mod, (RE::FormID)strtol(str + 2, nullptr, 16));
+            return RE::TESForm::LookupByID(id);
+        }
+        if (isdigit(*str)) {
+            RE::FormID id = GetFullId(mod, (RE::FormID)strtol(str, nullptr,10));
+            return RE::TESForm::LookupByID(id);        
+        }
+
+        if (auto pos = strchr(str, ':')) {
+            if (pOtherFile) *pOtherFile = true;
+            std::string fileName(str, pos - str);
+            if (auto mod2 = RE::TESDataHandler::GetSingleton()->LookupModByName(fileName)) {
+                return FindIn(mod2, pos + 1);
+            }
+            return nullptr;
+        }
+
+        auto r = RE::TESForm::LookupByEditorID(str);
+        if (!r || r->GetFile(0) != mod) return nullptr;
+        return r;
+    }
+
     template <class T>
     T* FindIn(const RE::TESFile* mod, const char* str)
     {
-        if (!strncmp(str, "0x", 2)) {
-            RE::FormID id = GetFullId(mod, (RE::FormID)strtol(str + 2, nullptr, 16));
-            return RE::TESForm::LookupByID<T>(id);
-        }
-        if (isdigit(*str)) {
-            RE::FormID id = GetFullId(mod, (RE::FormID)strtol(str + 2, nullptr,10));
-            return RE::TESForm::LookupByID<T>(id);        
-        }
-
-        auto r = RE::TESForm::LookupByEditorID<T>(str);
-        if (!r || r->GetFile(0) != mod) return nullptr;
-        return r;
+        if (auto r = FindIn(mod, str)) return r->As<T>();
+        return nullptr;
     }
 
 	struct ModData
@@ -26,7 +44,7 @@ namespace QuickArmorRebalance
 			{}
 
         RE::TESFile* mod;
-        std::set<RE::TESObjectARMO*> armors;
+        std::set<RE::TESBoundObject*> items;
 	};
 
     struct LootDistGroup
@@ -50,9 +68,11 @@ namespace QuickArmorRebalance
     struct LootContainerGroup {
         std::map<RE::TESForm*, ContainerChance> large;
         std::map<RE::TESForm*, ContainerChance> small;
+        std::map<RE::TESForm*, ContainerChance> weapon;
 
-        std::map<LootDistGroup*, std::vector<RE::TESObjectARMO*>[3]> pieces;
+        std::map<LootDistGroup*, std::vector<RE::TESBoundObject*>[3]> pieces;
         std::map<LootDistGroup*, std::vector<const ArmorSet*>[3]> sets;
+        std::map<LootDistGroup*, std::vector<RE::TESBoundObject*>[3]> weapons;
     };
 
     struct LootDistProfile
@@ -66,7 +86,7 @@ namespace QuickArmorRebalance
         LootDistGroup* group;
         int rarity;
 
-        RE::TESObjectARMO* piece;
+        RE::TESBoundObject* piece;
         ArmorSet set;
     };
 
@@ -77,7 +97,7 @@ namespace QuickArmorRebalance
         std::map<std::string, LootContainerGroup> containerGroups;
         std::map<std::string, LootDistProfile> distProfiles;
 
-        std::map<RE::TESObjectARMO*, ItemDistData> mapItemDist;
+        std::map<RE::TESBoundObject*, ItemDistData> mapItemDist;
     };
 
 	struct ProcessedData
@@ -89,17 +109,17 @@ namespace QuickArmorRebalance
         std::set<const RE::TESFile*> modifiedFilesShared;
         std::set<const RE::TESFile*> modifiedFilesDeleted;
 
-		std::set<RE::TESObjectARMO*> modifiedItems;
-        std::set<RE::TESObjectARMO*> modifiedItemsShared;
-        std::map<RE::TESObjectARMO*, RE::BGSConstructibleObject*> temperRecipe;
-        std::map<RE::TESObjectARMO*, RE::BGSConstructibleObject*> craftRecipe;
+		std::set<RE::TESBoundObject*> modifiedItems;
+        std::set<RE::TESBoundObject*> modifiedItemsShared;
+        std::map<RE::TESBoundObject*, RE::BGSConstructibleObject*> temperRecipe;
+        std::map<RE::TESBoundObject*, RE::BGSConstructibleObject*> craftRecipe;
 
         std::unique_ptr<ModLootData> loot;
         std::map<std::string, LootDistGroup> distGroups;
 
     };
 
-    bool IsValidArmor(RE::TESObjectARMO*);
+    bool IsValidItem(RE::TESBoundObject* i);
 
 	void ProcessData();
     void LoadChangesFromFiles();

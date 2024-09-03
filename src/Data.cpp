@@ -19,41 +19,60 @@ using namespace QuickArmorRebalance;
 
 ProcessedData QuickArmorRebalance::g_Data;
 
-bool QuickArmorRebalance::IsValidArmor(RE::TESObjectARMO* i) { 
-     auto mod = i->GetFile(0);
+bool QuickArmorRebalance::IsValidItem(RE::TESBoundObject* i) {
+    auto mod = i->GetFile(0);
     if (g_Config.blacklist.contains(mod)) return false;
 
-    if (!i->GetPlayable() || i->IsDeleted() || i->IsIgnored() || !i->GetFullName() || i->IsDynamicForm() || i->GetFullNameLength() <= 0)
+    if (!i->GetPlayable() || i->IsDeleted() || i->IsIgnored() || !i->GetName() || i->IsDynamicForm()) return false;
+
+    if (auto armor = i->As<RE::TESObjectARMO>()) {
+        if (!armor->GetFullName() || armor->GetFullNameLength() <= 0) return false;
+
+        if (((unsigned int)armor->GetSlotMask() & g_Config.usedSlotsMask) == 0) {
+            // logger::debug("Skipping item for no valid slots {}", i->GetFullName());
+            return false;
+        }
+    } else if (auto weap = i->As<RE::TESObjectWEAP>()) {
+        if (!weap->GetFullName() || weap->GetFullNameLength() <= 0) return false;
+
+    } else if (auto ammo = i->As<RE::TESAmmo>()) {
+        if (!ammo->GetFullName() || ammo->GetFullNameLength() <= 0) return false;
+    } else
         return false;
 
-    if (((unsigned int)i->GetSlotMask() & g_Config.usedSlotsMask) == 0) {
-        //logger::debug("Skipping item for no valid slots {}", i->GetFullName());
-        return false;
+    return true;
+}
+
+void ProcessItem(RE::TESBoundObject* i) {
+    if (!IsValidItem(i)) return;
+
+    auto mod = i->GetFile(0);
+    auto it = g_Data.modData.find(mod);
+    ModData* data = nullptr;
+
+    if (it != g_Data.modData.end())
+        data = it->second.get();
+    else {
+        g_Data.sortedMods.push_back(data = (g_Data.modData[mod] = std::make_unique<ModData>(mod)).get());
+        logger::trace("Added {}", mod->fileName);
     }
 
-    return true; 
+    data->items.insert(i);
 }
 
 void QuickArmorRebalance::ProcessData() {
     auto dataHandler = RE::TESDataHandler::GetSingleton();
-    auto& lsArmor = dataHandler->GetFormArray<RE::TESObjectARMO>();
 
-    logger::trace("Searching armor list for eligable mods");
-    for (auto i : lsArmor) {
-        if (!IsValidArmor(i)) continue;
+    for (auto i : dataHandler->GetFormArray<RE::TESObjectARMO>()) {
+        ProcessItem(i);
+    }
 
-        auto mod = i->GetFile(0);
-        auto it = g_Data.modData.find(mod);
-        ModData* data = nullptr;
+    for (auto i : dataHandler->GetFormArray<RE::TESObjectWEAP>()) {
+        ProcessItem(i);
+    }
 
-        if (it != g_Data.modData.end())
-            data = it->second.get();
-        else {
-            g_Data.sortedMods.push_back(data = (g_Data.modData[mod] = std::make_unique<ModData>(mod)).get());
-            logger::trace("Added {}", mod->fileName);
-        }
-
-        data->armors.insert(i);
+    for (auto i : dataHandler->GetFormArray<RE::TESAmmo>()) {
+        ProcessItem(i);
     }
 
     if (!g_Data.sortedMods.empty()) {
@@ -65,16 +84,19 @@ void QuickArmorRebalance::ProcessData() {
     auto temperBench = RE::TESForm::LookupByEditorID<RE::BGSKeyword>("CraftingSmithingArmorTable");
     if (!temperBench) return;
 
+    auto temperWeapBench = RE::TESForm::LookupByEditorID<RE::BGSKeyword>("CraftingSmithingSharpeningWheel");
+    if (!temperWeapBench) return;
+
     auto& lsRecipies = dataHandler->GetFormArray<RE::BGSConstructibleObject>();
     for (auto i : lsRecipies) {
         if (!i->createdItem) continue;
-        auto pArmor = i->createdItem->As<RE::TESObjectARMO>();
-        if (!pArmor) continue;
+        auto pObj = i->createdItem->As<RE::TESBoundObject>();
+        if (!pObj) continue;
 
-        if (i->benchKeyword == temperBench)
-            g_Data.temperRecipe.insert({pArmor, i});
+        if (i->benchKeyword == temperBench || i->benchKeyword == temperWeapBench)
+            g_Data.temperRecipe.insert({pObj, i});
         else
-            g_Data.craftRecipe.insert({pArmor, i});
+            g_Data.craftRecipe.insert({pObj, i});
     }
 }
 
@@ -169,4 +191,3 @@ void QuickArmorRebalance::DeleteAllChanges(RE::TESFile* mod) {
     std::filesystem::remove(path);
     g_Data.modifiedFilesDeleted.insert(mod);
 }
-

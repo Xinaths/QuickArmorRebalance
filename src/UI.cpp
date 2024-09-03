@@ -43,7 +43,9 @@ struct GivenItems {
         }
     }
 
-    void Give(RE::TESObjectARMO* item, bool equip = false) {
+    void Give(RE::TESBoundObject* item, bool equip = false) {
+        if (!item) return;
+
         auto player = RE::PlayerCharacter::GetSingleton();
         if (!player) return;
 
@@ -56,15 +58,17 @@ struct GivenItems {
         // the expected behavior and hopefully its good enough
 
         if (equip) {
-            auto slots = (unsigned int)item->GetSlotMask();
-            if ((slots & recentEquipSlots) == 0) {
-                recentEquipSlots |= slots;
+            if (auto armor = item->As<RE::TESObjectARMO>()) {
+                auto slots = (unsigned int)armor->GetSlotMask();
+                if ((slots & recentEquipSlots) == 0) {
+                    recentEquipSlots |= slots;
 
-                // Not using AddTask will result in it not un-equipping current items
-                SKSE::GetTaskInterface()->AddTask([=]() {
-                    RE::ActorEquipManager::GetSingleton()->EquipObject(player, item, nullptr, 1, item->GetEquipSlot(),
-                                                                       false, false, false);
-                });
+                    // Not using AddTask will result in it not un-equipping current items
+                    SKSE::GetTaskInterface()->AddTask([=]() {
+                        RE::ActorEquipManager::GetSingleton()->EquipObject(player, item, nullptr, 1,
+                                                                           armor->GetEquipSlot(), false, false, false);
+                    });
+                }
             }
         }
     }
@@ -79,16 +83,45 @@ struct GivenItems {
     }
 
     unsigned int recentEquipSlots = 0;
-    std::vector<RE::TESObjectARMO*> items;
+    std::vector<RE::TESBoundObject*> items;
 };
+
+bool SliderTable() {
+    if (ImGui::BeginTable("Slider Table", 3, ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_SizingFixedFit)) {
+        ImGui::TableSetupColumn("SliderCol1");
+        ImGui::TableSetupColumn("SliderCol2", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("SliderCol3");
+        return true;
+    }
+    return false;
+}
+
+void SliderRow(const char* field, ArmorChangeParams::SliderPair& pair, float min = 0.0f, float max = 300.0f) {
+    ImGui::TableNextRow();
+    ImGui::TableNextColumn();
+    ImGui::PushID(field);
+    ImGui::Checkbox(std::format("Modify {}", field).c_str(), &pair.bModify);
+    ImGui::BeginDisabled(!pair.bModify);
+    ImGui::TableNextColumn();
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+    ImGui::SliderFloat("##Scale", &pair.fScale, min, max, "%.0f%%", ImGuiSliderFlags_AlwaysClamp);
+    ImGui::TableNextColumn();
+    if (ImGui::Button("Reset")) pair.fScale = 100.0f;
+    ImGui::EndDisabled();
+    ImGui::PopID();
+}
 
 void PermissionsChecklist(const char* id, Permissions& p) {
     ImGui::PushID(id);
     ImGui::Checkbox("Distribute loot", &p.bDistributeLoot);
     ImGui::Checkbox("Modify keywords", &p.bModifyKeywords);
     ImGui::Checkbox("Modify armor rating", &p.bModifyArmorRating);
+    ImGui::Checkbox("Modify armor weight", &p.bModifyWeight);
+    ImGui::Checkbox("Modify weapon damage", &p.bModifyWeapDamage);
+    ImGui::Checkbox("Modify weapon weight", &p.bModifyWeapWeight);
+    ImGui::Checkbox("Modify weapon speed", &p.bModifyWeapSpeed);
+    ImGui::Checkbox("Modify weapon stagger", &p.bModifyWeapStagger);
     ImGui::Checkbox("Modify value", &p.bModifyValue);
-    ImGui::Checkbox("Modify weight", &p.bModifyWeight);
     ImGui::Checkbox("Modify crafting recipes", &p.crafting.bModify);
     ImGui::Checkbox("Create crafting recipes", &p.crafting.bCreate);
     ImGui::Checkbox("Free crafting recipes", &p.crafting.bFree);
@@ -96,6 +129,56 @@ void PermissionsChecklist(const char* id, Permissions& p) {
     ImGui::Checkbox("Create temper recipes", &p.temper.bCreate);
     ImGui::Checkbox("Free temper recipes", &p.temper.bFree);
     ImGui::PopID();
+}
+
+void GetCurrentListItems(ModData* curMod, bool bFilterModified, const char* itemFilter) {
+    ArmorChangeParams& params = g_Config.acParams;
+    params.items.clear();
+    if (curMod) {
+        for (auto i : curMod->items) {
+            if (bFilterModified && (g_Data.modifiedItems.contains(i) || g_Data.modifiedItemsShared.contains(i)))
+                continue;
+            if (*itemFilter && !StringContainsI(i->GetName(), itemFilter)) continue;
+
+            params.items.push_back(i);
+        }
+    } else {
+        if (auto player = RE::PlayerCharacter::GetSingleton()) {
+            for (auto& item : player->GetInventory()) {
+                if (item.second.second->IsWorn() && item.first->IsArmor()) {
+                    if (auto i = item.first->As<RE::TESObjectARMO>()) {
+                        if (!IsValidItem(i)) continue;
+                        if (bFilterModified &&
+                            (g_Data.modifiedItems.contains(i) || g_Data.modifiedItemsShared.contains(i)))
+                            continue;
+                        if (*itemFilter && !StringContainsI(i->GetFullName(), itemFilter)) continue;
+
+                        params.items.push_back(i);
+                    }
+                }
+            }
+        }
+    }
+
+    if (!params.items.empty()) {
+        std::sort(params.items.begin(), params.items.end(),
+                  [](RE::TESBoundObject* const a, RE::TESBoundObject* const b) {
+                      return _stricmp(a->GetName(), b->GetName()) < 0;
+                  });
+    }
+}
+
+bool WillBeModified(RE::TESBoundObject* i) {
+    if (auto armor = i->As<RE::TESObjectARMO>()) {
+        if ((g_Config.slotsWillChange & (ArmorSlots)armor->GetSlotMask()) == 0) return false;
+    } else if (auto weap = i->As<RE::TESObjectWEAP>()) {
+        if (!g_Config.acParams.armorSet->FindMatching(weap)) return false;
+    } else if (auto ammo = i->As<RE::TESAmmo>()) {
+        if (!g_Config.acParams.armorSet->FindMatching(ammo)) return false;
+    } else
+        return false;
+
+    return true;
 }
 
 short g_highlightRound = 0;
@@ -138,10 +221,11 @@ void QuickArmorRebalance::RenderUI() {
     const char* rarity[] = {"Common", "Uncommon", "Rare", nullptr};
 
     bool isActive = true;
-    static std::set<RE::TESObjectARMO*> selectedItems;
-    static RE::TESObjectARMO* lastSelectedItem = nullptr;
+    static std::set<RE::TESBoundObject*> selectedItems;
+    static RE::TESBoundObject* lastSelectedItem = nullptr;
     static GivenItems givenItems;
     static ModData* curMod = nullptr;
+    static std::set<RE::TESObject*> uncheckedItems;
 
     if (!RE::UI::GetSingleton()->numPausesGame) givenItems.recentEquipSlots = 0;
 
@@ -161,8 +245,9 @@ void QuickArmorRebalance::RenderUI() {
     ImGuiWindowFlags wndFlags = ImGuiWindowFlags_NoScrollbar;
     if (bMenuHovered) wndFlags |= ImGuiWindowFlags_MenuBar;
 
+    ImGui::SetNextWindowSizeConstraints({700, 250}, {1600, 1000});
     if (ImGui::Begin("Quick Armor Rebalance", &isActive, wndFlags)) {
-        if (g_Config.bValid) {
+        if (g_Config.strCriticalError.empty()) {
             ArmorChangeParams& params = g_Config.acParams;
 
             const char* noMod = "<Currently Worn Armor>";
@@ -218,6 +303,8 @@ void QuickArmorRebalance::RenderUI() {
                         ImGui::Text("Mod");
                         ImGui::TableNextColumn();
 
+                        RE::TESFile* blacklist = nullptr;
+
                         ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
                         if (ImGui::BeginCombo("##Mod", curMod ? curMod->mod->fileName : noMod,
                                               ImGuiComboFlags_HeightLarge)) {
@@ -245,6 +332,7 @@ void QuickArmorRebalance::RenderUI() {
                                 }
 
                                 if (ImGui::Selectable(i->mod->fileName, selected)) {
+
                                     if (isCtrlDown && isAltDown && g_Data.modifiedFiles.contains(i->mod)) {
                                         showPopup = true;
                                     }
@@ -255,13 +343,21 @@ void QuickArmorRebalance::RenderUI() {
                                     lastSelectedItem = nullptr;
 
                                     if (g_Config.bResetSliders) {
-                                        params.fArmorScale = 100.0f;
-                                        params.fValueScale = 100.0f;
-                                        params.fWeightScale = 100.0f;
+                                        params.armor.rating.fScale = 100.0f;
+                                        params.armor.weight.fScale = 100.0f;
+                                        params.weapon.damage.fScale = 100.0f;
+                                        params.weapon.speed.fScale = 100.0f;
+                                        params.weapon.weight.fScale = 100.0f;
+                                        params.weapon.stagger.fScale = 100.0f;
+                                        params.value.fScale = 100.0f;
                                     }
 
                                     g_highlightRound++;
                                 }
+                                if (isCtrlDown && isAltDown && ImGui::IsItemHovered()  && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+                                    blacklist = i->mod;
+                                }
+
                                 if (selected) ImGui::SetItemDefaultFocus();
                                 ImGui::PopStyleColor(pop);
                             }
@@ -269,6 +365,8 @@ void QuickArmorRebalance::RenderUI() {
                             ImGui::EndCombo();
 
                             params.isWornArmor = !curMod;
+
+                            if (blacklist) g_Config.AddUserBlacklist(blacklist);
                         }
 
                         {
@@ -359,6 +457,22 @@ void QuickArmorRebalance::RenderUI() {
                         ImGui::EndTable();
                     }
 
+                    GetCurrentListItems(curMod, bFilterModified, itemFilter);
+                    g_Config.slotsWillChange = GetConvertableArmorSlots(params);
+
+                    bool hasEnabledArmor = false;
+                    bool hasEnabledWeap = false;
+
+                    for (auto i : params.items) {
+                        if (i->As<RE::TESObjectARMO>()) {
+                            if (!uncheckedItems.contains(i)) hasEnabledArmor = true;
+                        } else if (i->As<RE::TESObjectWEAP>()) {
+                            if (!uncheckedItems.contains(i)) hasEnabledWeap = true;
+                        } else if (i->As<RE::TESAmmo>()) {
+                            if (!uncheckedItems.contains(i)) hasEnabledWeap = true;
+                        }
+                    }
+
                     // Distribution
                     ImGui::Separator();
                     ImGui::BeginDisabled(!curMod);
@@ -414,7 +528,7 @@ void QuickArmorRebalance::RenderUI() {
                     ImGui::BeginDisabled(!params.bDistAsSet);
                     ImGui::Checkbox("Matching sets", &params.bMatchSetPieces);
                     MakeTooltip(
-                        "Attempts to match sets together - for example, if there are green and blue variants, it will "
+                        "Attempts to match sets together - for example, if there are green and blue variants, it will\n"
                         "try to distribute only green or only blue parts as a single set");
                     ImGui::EndDisabled();
                     ImGui::Unindent(60);
@@ -423,53 +537,102 @@ void QuickArmorRebalance::RenderUI() {
                     ImGui::EndDisabled();
 
                     // Modifications
-                    ImGui::Separator();
-                    ImGui::Checkbox("Modify Keywords", &params.bModifyKeywords);
+                    // ImGui::SetNextItemSize();
 
-                    if (ImGui::BeginTable("Slider Table", 3,
-                                          ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_SizingFixedFit)) {
-                        ImGui::TableSetupColumn("SliderCol1");
-                        ImGui::TableSetupColumn("SliderCol2", ImGuiTableColumnFlags_WidthStretch);
-                        ImGui::TableSetupColumn("SliderCol3");
+                    // ImGui::PushStyleColor(ImGuiCol_ChildBg, colorDeleted);
+                    if (ImGui::BeginChild("ItemTypeFrame", {ImGui::GetContentRegionAvail().x, 120}, false)) {
+                        if (ImGui::BeginTabBar("ItemTypeBar")) {
+                            static int iTabOpen = 0;
+                            int iTab = 0;
+                            int iTabSelected = iTabOpen;
 
-                        ImGui::TableNextRow();
-                        ImGui::TableNextColumn();
-                        ImGui::Checkbox("Modify Armor Rating", &params.bModifyArmor);
-                        ImGui::BeginDisabled(!params.bModifyArmor);
-                        ImGui::TableNextColumn();
-                        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
-                        ImGui::SliderFloat("##ArmorScale", &params.fArmorScale, 0.0f, 300.0f, "%.0f%%",
-                                           ImGuiSliderFlags_AlwaysClamp);
-                        ImGui::TableNextColumn();
-                        if (ImGui::Button("Reset##ArmorScale")) params.fArmorScale = 100.0f;
-                        ImGui::EndDisabled();
+                            bool bTabEnabled[] = {hasEnabledArmor && !params.armorSet->items.empty(),
+                                                  hasEnabledWeap && !params.armorSet->weaps.empty()};
+                            const int nTabCount = 2;
 
-                        ImGui::TableNextRow();
-                        ImGui::TableNextColumn();
-                        ImGui::Checkbox("Modify Gold Value", &params.bModifyValue);
-                        ImGui::BeginDisabled(!params.bModifyValue);
-                        ImGui::TableNextColumn();
-                        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
-                        ImGui::SliderFloat("##ValueScale", &params.fValueScale, 0.0f, 300.0f, "%.0f%%",
-                                           ImGuiSliderFlags_AlwaysClamp);
-                        ImGui::TableNextColumn();
-                        if (ImGui::Button("Reset##Value")) params.fValueScale = 100.0f;
-                        ImGui::EndDisabled();
+                            bool bForceSelect = false;
+                            if (!bTabEnabled[iTabOpen]) {
+                                iTabOpen = 0;
+                                while (iTabOpen < nTabCount && !bTabEnabled[iTabOpen]) iTabOpen++;
+                                if (iTabOpen >= nTabCount) iTabOpen = 0;
 
-                        ImGui::TableNextRow();
-                        ImGui::TableNextColumn();
-                        ImGui::Checkbox("Modify Weight", &params.bModifyWeight);
-                        ImGui::BeginDisabled(!params.bModifyWeight);
-                        ImGui::TableNextColumn();
-                        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
-                        ImGui::SliderFloat("##WeightScale", &params.fWeightScale, 0.0f, 300.0f, "%.0f%%",
-                                           ImGuiSliderFlags_AlwaysClamp);
-                        ImGui::TableNextColumn();
-                        if (ImGui::Button("Reset##Weight")) params.fWeightScale = 100.0f;
-                        ImGui::EndDisabled();
+                                bForceSelect = true;
+                            }
+
+                            const char* tabLabels[] = {"Armor", "Weapons"};
+                            //if (iTabOpen != iTabSelected) ImGui::SetTabItemClosed(tabLabels[iTabSelected]);
+
+                            iTabSelected = iTabOpen;
+
+                            ImGui::BeginDisabled(!bTabEnabled[iTab]);
+                            if (ImGui::BeginTabItem(tabLabels[iTab], nullptr,
+                                                    bForceSelect && iTabOpen == iTab ? ImGuiTabItemFlags_SetSelected : 0)) {
+                                iTabSelected = iTab;
+                                if (SliderTable()) {
+                                    SliderRow("Armor Rating", params.armor.rating);
+                                    SliderRow("Weight", params.armor.weight);
+
+                                    ImGui::EndTable();
+                                }
+
+                                ImGui::Separator();
+                                ImGui::Text("Stat distribution curve");
+                                ImGui::SameLine();
+
+                                static auto* curCurve = &g_Config.curves[0];
+
+                                if (ImGui::BeginCombo("##Curve", curCurve->first.c_str(),
+                                                      ImGuiComboFlags_PopupAlignLeft | ImGuiComboFlags_HeightLarge)) {
+                                    for (auto& i : g_Config.curves) {
+                                        bool selected = curCurve == &i;
+                                        ImGui::PushID(i.first.c_str());
+                                        if (ImGui::Selectable(i.first.c_str(), selected)) curCurve = &i;
+                                        if (selected) ImGui::SetItemDefaultFocus();
+                                        ImGui::PopID();
+                                    }
+
+                                    ImGui::EndCombo();
+                                }
+                                params.curve = &curCurve->second;
+                                ImGui::EndTabItem();
+                            }
+                            iTab++;
+                            ImGui::EndDisabled();
+
+                            ImGui::BeginDisabled(!bTabEnabled[iTab]);
+                            if (ImGui::BeginTabItem(tabLabels[iTab], nullptr,
+                                                    bForceSelect && iTabOpen == iTab ? ImGuiTabItemFlags_SetSelected : 0)) {
+                                iTabSelected = iTab;
+                                if (SliderTable()) {
+                                    SliderRow("Damage", params.weapon.damage);
+                                    SliderRow("Weight", params.weapon.weight);
+                                    SliderRow("Speed", params.weapon.speed);
+                                    SliderRow("Stagger", params.weapon.stagger);
+
+                                    ImGui::EndTable();
+                                }
+                                iTab++;
+
+                                ImGui::EndTabItem();
+                            }
+                            ImGui::EndDisabled();
+                            ImGui::EndTabBar();
+                            iTabOpen = iTabSelected;
+                        }
+
+                    }
+                    ImGui::EndChild();
+                    // ImGui::PopStyleColor();
+
+                    // ImGui::Separator();
+
+                    if (SliderTable()) {
+                        SliderRow("Gold Value", params.value);
 
                         ImGui::EndTable();
                     }
+
+                    ImGui::Checkbox("Modify Keywords", &params.bModifyKeywords);
 
                     if (ImGui::BeginTable("Crafting Table", 3, ImGuiTableFlags_SizingFixedFit)) {
                         ImGui::TableSetupColumn("CraftCol1");
@@ -483,12 +646,12 @@ void QuickArmorRebalance::RenderUI() {
                         ImGui::TableNextColumn();
                         ImGui::Checkbox("Create recipe if missing##Temper", &params.temper.bNew);
                         MakeTooltip(
-                            "If an item being modified lacks an existing temper recipe to modify, checking this "
-                            "will create one automatically");
+                            "If an item being modified lacks an existing temper recipe to modify, checking\n"
+                            "this will create one automatically");
                         ImGui::TableNextColumn();
                         ImGui::Checkbox("Make free if no recipe to copy##Temper", &params.temper.bFree);
                         MakeTooltip(
-                            "If the item being copied lacks a tempering recipe, checking will remove all "
+                            "If the item being copied lacks a tempering recipe, checking will remove all\n"
                             "components and conditions to temper the modified item");
                         ImGui::EndDisabled();
 
@@ -500,38 +663,18 @@ void QuickArmorRebalance::RenderUI() {
                         ImGui::Checkbox("Create recipe if missing##Craft", &params.craft.bNew);
                         if (ImGui::IsItemHovered())
                             ImGui::SetTooltip(
-                                "If an item being modified lacks an existing crafting recipe to modify, checking this "
-                                "will create one automatically");
+                                "If an item being modified lacks an existing crafting recipe to modify,\n"
+                                "checking this will create one automatically");
                         ImGui::TableNextColumn();
                         ImGui::Checkbox("Make free if no recipe to copy##Craft", &params.craft.bFree);
                         if (ImGui::IsItemHovered())
                             ImGui::SetTooltip(
-                                "If the item being copied lacks a crafting recipe, checking will remove all "
+                                "If the item being copied lacks a crafting recipe, checking will remove all\n"
                                 "components and conditions to craft the modified item");
                         ImGui::EndDisabled();
 
                         ImGui::EndTable();
                     }
-
-                    ImGui::Separator();
-                    ImGui::Text("Stat distribution curve");
-                    ImGui::SameLine();
-
-                    static auto* curCurve = &g_Config.curves[0];
-
-                    if (ImGui::BeginCombo("##Curve", curCurve->first.c_str(),
-                                          ImGuiComboFlags_PopupAlignLeft | ImGuiComboFlags_HeightLarge)) {
-                        for (auto& i : g_Config.curves) {
-                            bool selected = curCurve == &i;
-                            ImGui::PushID(i.first.c_str());
-                            if (ImGui::Selectable(i.first.c_str(), selected)) curCurve = &i;
-                            if (selected) ImGui::SetItemDefaultFocus();
-                            ImGui::PopID();
-                        }
-
-                        ImGui::EndCombo();
-                    }
-                    params.curve = &curCurve->second;
 
                     ImGui::PopItemWidth();
                 }
@@ -543,41 +686,6 @@ void QuickArmorRebalance::RenderUI() {
                 // ImGui::SameLine();
                 // RightButton("Settings");
 
-                params.items.clear();
-                if (curMod) {
-                    for (auto i : curMod->armors) {
-                        if (bFilterModified &&
-                            (g_Data.modifiedItems.contains(i) || g_Data.modifiedItemsShared.contains(i)))
-                            continue;
-                        if (*itemFilter && !StringContainsI(i->GetFullName(), itemFilter)) continue;
-
-                        params.items.push_back(i);
-                    }
-                } else {
-                    if (auto player = RE::PlayerCharacter::GetSingleton()) {
-                        for (auto& item : player->GetInventory()) {
-                            if (item.second.second->IsWorn() && item.first->IsArmor()) {
-                                if (auto i = item.first->As<RE::TESObjectARMO>()) {
-                                    if (!IsValidArmor(i)) continue;
-                                    if (bFilterModified &&
-                                        (g_Data.modifiedItems.contains(i) || g_Data.modifiedItemsShared.contains(i)))
-                                        continue;
-                                    if (*itemFilter && !StringContainsI(i->GetFullName(), itemFilter)) continue;
-
-                                    params.items.push_back(i);
-                                }
-                            }
-                        }
-                    }
-                }
-
-                if (!params.items.empty()) {
-                    std::sort(params.items.begin(), params.items.end(),
-                              [](RE::TESObjectARMO* const a, RE::TESObjectARMO* const b) {
-                                  return _stricmp(a->fullName.c_str(), b->fullName.c_str()) < 0;
-                              });
-                }
-
                 auto avail = ImGui::GetContentRegionAvail();
                 avail.y -= ImGui::GetFontSize() * 1 + ImGui::GetStyle().FramePadding.y * 2;
 
@@ -588,7 +696,6 @@ void QuickArmorRebalance::RenderUI() {
                 bool modChangesDeleted = g_Data.modifiedFilesDeleted.contains(curMod->mod);
 
                 if (ImGui::BeginListBox("##Items", avail)) {
-                    static std::set<RE::TESObjectARMO*> uncheckedItems;
                     if (ImGui::BeginPopupContextWindow()) {
                         if (ImGui::Selectable("Enable all")) uncheckedItems.clear();
                         if (ImGui::Selectable("Disable all"))
@@ -625,13 +732,15 @@ void QuickArmorRebalance::RenderUI() {
                         } else if (g_Data.modifiedItemsShared.contains(i)) {
                             ImGui::PushStyleColor(ImGuiCol_Text, colorChangedShared);
                             pop++;
+                        } else if (!WillBeModified(i)) {
+                            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+                            pop++;
                         }
 
-                        std::string name;
-                        if (!i->fullName.empty())
-                            name = i->GetFullName();
-                        else
-                            name = std::format("{}:{:010x}", i->GetFile(0)->fileName, i->formID);
+                        std::string name(i->GetName());
+                        // if (!i->fullName.empty()) name = i->GetFullName();
+
+                        if (name.empty()) name = std::format("{}:{:010x}", i->GetFile(0)->fileName, i->formID);
 
                         ImGui::BeginGroup();
 
@@ -700,6 +809,7 @@ void QuickArmorRebalance::RenderUI() {
                                 }
                             }
                         }
+
                         ImGui::PopID();
                         ImGui::EndGroup();
                         ImGui::PopStyleColor(pop);
@@ -752,7 +862,7 @@ void QuickArmorRebalance::RenderUI() {
 
             ImGui::PopItemWidth();
         } else {
-            ImGui::Text("QuickArmorReplacer is disabled (not yet loaded or failed to load)");
+            ImGui::Text(g_Config.strCriticalError.c_str());
         }
 
         if (popupSettings) ImGui::OpenPopup("Settings");
@@ -784,6 +894,11 @@ void QuickArmorRebalance::RenderUI() {
             ImGui::Checkbox("Highlight things you may want to look at", &g_Config.bHighlights);
 
             ImGui::Separator();
+            ImGui::Checkbox("Enforce loot rarity with empty loot", &g_Config.bEnableRarityNullLoot);
+            MakeTooltip("Example: The subset of items elible for loot has 1 rare item, 0 commons and uncommons\n"
+                "DISABLED: You will always get that rare item\n"
+                "ENABLED: You will have a 5%% chance at the item, and 95%% chance of nothing");
+
             ImGui::Checkbox("Normalize drop rates between mods", &g_Config.bNormalizeModDrops);
             ImGui::SliderFloat("Adjust drop rates", &g_Config.fDropRates, 0.0f, 300.0f, "%.0f%%",
                                ImGuiSliderFlags_AlwaysClamp);

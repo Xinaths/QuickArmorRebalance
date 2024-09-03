@@ -31,7 +31,7 @@ namespace {
     }
 }
 
-Value QuickArmorRebalance::MakeLootChanges(const ArmorChangeParams& params, RE::TESObjectARMO* i,
+Value QuickArmorRebalance::MakeLootChanges(const ArmorChangeParams& params, RE::TESBoundObject* i,
                                            MemoryPoolAllocator<>& al) {
     for (auto item : params.items) //Don't build loot sets from current armor (aka mixed mod sets) - maybe in the future
         if (item->GetFile(0) != i->GetFile(0)) return {};
@@ -39,28 +39,34 @@ Value QuickArmorRebalance::MakeLootChanges(const ArmorChangeParams& params, RE::
     if (!params.isWornArmor && params.bDistribute && params.distProfile) {
         Value loot(kObjectType);
 
-        if (params.bDistAsSet &&
-            ((unsigned int)i->GetSlotMask() & (unsigned int)RE::BIPED_MODEL::BipedObjectSlot::kBody) != 0) {
-            if (params.bMatchSetPieces) {
-                auto s = BuildSetFrom(i, params.items);
-                if (!s.empty()) {
-                    Value setv(kArrayType);
-                    for (auto j : s) setv.PushBack(GetFileId(j), al);
-                    loot.AddMember("set", setv, al);
-                }
-            } else {
-                // If its not matching, we actually can just throw everything into one set and it'll be mixed properly
-                // on loading
-                if (!params.bMixedSetDone) {
-                    Value setv(kArrayType);
-                    for (auto j : params.items) setv.PushBack(GetFileId(j), al);
-                    loot.AddMember("set", setv, al);
-                    params.bMixedSetDone = true;
+        if (auto armor = i->As<RE::TESObjectARMO>()) {
+            if (params.bDistAsSet &&
+                ((unsigned int)armor->GetSlotMask() & (unsigned int)RE::BIPED_MODEL::BipedObjectSlot::kBody) != 0) {
+                if (params.bMatchSetPieces) {
+                    auto s = BuildSetFrom(i, params.items);
+                    if (!s.empty()) {
+                        Value setv(kArrayType);
+                        for (auto j : s) setv.PushBack(GetFileId(j), al);
+                        loot.AddMember("set", setv, al);
+                    }
+                } else {
+                    // If its not matching, we actually can just throw everything into one set and it'll be mixed
+                    // properly on loading
+                    if (!params.bMixedSetDone) {
+                        Value setv(kArrayType);
+                        for (auto j : params.items) setv.PushBack(GetFileId(j), al);
+                        loot.AddMember("set", setv, al);
+                        params.bMixedSetDone = true;
+                    }
                 }
             }
-        }
 
-        if (params.bDistAsPieces) loot.AddMember("piece", true, al);
+            if (params.bDistAsPieces) loot.AddMember("piece", true, al);
+        } else if (auto weap = i->As<RE::TESObjectWEAP>()) {
+            if (params.bDistAsPieces) loot.AddMember("piece", true, al);       
+        } else if (auto ammo = i->As<RE::TESAmmo>()) {
+            if (params.bDistAsPieces) loot.AddMember("piece", true, al);
+        }
 
         if (!loot.ObjectEmpty()) {
             loot.AddMember("profile", Value(params.distProfile, al), al);
@@ -73,7 +79,9 @@ Value QuickArmorRebalance::MakeLootChanges(const ArmorChangeParams& params, RE::
     return Value();
 }
 
-void QuickArmorRebalance::LoadLootChanges(RE::TESObjectARMO* item, const Value& jsonLoot) {
+void QuickArmorRebalance::LoadLootChanges(RE::TESBoundObject* item, const Value& jsonLoot) {
+    if (!item) return;
+
     if (!jsonLoot.HasMember("profile")) return;
     const auto& jsonProfile = jsonLoot["profile"];
     if (!jsonProfile.IsString()) return;
@@ -94,16 +102,18 @@ void QuickArmorRebalance::LoadLootChanges(RE::TESObjectARMO* item, const Value& 
     auto group = &itGroup->second;
     int rarity = std::clamp(jsonLoot["rarity"].GetInt(), 0, 2);
 
-    RE::TESObjectARMO* piece = nullptr;
+    RE::TESBoundObject* piece = nullptr;
     ArmorSet items;
 
     if (jsonLoot.HasMember("piece") && jsonLoot["piece"].GetBool()) piece = item;
 
-    if (jsonLoot.HasMember("set")) {
-        for (const auto& i : jsonLoot["set"].GetArray()) {
-            RE::FormID id = GetFullId(item->GetFile(), i.GetUint());
+    if (auto armor = item->As<RE::TESObjectARMO>()) {
+        if (jsonLoot.HasMember("set")) {
+            for (const auto& i : jsonLoot["set"].GetArray()) {
+                RE::FormID id = GetFullId(item->GetFile(), i.GetUint());
 
-            if (auto setitem = RE::TESForm::LookupByID<RE::TESObjectARMO>(id)) items.push_back(setitem);
+                if (auto setitem = RE::TESForm::LookupByID<RE::TESObjectARMO>(id)) items.push_back(setitem);
+            }
         }
     }
 
@@ -124,7 +134,7 @@ void LoadContainerList(std::map<RE::TESForm*, QuickArmorRebalance::ContainerChan
                             auto chance = GetJsonInt(entry.value, "chance", 1, 100, 100);
                             set[form] = {num, chance};
                         } else if (entry.value.IsInt()) {
-                            set[form] = {1, std::clamp(entry.value.GetInt(), 1, 20)};
+                            set[form] = {1, std::clamp(entry.value.GetInt(), 1, 100)};
                         } else
                             set[form] = {1, 100};
 
@@ -145,6 +155,7 @@ void QuickArmorRebalance::LoadLootConfig(const Value& jsonLoot) {
                 auto& group = g_Data.loot->containerGroups[jsonGroup.name.GetString()];
                 if (jsonGroup.value.HasMember("sets")) LoadContainerList(group.large, jsonGroup.value["sets"]);
                 if (jsonGroup.value.HasMember("pieces")) LoadContainerList(group.small, jsonGroup.value["pieces"]);
+                if (jsonGroup.value.HasMember("weapons")) LoadContainerList(group.weapon, jsonGroup.value["weapons"]);
             }
         }
     }
@@ -206,6 +217,8 @@ void QuickArmorRebalance::ValidateLootConfig() {
 }
 
 namespace {
+    using namespace QuickArmorRebalance;
+
     int g_nLListsCreated = 0;
 
     const size_t kLLMaxSize = 0xff;  // Not 0x100 because num_entries would roll to 0 at max size
@@ -224,6 +237,25 @@ namespace {
         return newForm;
     }
 
+    void LogListContents(RE::TESLevItem* list) { 
+        logger::info(">>>List: Size {}, Chance Zero {}%", list->numEntries, list->chanceNone);
+
+        for (int i = 0; i < list->numEntries; i++)
+        {
+            if (!list->entries[i].form)
+                logger::error("{}: [{}] NULL", i, list->entries[i].level);
+            else if (auto sublist = list->entries[i].form->As<RE::TESLevItem>())
+                logger::info("{}: [{}] Sublist size {}, chance zero {}% ({})", i, list->entries[i].level,
+                             sublist->numEntries, sublist->chanceNone,
+                             list->entries[i].count);
+            else
+                logger::info("{}: [{}] {} ({})", i, list->entries[i].level, list->entries[i].form->GetName(),
+                             list->entries[i].count);
+        }
+
+        logger::info(">>>End list<<<");
+    }
+
     template <class T>
     RE::TESBoundObject* BuildListFrom(T* const* items, size_t count, uint8_t flags, uint8_t chanceNone = 0) {
         if (!count) return nullptr;
@@ -240,6 +272,7 @@ namespace {
                 e.level = 1;
                 e.itemExtra = nullptr;
             }
+            //LogListContents(list);
             return list;
         } else {
             auto split = 1 + count / kLLMaxSize;
@@ -261,6 +294,7 @@ namespace {
                 count -= slice;
             }
 
+            //LogListContents(list);
             return list;
         }
     }
@@ -273,12 +307,12 @@ namespace {
         return BuildListFrom(items.data(), items.size(), flags);
     }
 
-    RE::TESBoundObject* BuildContentList(const std::vector<RE::TESObjectARMO*>& contents) {
+    RE::TESBoundObject* BuildContentList(const std::vector<RE::TESBoundObject*>& contents) {
         if (!QuickArmorRebalance::g_Config.bNormalizeModDrops)
             return BuildListFrom(contents, RE::TESLeveledList::kCalculateForEachItemInCount);
 
         std::vector<RE::TESBoundObject*> modLists;
-        std::map<RE::TESFile*, std::vector<RE::TESObjectARMO*>> map;
+        std::map<RE::TESFile*, std::vector<RE::TESBoundObject*>> map;
 
         for (auto i : contents) map[i->GetFile(0)].push_back(i);
         for (const auto& i : map)
@@ -355,17 +389,26 @@ namespace {
             if ((lists[i] = BuildContentList(contents[i]))) nUsed++;
         }
 
+        constexpr int weight[] = {15, 4, 1};
+        constexpr int weightTotal = 20;
+
         if (!nUsed) return nullptr;
         if (nUsed == 1) {
             for (int i = 0; i < 3; i++)
-                if (lists[i]) return lists[i];
+                if (lists[i]) {
+                    if (!g_Config.bEnableRarityNullLoot)
+                        return lists[i];
+                    else
+                        return BuildListFrom(&lists[i], 1, RE::TESLeveledList::kCalculateForEachItemInCount,
+                                             100 - (uint8_t)(100.f * (float)weight[i] / weightTotal));
+                }
         }
 
         std::vector<RE::TESBoundObject*> r;
 
-        int weight[] = {15, 4, 1};
         for (int i = 0; i < 3; i++) {
-            for (int n = 0; n < weight[i]; n++) r.push_back(lists[i]);
+            if (lists[i] || g_Config.bEnableRarityNullLoot)
+                for (int n = 0; n < weight[i]; n++) r.push_back(lists[i]);
         }
 
         return BuildListFrom(r, RE::TESLeveledList::kCalculateForEachItemInCount);
@@ -451,8 +494,9 @@ namespace {
                     chances[entry.second.chance] = list =
                         BuildListFrom(&curveList, 1, RE::TESLeveledList::kCalculateForEachItemInCount,
                                       (int8_t)(100 - entry.second.chance));
-                } else
-                    chances[entry.second.chance] = list = curveList; //No reason to make an intermediate table at 100%
+                } else {
+                    chances[entry.second.chance] = list = curveList;  // No reason to make an intermediate table at 100%
+                }
             }
 
             if (auto container = entry.first->As<RE::TESContainer>()) {
@@ -498,6 +542,17 @@ namespace {
                     FillContents(group.large, pieceList);
                 }
             }
+
+            if (!group.weapon.empty()) {
+                std::map<QuickArmorRebalance::LootDistGroup*, RE::TESBoundObject*> contentsLists;
+                for (auto& j : group.weapons) {
+                    if (auto list = BuildGroupList(j.second)) contentsLists[j.first] = list;
+                }
+
+                if (auto pieceList = BuildCurveList(std::move(contentsLists))) {
+                    FillContents(group.weapon, pieceList);
+                }
+            }
         }
     }
 }
@@ -514,7 +569,11 @@ void QuickArmorRebalance::SetupLootLists() {
     for (const auto& i : g_Data.loot->mapItemDist) {
         auto& data = i.second;
         for (auto c : data.profile->containerGroups) {
-            if (data.piece) c->pieces[data.group][data.rarity].push_back(data.piece);
+            if (data.piece) {
+                if (auto armor = data.piece->As<RE::TESObjectARMO>()) c->pieces[data.group][data.rarity].push_back(armor);
+                else if (auto weap = data.piece->As<RE::TESObjectWEAP>())
+                    c->weapons[data.group][data.rarity].push_back(weap);
+            }
             if (!data.set.empty()) c->sets[data.group][data.rarity].push_back(&data.set);
         }
     }

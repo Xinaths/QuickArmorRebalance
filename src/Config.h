@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Data.h"
+
 #define PATH_ROOT "Data/SKSE/Plugins/" PLUGIN_NAME "/"
 #define PATH_CONFIGS "config/"
 #define PATH_CHANGES "changes/"
@@ -18,7 +20,9 @@ namespace QuickArmorRebalance {
     struct RebalanceCurveNode {
         using Tree = std::vector<RebalanceCurveNode>;
 
-        int slot = 0;
+        ArmorSlots GetSlots() const { return 1 << (slot - 30); }
+
+        ArmorSlot slot = 0;
         int weight = 0;
         Tree children;
     };
@@ -27,22 +31,41 @@ namespace QuickArmorRebalance {
         std::string name;
         LootDistGroup* loot = nullptr;
         std::set<RE::TESObjectARMO*> items;
+        std::set<RE::TESObjectWEAP*> weaps;
+        std::set<RE::TESAmmo*> ammo;
+
+        RE::TESObjectWEAP* FindMatching(RE::TESObjectWEAP* w) const;
+        RE::TESAmmo* FindMatching(RE::TESAmmo* w) const;
     };
 
     struct ArmorChangeParams {
-        std::vector<RE::TESObjectARMO*> items;
+        std::vector<RE::TESBoundObject*> items;
 
         BaseArmorSet* armorSet = nullptr;
         RebalanceCurveNode::Tree* curve = nullptr;
 
+        struct SliderPair {
+            bool bModify = true;
+            float fScale = 100.0f;
+        };
+
         bool isWornArmor = false;
+
         bool bModifyKeywords = true;
-        bool bModifyArmor = true;
-        float fArmorScale = 100.0f;
-        bool bModifyValue = true;
-        float fValueScale = 100.0f;
-        bool bModifyWeight = true;
-        float fWeightScale = 100.0f;
+
+        struct {
+            SliderPair rating;
+            SliderPair weight;
+        } armor;
+
+        struct {
+            SliderPair damage;
+            SliderPair weight;
+            SliderPair speed;
+            SliderPair stagger;
+        } weapon;
+
+        SliderPair value;
 
         struct RecipeOptions {
             bool bModify = true;
@@ -76,6 +99,10 @@ namespace QuickArmorRebalance {
         bool bModifyArmorRating = true;
         bool bModifyValue = true;
         bool bModifyWeight = true;
+        bool bModifyWeapDamage = true;
+        bool bModifyWeapWeight = true;
+        bool bModifyWeapSpeed = true;
+        bool bModifyWeapStagger = true;
 
         RecipePermissions crafting;
         RecipePermissions temper;
@@ -88,9 +115,14 @@ namespace QuickArmorRebalance {
 
         void Save();
 
+        void AddUserBlacklist(RE::TESFile* mod);
+
         std::set<const RE::TESFile*> blacklist;
         std::set<RE::BGSKeyword*> kwSet;
         std::set<RE::BGSKeyword*> kwSlotSpecSet;
+
+        std::set<RE::BGSKeyword*> kwSetWeap;
+        std::set<RE::BGSKeyword*> kwSetWeapTypes;
 
         std::vector<std::pair<std::string, RebalanceCurveNode::Tree>> curves;
         std::vector<BaseArmorSet> armorSets;
@@ -99,7 +131,7 @@ namespace QuickArmorRebalance {
         unsigned int usedSlotsMask = 0;
         ArmorChangeParams acParams;
 
-        bool bValid = false;
+        std::string strCriticalError = "Not loaded";
 
         bool bCloseConsole = true;
         bool bAutoDeleteGiven = false;
@@ -109,6 +141,7 @@ namespace QuickArmorRebalance {
         bool bNormalizeModDrops = true;
         bool bDisableCraftingRecipesOnRarity = false;
         bool bKeepCraftingBooks = false;
+        bool bEnableRarityNullLoot = false;
 
         float fDropRates = 100.0f;
         int verbosity = spdlog::level::info;
@@ -117,6 +150,8 @@ namespace QuickArmorRebalance {
 
         Permissions permLocal;
         Permissions permShared;
+
+        ArmorSlots slotsWillChange = 0;
     };
 
     extern Config g_Config;

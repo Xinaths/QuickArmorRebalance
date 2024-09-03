@@ -7,9 +7,13 @@
 #include "rapidjson/error/en.h"
 #include "rapidjson/error/error.h"
 #include "rapidjson/filereadstream.h"
+#include "rapidjson/filewritestream.h"
+#include "rapidjson/prettywriter.h"
 #include "rapidjson/stringbuffer.h"
 
 #define SETTINGS_FILE "QuickArmorRebalance.toml"
+
+#define USER_BLACKLIST_FILE "User Blacklist.json"
 
 #include "LootLists.h"
 
@@ -20,6 +24,36 @@ namespace QuickArmorRebalance {
 
     RebalanceCurveNode::Tree LoadCurveNode(const Value& node);
     bool LoadArmorSet(BaseArmorSet& s, const Value& node);
+
+    RE::TESObjectWEAP* BaseArmorSet::FindMatching(RE::TESObjectWEAP* w) const
+    { 
+        for (auto i : weaps) {
+            if (i->GetWeaponType() == w->GetWeaponType())
+            {
+                //2h maces use the same weapon type as 2h axe, so need to actually compare keywords
+                for (unsigned int j = 0; j<i->numKeywords; j++)
+                {
+                    if (g_Config.kwSetWeapTypes.contains(i->keywords[j])) {
+                        if (w->HasKeyword(i->keywords[j])) return i;
+                        break;
+                    }
+                }
+
+            }
+        }
+        return nullptr; 
+    }
+
+    RE::TESAmmo* BaseArmorSet::FindMatching(RE::TESAmmo* w) const {
+        for (auto i : ammo) {
+            if (i->GetRuntimeData().data.flags.none(RE::AMMO_DATA::Flag::kNonBolt) ==
+                w->GetRuntimeData().data.flags.none(RE::AMMO_DATA::Flag::kNonBolt)) {
+                return i;
+            }
+        }
+        return nullptr;
+    }
+
 }
 
 void LoadPermissions(QuickArmorRebalance::Permissions& p, toml::node_view<toml::node> tbl) {
@@ -28,6 +62,10 @@ void LoadPermissions(QuickArmorRebalance::Permissions& p, toml::node_view<toml::
     p.bModifyArmorRating = tbl["modifyArmor"].value_or(true);
     p.bModifyValue = tbl["modifyValue"].value_or(true);
     p.bModifyWeight = tbl["modifyWeight"].value_or(true);
+    p.bModifyWeapDamage = tbl["modifyWeapDamage"].value_or(true);
+    p.bModifyWeapWeight = tbl["modifyWeapWeight"].value_or(true);
+    p.bModifyWeapSpeed = tbl["modifyWeapSpeed"].value_or(true);
+    p.bModifyWeapStagger = tbl["modifyWeapStagger"].value_or(true);
     p.crafting.bModify = tbl["modifyCrafting"].value_or(true);
     p.crafting.bCreate = tbl["createCrafting"].value_or(true);
     p.crafting.bFree = tbl["freeCrafting"].value_or(true);
@@ -60,7 +98,7 @@ bool QuickArmorRebalance::Config::Load() {
     if (!bSuccess) {
         logger::error("Failed to read any config files");
     } else {
-        if (kwSet.empty() || armorSets.empty() || curves.empty() || lootProfiles.empty()) {
+        if (kwSet.empty() || kwSetWeap.empty() || kwSetWeapTypes.empty() || armorSets.empty() || curves.empty() || lootProfiles.empty()) {
             bSuccess = false;
             logger::error("Missing required data, disabling");
         }
@@ -73,9 +111,16 @@ bool QuickArmorRebalance::Config::Load() {
         auto config = toml::parse_file((std::filesystem::current_path() / PATH_ROOT SETTINGS_FILE).generic_string());
         if (config) {
             g_Config.acParams.bModifyKeywords = config["modifyKeywords"].value_or(true);
-            g_Config.acParams.bModifyArmor = config["modifyArmor"].value_or(true);
-            g_Config.acParams.bModifyValue = config["modifyValue"].value_or(true);
-            g_Config.acParams.bModifyWeight = config["modifyWeight"].value_or(true);
+            g_Config.acParams.armor.rating.bModify = config["modifyArmor"].value_or(true);
+            g_Config.acParams.armor.weight.bModify = config["modifyWeight"].value_or(true);
+
+            g_Config.acParams.weapon.damage.bModify = config["modifyWeapDamage"].value_or(true);
+            g_Config.acParams.weapon.weight.bModify = config["modifyWeapWeight"].value_or(true);
+            g_Config.acParams.weapon.speed.bModify = config["modifyWeapSpeed"].value_or(true);
+            g_Config.acParams.weapon.stagger.bModify = config["modifyWeapStagger"].value_or(true);
+            
+
+            g_Config.acParams.value.bModify= config["modifyValue"].value_or(true);
 
             auto armorSet = config["armorset"];
             if (armorSet.is_string()) {
@@ -123,6 +168,7 @@ bool QuickArmorRebalance::Config::Load() {
             g_Config.craftingRarityMax = std::clamp(config["settings"]["craftingraritymax"].value_or(2), 0, 2);
             g_Config.bDisableCraftingRecipesOnRarity = config["settings"]["craftingraritydisable"].value_or(false);
             g_Config.bKeepCraftingBooks = config["settings"]["keepcraftingbooks"].value_or(false);
+            g_Config.bEnableRarityNullLoot = config["settings"]["enforcerarity"].value_or(false);
 
             LoadPermissions(g_Config.permLocal, config["localPermissions"]);
             LoadPermissions(g_Config.permShared, config["sharedPermissions"]);
@@ -141,12 +187,35 @@ bool QuickArmorRebalance::Config::Load() {
 
     ValidateLootConfig();
 
-    return bValid = bSuccess;
+    if (bSuccess)
+        strCriticalError.clear();
+    else
+        strCriticalError = "Failed to load";
+    return bSuccess;
 }
 
 namespace {
     void ConfigFileWarning(std::filesystem::path path, const char* str) {
         logger::warn("{}: {}", path.filename().generic_string(), str);
+    }
+
+    bool LoadKeywords(std::filesystem::path path, const Value& d, const char* field, std::set<RE::BGSKeyword*>& set) {
+        const auto& jsonKeywords = d[field];
+        if (jsonKeywords.IsArray()) {
+            for (const auto& i : jsonKeywords.GetArray()) {
+                if (i.IsString()) {
+                    auto kw = RE::TESForm::LookupByEditorID<RE::BGSKeyword>(i.GetString());
+                    if (kw) {
+                        set.insert(kw);
+                    } else
+                        logger::info("Keyword not found: {}", i.GetString());
+                }
+            }
+            return true;
+        } else
+            ConfigFileWarning(path, std::format("{} expected to be an array", field).c_str());
+        
+        return false;
     }
 }
 
@@ -205,39 +274,19 @@ bool QuickArmorRebalance::Config::LoadFile(std::filesystem::path path) {
     }
 
     if (d.HasMember("keywords")) {
-        const auto& jsonKeywords = d["keywords"];
-        if (jsonKeywords.IsArray()) {
-            for (const auto& i : jsonKeywords.GetArray()) {
-                if (i.IsString()) {
-                    auto kw = RE::TESForm::LookupByEditorID<RE::BGSKeyword>(i.GetString());
-                    if (kw) {
-                        if (!kwSet.contains(kw)) {
-                            kwSet.insert(kw);
-                        }
-                    } else
-                        logger::info("Keyword not found: {}", i.GetString());
-                }
-            }
-        } else
-            ConfigFileWarning(path, "keywords expected to be an array");
+        LoadKeywords(path, d, "keywords", kwSet);
     }
 
     if (d.HasMember("keywordsSlotSpecific")) {
-        const auto& jsonKeywords = d["keywordsSlotSpecific"];
-        if (jsonKeywords.IsArray()) {
-            for (const auto& i : jsonKeywords.GetArray()) {
-                if (i.IsString()) {
-                    auto kw = RE::TESForm::LookupByEditorID<RE::BGSKeyword>(i.GetString());
-                    if (kw) {
-                        if (!kwSlotSpecSet.contains(kw)) {
-                            kwSlotSpecSet.insert(kw);
-                        }
-                    } else
-                        logger::info("Keyword not found: {}", i.GetString());
-                }
-            }
-        } else
-            ConfigFileWarning(path, "keywords expected to be an array");
+        LoadKeywords(path, d, "keywordsSlotSpecific", kwSlotSpecSet);
+    }
+
+    if (d.HasMember("keywordsWeapon")) {
+        LoadKeywords(path, d, "keywordsWeapon", kwSetWeap);
+    }
+
+    if (d.HasMember("keywordsWeaponTypes")) {
+        LoadKeywords(path, d, "keywordsWeaponTypes", kwSetWeapTypes);
     }
 
     if (d.HasMember("curves")) {
@@ -258,7 +307,7 @@ bool QuickArmorRebalance::Config::LoadFile(std::filesystem::path path) {
             for (const auto& i : jsonSets.GetObj()) {
                 BaseArmorSet s;
                 if (LoadArmorSet(s, i.value)) {
-                    if (!s.items.empty() &&
+                    if (!(s.items.empty() && s.weaps.empty() && s.ammo.empty()) &&
                         s.loot) {  // Didn't load correctly, but not a critical failure (probably mod missing)
                         s.name = i.name.GetString();
                         armorSets.push_back(std::move(s));
@@ -330,8 +379,16 @@ bool QuickArmorRebalance::LoadArmorSet(BaseArmorSet& s, const Value& node) {
                     for (const auto& i : node["items"].GetArray()) {
                         if (i.IsString()) {
                             auto str = i.GetString();
-                            if (auto item = FindIn<RE::TESObjectARMO>(mod, str)) {
-                                auto slots = (unsigned int)item->GetSlotMask();
+                            bool bOther;
+                            auto item = FindIn(mod, str, &bOther);
+                            if (!item) {
+                                if (!bOther)
+                                    logger::error("Item not found for set {}", str);
+                                continue;
+                            }
+
+                            if (auto armor = item->As<RE::TESObjectARMO>()) {
+                                auto slots = (unsigned int)armor->GetSlotMask();
                                 slots &= ~kCosmeticSlotMask;  // Most or all hats have an extra hair slot to hide
                                                               // it, but shouldn't be using it
 
@@ -341,11 +398,10 @@ bool QuickArmorRebalance::LoadArmorSet(BaseArmorSet& s, const Value& node) {
                                         slots &= slots ^ (slots - 1);  // Turns off all but lowest bit
                                         if (!(covered & slots)) {
                                             covered |= slots;
-                                            as.items.insert(item);
+                                            as.items.insert(armor);
                                         } else {
                                             logger::error("Item covers armor slot that is already covered {:#010x}",
                                                           item->formID);
-                                            bSuccess = false;
                                         }
                                     } else
                                         logger::error(
@@ -354,11 +410,21 @@ bool QuickArmorRebalance::LoadArmorSet(BaseArmorSet& s, const Value& node) {
                                             item->formID);
                                 } else {
                                     logger::error("Item has no slots {:#010x}", item->formID);
-                                    bSuccess = false;
                                 }
+                            } else if (auto weap = item->As<RE::TESObjectWEAP>()) {
+                                if (!as.FindMatching(weap))
+                                {
+                                    as.weaps.insert(weap);
+                                } else
+                                    logger::error("Duplicate weapon type found for item {}",str);
+                            } 
+                            else if (auto ammo = item->As<RE::TESAmmo>()) {
+                                if (!as.FindMatching(ammo)) {
+                                    as.ammo.insert(ammo);
+                                } else
+                                    logger::error("Duplicate ammo type found for item {}", str);
                             } else {
-                                logger::error("Item not found for set {}", str);
-                                bSuccess = false;
+                                logger::error("Invalid item type {}", str);
                             }
                         }
                     }
@@ -382,8 +448,12 @@ toml::table SavePermissions(const QuickArmorRebalance::Permissions& p) {
         {"loot", p.bDistributeLoot},
         {"modifyKeywords", p.bModifyKeywords},
         {"modifyArmor", p.bModifyArmorRating},
-        {"modifyValue", p.bModifyValue},
         {"modifyWeight", p.bModifyWeight},
+        {"modifyWeapDamage", p.bModifyWeapDamage},
+        {"modifyWeapWeight", p.bModifyWeapWeight},
+        {"modifyWeapSpeed", p.bModifyWeapSpeed},
+        {"modifyWeapStagger", p.bModifyWeapStagger},
+        {"modifyValue", p.bModifyValue},
         {"modifyCrafting", p.crafting.bModify},
         {"createCrafting", p.crafting.bCreate},
         {"freeCrafting", p.crafting.bFree},
@@ -400,9 +470,13 @@ void QuickArmorRebalance::Config::Save() {
 
     auto tbl = toml::table{
         {"modifyKeywords", g_Config.acParams.bModifyKeywords},
-        {"modifyArmor", g_Config.acParams.bModifyArmor},
-        {"modifyValue", g_Config.acParams.bModifyValue},
-        {"modifyWeight", g_Config.acParams.bModifyWeight},
+        {"modifyArmor", g_Config.acParams.armor.rating.bModify},
+        {"modifyWeight", g_Config.acParams.armor.weight.bModify},
+        {"modifyWeapDamage", g_Config.acParams.weapon.damage.bModify},
+        {"modifyWeapWeight", g_Config.acParams.weapon.weight.bModify},
+        {"modifyWeapSpeed", g_Config.acParams.weapon.speed.bModify},
+        {"modifyWeapStagger", g_Config.acParams.weapon.stagger.bModify},
+        {"modifyValue", g_Config.acParams.value.bModify},
         {"armorset", g_Config.acParams.armorSet ? g_Config.acParams.armorSet->name : "error"},
         {"curve", iCurve->first},
         {"temper", toml::table{{"modify", g_Config.acParams.temper.bModify},
@@ -430,6 +504,7 @@ void QuickArmorRebalance::Config::Save() {
              {"craftingraritymax", g_Config.craftingRarityMax},
              {"craftingraritydisable", g_Config.bDisableCraftingRecipesOnRarity},
              {"keepcraftingbooks", g_Config.bKeepCraftingBooks},
+             {"enforcerarity", g_Config.bEnableRarityNullLoot},
          }},
         {"localPermissions", SavePermissions(g_Config.permLocal)},
         {"sharedPermissions", SavePermissions(g_Config.permShared)},
@@ -438,4 +513,72 @@ void QuickArmorRebalance::Config::Save() {
 
     std::ofstream file(std::filesystem::current_path() / PATH_ROOT SETTINGS_FILE);
     file << tbl;
+}
+
+void QuickArmorRebalance::Config::AddUserBlacklist(RE::TESFile* mod) {
+    if (blacklist.contains(mod)) return;
+
+    auto path = std::filesystem::current_path() / PATH_ROOT PATH_CONFIGS USER_BLACKLIST_FILE;
+
+    Document d;
+
+    if (auto fp = std::fopen(path.generic_string().c_str(), "rb")) {
+        char readBuffer[1 << 16];
+        FileReadStream is(fp, readBuffer, sizeof(readBuffer));
+
+        d.ParseStream(is);
+        std::fclose(fp);
+
+        if (d.HasParseError()) {
+            logger::warn("JSON parse error: {} ({})", GetParseError_En(d.GetParseError()), d.GetErrorOffset());
+        }
+    }
+
+    if (!d.IsObject()) {
+        d.SetObject();
+    }
+    auto& al = d.GetAllocator();
+
+    if (d.HasMember("blacklist")) {
+        auto& jsonblacklist = d["blacklist"];
+        if (jsonblacklist.IsArray()) {
+            jsonblacklist.GetArray().PushBack(Value(mod->fileName, al), al);
+        } else
+            d.RemoveMember("blacklist");
+    }
+
+    if (!d.HasMember("blacklist")) {
+        Value jsonblacklist(kArrayType);
+        jsonblacklist.GetArray().PushBack(Value(mod->fileName, al), al);
+        d.AddMember("blacklist", jsonblacklist, al);
+    }
+
+    if (auto fp = std::fopen(path.generic_string().c_str(), "wb")) {
+        char buffer[1 << 16];
+        FileWriteStream ws(fp, buffer, sizeof(buffer));
+        PrettyWriter<FileWriteStream> writer(ws);
+        writer.SetIndent('\t', 1);
+        d.Accept(writer);
+        std::fclose(fp);
+    } else {
+        logger::error("Could not open file to write {}: {}", path.generic_string(), std::strerror(errno));
+
+        g_Config.strCriticalError = std::format(
+            "Unable to write to file {}\n"
+            "Path: {}\n"
+            "Error: {}\n"
+            "Changes cannot be saved so further use of QAR is disabled",
+            path.filename().generic_string(), path.generic_string(), std::strerror(errno));
+    }
+
+    g_Config.blacklist.insert(mod);
+
+    for (auto i = g_Data.sortedMods.begin(); i != g_Data.sortedMods.end(); i++)
+    {
+        if ((*i)->mod == mod) {
+            g_Data.sortedMods.erase(i);
+            break;
+        }
+    }
+
 }

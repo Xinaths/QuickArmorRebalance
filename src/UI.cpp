@@ -8,6 +8,9 @@
 
 using namespace QuickArmorRebalance;
 
+static ImVec2 operator+(const ImVec2& a, const ImVec2& b) { return {a.x + b.x, a.y + b.y}; }
+static ImVec2 operator/(const ImVec2& a, int b) { return {a.x / b, a.y / b}; }
+
 bool StringContainsI(const char* s1, const char* s2) {
     std::string str1(s1), str2(s2);
     std::transform(str1.begin(), str1.end(), str1.begin(), ::tolower);
@@ -15,8 +18,9 @@ bool StringContainsI(const char* s1, const char* s2) {
     return str1.contains(str2);
 }
 
-void MakeTooltip(const char* str) {
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip(str);
+void MakeTooltip(const char* str, bool delay = false) {
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | (delay ? ImGuiHoveredFlags_DelayNormal : 0)))
+        ImGui::SetTooltip(str);
 }
 
 void RightAlign(const char* text) {
@@ -115,6 +119,7 @@ void PermissionsChecklist(const char* id, Permissions& p) {
     ImGui::PushID(id);
     ImGui::Checkbox("Distribute loot", &p.bDistributeLoot);
     ImGui::Checkbox("Modify keywords", &p.bModifyKeywords);
+    ImGui::Checkbox("Modify armor slots", &p.bModifySlots);
     ImGui::Checkbox("Modify armor rating", &p.bModifyArmorRating);
     ImGui::Checkbox("Modify armor weight", &p.bModifyWeight);
     ImGui::Checkbox("Modify weapon damage", &p.bModifyWeapDamage);
@@ -168,9 +173,9 @@ void GetCurrentListItems(ModData* curMod, bool bFilterModified, const char* item
     }
 }
 
-bool WillBeModified(RE::TESBoundObject* i) {
+bool WillBeModified(RE::TESBoundObject* i, ArmorSlots remapped) {
     if (auto armor = i->As<RE::TESObjectARMO>()) {
-        if ((g_Config.slotsWillChange & (ArmorSlots)armor->GetSlotMask()) == 0) return false;
+        if (((remapped | g_Config.slotsWillChange) & (ArmorSlots)armor->GetSlotMask()) == 0) return false;
     } else if (auto weap = i->As<RE::TESObjectWEAP>()) {
         if (!g_Config.acParams.armorSet->FindMatching(weap)) return false;
     } else if (auto ammo = i->As<RE::TESAmmo>()) {
@@ -236,11 +241,23 @@ void QuickArmorRebalance::RenderUI() {
     static HighlightTrack hlConvert;
     static HighlightTrack hlDistributeAs;
     static HighlightTrack hlRarity;
+    static HighlightTrack hlSlots;
 
     auto isInventoryOpen = RE::UI::GetSingleton()->IsItemMenuOpen();
 
     static bool bMenuHovered = false;
+    static bool bSlotWarning = false;
     bool popupSettings = false;
+    bool popupRemapSlots = false;
+
+    ArmorSlots remappedSrc = 0;
+    ArmorSlots remappedTar = 0;
+
+    for (auto i : g_Config.acParams.mapArmorSlots) {
+        remappedSrc |= 1 << i.first;
+        remappedTar |= i.second < 32 ? (1 << i.second) : 0;
+    }
+
 
     ImGuiWindowFlags wndFlags = ImGuiWindowFlags_NoScrollbar;
     if (bMenuHovered) wndFlags |= ImGuiWindowFlags_MenuBar;
@@ -332,7 +349,6 @@ void QuickArmorRebalance::RenderUI() {
                                 }
 
                                 if (ImGui::Selectable(i->mod->fileName, selected)) {
-
                                     if (isCtrlDown && isAltDown && g_Data.modifiedFiles.contains(i->mod)) {
                                         showPopup = true;
                                     }
@@ -351,10 +367,14 @@ void QuickArmorRebalance::RenderUI() {
                                         params.weapon.stagger.fScale = 100.0f;
                                         params.value.fScale = 100.0f;
                                     }
+                                    if (g_Config.bResetSlotRemap) {
+                                        params.mapArmorSlots.clear();
+                                    }
 
                                     g_highlightRound++;
                                 }
-                                if (isCtrlDown && isAltDown && ImGui::IsItemHovered()  && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+                                if (isCtrlDown && isAltDown && ImGui::IsItemHovered() &&
+                                    ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
                                     blacklist = i->mod;
                                 }
 
@@ -429,6 +449,7 @@ void QuickArmorRebalance::RenderUI() {
                                 ImGui::PushID(i.name.c_str());
                                 if (ImGui::Selectable(i.name.c_str(), selected)) params.armorSet = &i;
                                 if (selected) ImGui::SetItemDefaultFocus();
+                                MakeTooltip(i.strContents.c_str(), true);
                                 ImGui::PopID();
                             }
 
@@ -439,7 +460,7 @@ void QuickArmorRebalance::RenderUI() {
                         ImGui::TableNextColumn();
 
                         static HighlightTrack hlApply;
-                        hlApply.Push(hlConvert && hlDistributeAs && hlRarity);
+                        hlApply.Push(hlConvert && hlDistributeAs && hlRarity && hlSlots);
 
                         if (ImGui::Button("Apply changes")) {
                             g_Config.Save();
@@ -450,6 +471,7 @@ void QuickArmorRebalance::RenderUI() {
                             hlConvert.Touch();
                             hlDistributeAs.Touch();
                             hlRarity.Touch();
+                            hlSlots.Touch();
                         }
 
                         hlApply.Pop();
@@ -560,13 +582,15 @@ void QuickArmorRebalance::RenderUI() {
                             }
 
                             const char* tabLabels[] = {"Armor", "Weapons"};
-                            //if (iTabOpen != iTabSelected) ImGui::SetTabItemClosed(tabLabels[iTabSelected]);
+                            // if (iTabOpen != iTabSelected) ImGui::SetTabItemClosed(tabLabels[iTabSelected]);
 
                             iTabSelected = iTabOpen;
 
+                            // Amor tab
                             ImGui::BeginDisabled(!bTabEnabled[iTab]);
-                            if (ImGui::BeginTabItem(tabLabels[iTab], nullptr,
-                                                    bForceSelect && iTabOpen == iTab ? ImGuiTabItemFlags_SetSelected : 0)) {
+                            if (ImGui::BeginTabItem(
+                                    tabLabels[iTab], nullptr,
+                                    bForceSelect && iTabOpen == iTab ? ImGuiTabItemFlags_SetSelected : 0)) {
                                 iTabSelected = iTab;
                                 if (SliderTable()) {
                                     SliderRow("Armor Rating", params.armor.rating);
@@ -581,6 +605,7 @@ void QuickArmorRebalance::RenderUI() {
 
                                 static auto* curCurve = &g_Config.curves[0];
 
+                                ImGui::SetNextItemWidth(220);
                                 if (ImGui::BeginCombo("##Curve", curCurve->first.c_str(),
                                                       ImGuiComboFlags_PopupAlignLeft | ImGuiComboFlags_HeightLarge)) {
                                     for (auto& i : g_Config.curves) {
@@ -594,14 +619,24 @@ void QuickArmorRebalance::RenderUI() {
                                     ImGui::EndCombo();
                                 }
                                 params.curve = &curCurve->second;
+
+                                ImGui::SameLine();
+                                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 40);
+
+                                hlSlots.Push(bSlotWarning);
+                                if (ImGui::Button("Remap Slots")) popupRemapSlots = true;
+                                hlSlots.Pop();
+
                                 ImGui::EndTabItem();
                             }
                             iTab++;
                             ImGui::EndDisabled();
 
+                            // Weapon tab
                             ImGui::BeginDisabled(!bTabEnabled[iTab]);
-                            if (ImGui::BeginTabItem(tabLabels[iTab], nullptr,
-                                                    bForceSelect && iTabOpen == iTab ? ImGuiTabItemFlags_SetSelected : 0)) {
+                            if (ImGui::BeginTabItem(
+                                    tabLabels[iTab], nullptr,
+                                    bForceSelect && iTabOpen == iTab ? ImGuiTabItemFlags_SetSelected : 0)) {
                                 iTabSelected = iTab;
                                 if (SliderTable()) {
                                     SliderRow("Damage", params.weapon.damage);
@@ -619,7 +654,6 @@ void QuickArmorRebalance::RenderUI() {
                             ImGui::EndTabBar();
                             iTabOpen = iTabSelected;
                         }
-
                     }
                     ImGui::EndChild();
                     // ImGui::PopStyleColor();
@@ -732,7 +766,7 @@ void QuickArmorRebalance::RenderUI() {
                         } else if (g_Data.modifiedItemsShared.contains(i)) {
                             ImGui::PushStyleColor(ImGuiCol_Text, colorChangedShared);
                             pop++;
-                        } else if (!WillBeModified(i)) {
+                        } else if (!WillBeModified(i, remappedSrc)) {
                             ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
                             pop++;
                         }
@@ -857,6 +891,18 @@ void QuickArmorRebalance::RenderUI() {
 
                 params.items = std::move(finalItems);
 
+                bSlotWarning = false;
+                for (auto i : params.items) {
+                    if (auto armor = i->As<RE::TESObjectARMO>()) {
+                        auto itemSlots = MapFindOr(g_Data.modifiedArmorSlots, armor, (ArmorSlots)armor->GetSlotMask());
+                        if ((~g_Config.usedSlotsMask) & (~remappedSrc) & itemSlots) {
+                            bSlotWarning = true;
+                            break;
+                        }
+                    }
+                }
+
+
                 ImGui::EndTable();
             }
 
@@ -891,11 +937,13 @@ void QuickArmorRebalance::RenderUI() {
             ImGui::Checkbox("Delete given items after applying changes", &g_Config.bAutoDeleteGiven);
             ImGui::Checkbox("Round weights to 0.1", &g_Config.bRoundWeight);
             ImGui::Checkbox("Reset sliders after changing mods", &g_Config.bResetSliders);
+            ImGui::Checkbox("Reset slot remapping after changing mods", &g_Config.bResetSlotRemap);
             ImGui::Checkbox("Highlight things you may want to look at", &g_Config.bHighlights);
 
             ImGui::Separator();
             ImGui::Checkbox("Enforce loot rarity with empty loot", &g_Config.bEnableRarityNullLoot);
-            MakeTooltip("Example: The subset of items elible for loot has 1 rare item, 0 commons and uncommons\n"
+            MakeTooltip(
+                "Example: The subset of items elible for loot has 1 rare item, 0 commons and uncommons\n"
                 "DISABLED: You will always get that rare item\n"
                 "ENABLED: You will have a 5%% chance at the item, and 95%% chance of nothing");
 
@@ -951,6 +999,197 @@ void QuickArmorRebalance::RenderUI() {
             ImGui::EndPopup();
         }
         if (!bPopupActive) g_Config.Save();
+
+        if (popupRemapSlots) ImGui::OpenPopup("Remap Slots");
+
+        ImGui::SetNextWindowSizeConstraints({300, 500}, {1600, 1000});
+        ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+        bPopupActive = true;
+        if (ImGui::BeginPopupModal("Remap Slots", &bPopupActive, ImGuiWindowFlags_NoScrollbar)) {
+            static int nSlotView = 33;
+            uint64_t slotsUsed = 0;
+
+            std::vector<RE::TESObjectARMO*> lsSlotItems;
+            for (auto i : g_Config.acParams.items) {
+                if (auto armor = i->As<RE::TESObjectARMO>()) {
+                    auto itemSlots = MapFindOr(g_Data.modifiedArmorSlots, armor, (ArmorSlots)armor->GetSlotMask());
+                    slotsUsed |= itemSlots;
+                    if (itemSlots & ((uint64_t)1 << nSlotView)) lsSlotItems.push_back(armor);
+                }
+            }
+
+            const char* strSlotDesc[] = {"Slot 30 - Head",       "Slot 31 - Hair",       "Slot 32 - Body",
+                                         "Slot 33 - Hands",      "Slot 34 - Forearms",   "Slot 35 - Amulet",
+                                         "Slot 36 - Ring",       "Slot 37 - Feet",       "Slot 38 - Calves",
+                                         "Slot 39 - Shield",     "Slot 40 - Tail",       "Slot 41 - Long Hair",
+                                         "Slot 42 - Circlet",    "Slot 43 - Ears",       "Slot 44 - Face",
+                                         "Slot 45 - Neck",       "Slot 46 - Chest",      "Slot 47 - Back",
+                                         "Slot 48 - ???",        "Slot 49 - Pelvis",     "Slot 50 - Decapitated Head",
+                                         "Slot 51 - Decapitate", "Slot 52 - Lower body", "Slot 53 - Leg (right)",
+                                         "Slot 54 - Leg (left)", "Slot 55 - Face2",      "Slot 56 - Chest2",
+                                         "Slot 57 - Shoulder",   "Slot 58 - Arm (left)", "Slot 59 - Arm (right)",
+                                         "Slot 60 - ???",        "Slot 61 - ???",        "<REMOVE SLOT>"};
+
+            nSlotView = 33;
+            if (auto payload = ImGui::GetDragDropPayload()) {
+                if (payload->IsDataType("ARMOR SLOT")) {
+                    nSlotView = *(int*)payload->Data;
+                }
+            }
+
+            ImGui::Text("Click and drag from the original slot on the left to the new replacement slot on the right");
+            ImGui::PushItemWidth(-FLT_MIN);
+
+            if (ImGui::BeginTable("Slot Mapping", 3,
+                                  ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingFixedFit |
+                                      ImGuiTableFlags_PadOuterX | ImGuiTableFlags_PreciseWidths |
+                                      ImGuiTableFlags_ScrollY)) {
+                ImGui::TableSetupColumn("Original");
+                ImGui::TableSetupColumn("Items", ImGuiTableColumnFlags_WidthStretch);
+                ImGui::TableSetupColumn("Remapped");
+
+                ImGui::TableHeadersRow();
+                ImGui::TableNextRow();
+
+                ImVec2 srcCenter[33];
+                ImVec2 tarCenter[33];
+
+                for (int i = 0; i < 33; i++) {
+                    ImGui::TableNextColumn();
+
+                    if (i < 32) {
+                        ImGui::BeginDisabled((((uint64_t)1 << i) & slotsUsed) == 0);
+                        ImGui::BeginGroup();
+
+                        const char* strWarn = nullptr;
+                        int popCol = 0;
+                        if ((((uint64_t)1 << i) & remappedSrc)) {
+                            ImGui::PushStyleColor(ImGuiCol_Text, colorChanged);
+                            popCol++;
+                        } else if ((((uint64_t)1 << i) & slotsUsed & ~(uint64_t)g_Config.usedSlotsMask)) {
+                            ImGui::PushStyleColor(ImGuiCol_Text, colorDeleted);
+                            strWarn =
+                                "Warning: Items in this slot will not be changed unless remapped to another slot.";
+                            popCol++;
+                        } else if ((1 << i) & slotsUsed & (remappedTar & ~remappedSrc)) {
+                            ImGui::PushStyleColor(ImGuiCol_Text, colorDeleted);
+                            strWarn =
+                                "Warning: Other items are being remapped to this slot.\n"
+                                "This will cause conflicts unless this slot is also remapped.";
+                            popCol++;
+                        
+                        }
+
+                        bool bSelected = false;
+                        if (ImGui::Selectable(strSlotDesc[i], &bSelected, 0)) {
+                        }
+
+                        if (strWarn)
+                            MakeTooltip(strWarn);
+
+                        if (ImGui::BeginDragDropSource(0)) {
+                            nSlotView = i;
+                            g_Config.acParams.mapArmorSlots.erase(i);
+                            ImGui::SetDragDropPayload("ARMOR SLOT", &i, sizeof(i));
+                            ImGui::Text(strSlotDesc[i]);
+                            ImGui::EndDragDropSource();
+                        }
+
+                        ImGui::SameLine();
+
+                        float w = ImGui::GetFontSize() * 1 + ImGui::GetStyle().FramePadding.x * 2;
+                        ImGui::SetCursorPosX(ImGui::GetCursorPosX() +
+                                             std::max(0.0f, ImGui::GetContentRegionAvail().x - w));
+                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() -
+                                             4.0f);  // Radio circles are weirdly offset down slightly?
+
+                        ImGui::PushID("Source");
+                        ImGui::PushID(i);
+                        bool bCheckbox = false;
+                        if (ImGui::RadioButton("##ItemCheckbox", &bCheckbox)) {
+                        }
+                        srcCenter[i] = (ImGui::GetItemRectMin() + ImGui::GetItemRectMax()) / 2;
+                        ImGui::PopID();
+                        ImGui::PopID();
+                        ImGui::PopStyleColor(popCol);
+
+                        ImGui::EndGroup();
+                        if (ImGui::IsItemHovered()) nSlotView = i;
+
+                        ImGui::EndDisabled();
+                    }
+
+                    ImGui::TableNextColumn();
+                    if (i < lsSlotItems.size()) ImGui::Text(lsSlotItems[i]->GetName());
+
+                    ImGui::TableNextColumn();
+                    auto bDisabled = i != 32 && ((1 << i) & g_Config.usedSlotsMask) == 0;
+                    ImGui::BeginDisabled(bDisabled);
+                    ImGui::BeginGroup();
+
+                    bool bWarn = false;
+
+                    int popCol = 0;
+                    if ((((uint64_t)1 << i) & slotsUsed & (remappedTar & ~remappedSrc))) {
+                        ImGui::PushStyleColor(ImGuiCol_Text, colorDeleted);
+                        bWarn = true;
+                        popCol++;
+                    } else if ((((uint64_t)1 << i) & remappedTar)) {
+                        ImGui::PushStyleColor(ImGuiCol_Text, colorChanged);
+                        popCol++;
+                    }
+
+                    ImGui::PushID("Target");
+                    ImGui::PushID(i);
+                    bool bCheckbox = false;
+                    bool bSelected = false;
+                    if (ImGui::Selectable("##Select", &bSelected, 0)) {
+                    }
+                    if (bWarn)
+                        MakeTooltip(
+                            "Warning: Items are being remapped to this slot, but other items are already using this "
+                            "slot.");
+
+                    if (!bDisabled && ImGui::BeginDragDropTarget()) {
+                        if (auto payload = ImGui::AcceptDragDropPayload("ARMOR SLOT")) {
+                            g_Config.acParams.mapArmorSlots[*(int*)payload->Data] = i;
+                        }
+                        ImGui::EndDragDropTarget();
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::RadioButton(strSlotDesc[i], &bCheckbox)) {
+                    }
+                    tarCenter[i] = (ImGui::GetItemRectMin() + ImGui::GetItemRectMax()) / 2;
+                    tarCenter[i].x = ImGui::GetItemRectMin().x + ImGui::GetItemRectMax().y -
+                                     tarCenter[i].y;  // Want center of the circle
+                    ImGui::PopID();
+                    ImGui::PopID();
+
+                    ImGui::PopStyleColor(popCol);
+                    ImGui::EndGroup();
+
+                    ImGui::EndDisabled();
+                    if (ImGui::IsItemHovered()) nSlotView = i;
+                }
+
+                ImGui::EndTable();
+
+                constexpr auto lineWidth = 3.0f;
+                auto draw = ImGui::GetWindowDrawList();
+
+                if (auto payload = ImGui::GetDragDropPayload()) {
+                    if (payload->IsDataType("ARMOR SLOT")) {
+                        draw->AddLine(srcCenter[*(int*)payload->Data], ImGui::GetMousePos(), colorChanged, lineWidth);
+                    }
+                }
+
+                for (auto i : g_Config.acParams.mapArmorSlots) {
+                    draw->AddLine(srcCenter[i.first], tarCenter[i.second], colorChanged, lineWidth);
+                }
+            }
+
+            ImGui::EndPopup();
+        }
     }
 
     ImGuiIntegration::BlockInput(!ImGui::IsWindowCollapsed(), ImGui::IsItemHovered());

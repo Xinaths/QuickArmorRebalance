@@ -59,6 +59,7 @@ namespace QuickArmorRebalance {
 void LoadPermissions(QuickArmorRebalance::Permissions& p, toml::node_view<toml::node> tbl) {
     p.bDistributeLoot = tbl["loot"].value_or(true);
     p.bModifyKeywords = tbl["modifyKeywords"].value_or(true);
+    p.bModifySlots = tbl["modifySlots"].value_or(true);
     p.bModifyArmorRating = tbl["modifyArmor"].value_or(true);
     p.bModifyValue = tbl["modifyValue"].value_or(true);
     p.bModifyWeight = tbl["modifyWeight"].value_or(true);
@@ -169,6 +170,7 @@ bool QuickArmorRebalance::Config::Load() {
             g_Config.bDisableCraftingRecipesOnRarity = config["settings"]["craftingraritydisable"].value_or(false);
             g_Config.bKeepCraftingBooks = config["settings"]["keepcraftingbooks"].value_or(false);
             g_Config.bEnableRarityNullLoot = config["settings"]["enforcerarity"].value_or(false);
+            g_Config.bResetSlotRemap = config["settings"]["resetslotremap"].value_or(true);
 
             LoadPermissions(g_Config.permLocal, config["localPermissions"]);
             LoadPermissions(g_Config.permShared, config["sharedPermissions"]);
@@ -439,6 +441,23 @@ bool QuickArmorRebalance::LoadArmorSet(BaseArmorSet& s, const Value& node) {
         }
     }
 
+    std::vector<const char*> names;
+    for (auto i : as.items) names.push_back(i->GetName());
+    for (auto i : as.weaps) names.push_back(i->GetName());
+    for (auto i : as.ammo) names.push_back(i->GetName());
+
+    std::sort(names.begin(), names.end(), [](const char* a, const char* b) {
+        return _stricmp(a,b) < 0;
+    });
+    size_t nLen = 0;
+    for (auto i : names) nLen += strlen(i) + 1;
+
+    as.strContents.reserve(nLen);
+    for (auto i : names) {
+        if (!as.strContents.empty()) as.strContents.append("\n");
+        as.strContents.append(i);
+    }        
+
     s = std::move(as);
     return bSuccess;
 }
@@ -447,6 +466,7 @@ toml::table SavePermissions(const QuickArmorRebalance::Permissions& p) {
     return toml::table{
         {"loot", p.bDistributeLoot},
         {"modifyKeywords", p.bModifyKeywords},
+        {"modifySlots", p.bModifySlots},
         {"modifyArmor", p.bModifyArmorRating},
         {"modifyWeight", p.bModifyWeight},
         {"modifyWeapDamage", p.bModifyWeapDamage},
@@ -505,6 +525,7 @@ void QuickArmorRebalance::Config::Save() {
              {"craftingraritydisable", g_Config.bDisableCraftingRecipesOnRarity},
              {"keepcraftingbooks", g_Config.bKeepCraftingBooks},
              {"enforcerarity", g_Config.bEnableRarityNullLoot},
+             {"resetslotremap", g_Config.bResetSlotRemap},
          }},
         {"localPermissions", SavePermissions(g_Config.permLocal)},
         {"sharedPermissions", SavePermissions(g_Config.permShared)},

@@ -29,6 +29,7 @@ namespace QuickArmorRebalance {
 
     struct BaseArmorSet {
         std::string name;
+        std::string strContents;
         LootDistGroup* loot = nullptr;
         std::set<RE::TESObjectARMO*> items;
         std::set<RE::TESObjectWEAP*> weaps;
@@ -83,6 +84,8 @@ namespace QuickArmorRebalance {
         bool bDistAsPieces = true;
         bool bMatchSetPieces = false;
 
+        std::map<int, int> mapArmorSlots;
+
         mutable bool bMixedSetDone = false;
     };
 
@@ -96,6 +99,7 @@ namespace QuickArmorRebalance {
 
         bool bDistributeLoot = true;
         bool bModifyKeywords = true;
+        bool bModifySlots = true;
         bool bModifyArmorRating = true;
         bool bModifyValue = true;
         bool bModifyWeight = true;
@@ -142,6 +146,7 @@ namespace QuickArmorRebalance {
         bool bDisableCraftingRecipesOnRarity = false;
         bool bKeepCraftingBooks = false;
         bool bEnableRarityNullLoot = false;
+        bool bResetSlotRemap = true;
 
         float fDropRates = 100.0f;
         int verbosity = spdlog::level::info;

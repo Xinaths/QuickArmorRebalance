@@ -28,10 +28,12 @@ bool QuickArmorRebalance::IsValidItem(RE::TESBoundObject* i) {
     if (auto armor = i->As<RE::TESObjectARMO>()) {
         if (!armor->GetFullName() || armor->GetFullNameLength() <= 0) return false;
 
+        /*
         if (((unsigned int)armor->GetSlotMask() & g_Config.usedSlotsMask) == 0) {
             // logger::debug("Skipping item for no valid slots {}", i->GetFullName());
             return false;
         }
+        */
     } else if (auto weap = i->As<RE::TESObjectWEAP>()) {
         if (!weap->GetFullName() || weap->GetFullNameLength() <= 0) return false;
 

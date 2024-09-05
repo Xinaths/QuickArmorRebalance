@@ -5,6 +5,14 @@ namespace QuickArmorRebalance
     using ArmorSlot = unsigned int;
     using ArmorSlots = unsigned int;
 
+    static auto MapFindOr(const auto map, const auto val, const auto r) {
+        auto it = map.find(val);
+        if (it == map.end())
+            return r;
+        else
+            return it->second;
+    }
+
     static RE::TESForm* FindIn(const RE::TESFile* mod, const char* str, bool* pOtherFile = nullptr) {
         if (pOtherFile) *pOtherFile = false;
         if (!strncmp(str, "0x", 2)) {
@@ -113,6 +121,8 @@ namespace QuickArmorRebalance
         std::set<RE::TESBoundObject*> modifiedItemsShared;
         std::map<RE::TESBoundObject*, RE::BGSConstructibleObject*> temperRecipe;
         std::map<RE::TESBoundObject*, RE::BGSConstructibleObject*> craftRecipe;
+
+        std::map<RE::TESObjectARMO*, ArmorSlots> modifiedArmorSlots;
 
         std::unique_ptr<ModLootData> loot;
         std::map<std::string, LootDistGroup> distGroups;

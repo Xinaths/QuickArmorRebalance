@@ -178,6 +178,9 @@ void QuickArmorRebalance::MakeArmorChanges(const ArmorChangeParams& params) {
     Document doc;
     auto& al = doc.GetAllocator();
 
+    ArmorSlots remap = 0;
+    for (auto i : params.mapArmorSlots) remap |= (1<<i.first);
+
     std::map<RE::TESFile*, Value> mapFileChanges;
 
     for (auto i : params.items) {
@@ -185,7 +188,17 @@ void QuickArmorRebalance::MakeArmorChanges(const ArmorChangeParams& params) {
             SlotRelativeWeight* itemBase = nullptr;
             int weight = 0;
 
-            unsigned int slots = (unsigned int)armor->GetSlotMask();
+            ArmorSlots slots = (ArmorSlots)armor->GetSlotMask();
+            ArmorSlots slotsOrig = MapFindOr(g_Data.modifiedArmorSlots, armor, slots); //Need to retrieve the original slots, or double-applying will loose data
+
+            ArmorSlots slotsRemapped = slots;
+            if (slots & remap) {
+                for (auto s : params.mapArmorSlots) {
+                    if (slots & (1 << s.first)) //Test on different data then the changes, so that changes aren't chained together
+                        slotsRemapped = (slotsRemapped & ~(1 << s.first)) | (s.second < 32 ? (1 << s.second) : 0);
+                }
+                slots = slotsRemapped;
+            }
 
             while (slots) {
                 unsigned long slot;
@@ -212,6 +225,7 @@ void QuickArmorRebalance::MakeArmorChanges(const ArmorChangeParams& params) {
                 AddModification("armor", params.armor.rating, changes, al);
                 AddModification("weight", params.armor.weight, changes, al);
                 AddModification("value", params.value, changes, al);
+                if (slotsRemapped != slotsOrig) changes.AddMember("slots", slotsRemapped, al);
 
                 if (params.temper.bModify) {
                     Value recipe(kObjectType);
@@ -531,6 +545,15 @@ bool QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, RE::FormID id, c
                                             [=](float f) { return std::max(1, (int)(weight * f)); }))
             return false;
 
+        if (perm.bModifySlots && changes.HasMember("slots")) {
+            auto& jsonOption = changes["slots"];
+            if (!jsonOption.IsUint()) return false;
+
+            if (!g_Data.modifiedArmorSlots.contains(armor))  // Don't overwrite previous
+                g_Data.modifiedArmorSlots[armor] = armor->bipedModelData.bipedObjectSlots.underlying();
+            armor->bipedModelData.bipedObjectSlots = (RE::BIPED_MODEL::BipedObjectSlot)jsonOption.GetUint();
+        }
+
         if (perm.bModifyKeywords && changes.HasMember("keywords")) {
             auto& jsonOption = changes["keywords"];
             if (!jsonOption.IsBool()) return false;
@@ -763,7 +786,8 @@ void ::ClearRecipe(RE::BGSConstructibleObject* tar) {
             if (QuickArmorRebalance::g_Config.bKeepCraftingBooks &&
                 head->data.functionData.function == RE::FUNCTION_DATA::FunctionID::kGetItemCount) {
                 head->next = book;
-                book = head;
+                head->data.flags.isOR = false;
+                book = head;                
             } else
                 delete head;
 
@@ -796,14 +820,22 @@ void ::ReplaceRecipe(RE::BGSConstructibleObject* tar, const RE::BGSConstructible
     }
     {  // Conditions
         const auto& srcConds = src->conditions;
-        auto& conds = tar->conditions;
+
+        auto prev = tar->conditions.head;
+        if (prev) while (prev->next) prev = prev->next;
 
         if (srcConds.head) {
             for (auto psrc = srcConds.head; psrc; psrc = psrc->next) {
                 auto p = new RE::TESConditionItem();
+
+                if (!prev)
+                    tar->conditions.head = p;
+                else
+                    prev->next = p;
+
                 p->data = psrc->data;
-                p->next = conds.head;
-                conds.head = p;
+                p->next = nullptr;
+                prev = p;
             }
         }
     }

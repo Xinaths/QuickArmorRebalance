@@ -117,13 +117,19 @@ struct DXGIPresentHook {
     static void thunk(std::uint32_t a_p1) {
         func(a_p1);
 
+        static int nSkippedFrames = 0;
+
         ImGui_ImplWin32_NewFrame(); //Let imgui clear out any queued messages and whatnot
-        if (!g_showImGui) return;
+
+        //Its best to skip the stuff below if possible, but there's a situation where input messages are queued and not processed until frames are rendered
+        //This forces it to update once in a while to clear out anything queued
+        if (!g_showImGui && nSkippedFrames++<300) return;
+        nSkippedFrames = 0;
 
         ImGui_ImplDX11_NewFrame();
         ImGui::NewFrame();
 
-        if (g_RenderCallback) g_RenderCallback();
+        if (g_showImGui && g_RenderCallback) g_RenderCallback();
 
         ImGui::Render();
         ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());

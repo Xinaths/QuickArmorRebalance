@@ -111,6 +111,7 @@ bool QuickArmorRebalance::Config::Load() {
 
         auto config = toml::parse_file((std::filesystem::current_path() / PATH_ROOT SETTINGS_FILE).generic_string());
         if (config) {
+            g_Config.acParams.bMerge = config["merge"].value_or(true);
             g_Config.acParams.bModifyKeywords = config["modifyKeywords"].value_or(true);
             g_Config.acParams.armor.rating.bModify = config["modifyArmor"].value_or(true);
             g_Config.acParams.armor.weight.bModify = config["modifyWeight"].value_or(true);
@@ -489,6 +490,7 @@ void QuickArmorRebalance::Config::Save() {
     if (iCurve == g_Config.curves.end()) iCurve = g_Config.curves.begin();
 
     auto tbl = toml::table{
+        {"merge", g_Config.acParams.bMerge},
         {"modifyKeywords", g_Config.acParams.bModifyKeywords},
         {"modifyArmor", g_Config.acParams.armor.rating.bModify},
         {"modifyWeight", g_Config.acParams.armor.weight.bModify},

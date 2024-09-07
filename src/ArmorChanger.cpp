@@ -371,8 +371,26 @@ void QuickArmorRebalance::MakeArmorChanges(const ArmorChangeParams& params) {
         if (!i.second.IsObject()) continue;
 
         for (auto& j : i.second.GetObj()) {
-            doc.RemoveMember(j.name);  // it doesn't automaticaly remove duplicates
-            doc.AddMember(j.name, j.value, al);
+            if (!params.bMerge) {
+                doc.RemoveMember(j.name);  // it doesn't automaticaly remove duplicates
+                doc.AddMember(j.name, j.value, al);
+            } else {
+                if (doc.HasMember(j.name)) {
+                    auto& prev = doc[j.name];
+                    if (!prev.IsObject())
+                    {
+                        doc.RemoveMember(j.name);  
+                        doc.AddMember(j.name, j.value, al);
+                        continue;
+                    }
+
+                    for (auto& m : j.value.GetObj()) {
+                        prev.RemoveMember(m.name);
+                        prev.AddMember(m.name, m.value, al);
+                    }
+                } else
+                    doc.AddMember(j.name, j.value, al);
+            }
         }
 
         if (auto fp = std::fopen(path.generic_string().c_str(), "wb")) {

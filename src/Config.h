@@ -83,6 +83,7 @@ namespace QuickArmorRebalance {
         bool bDistAsSet = true;
         bool bDistAsPieces = true;
         bool bMatchSetPieces = false;
+        bool bMerge = true;
 
         std::map<int, int> mapArmorSlots;
 

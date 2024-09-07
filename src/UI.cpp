@@ -8,6 +8,18 @@
 
 using namespace QuickArmorRebalance;
 
+const char* strSlotDesc[] = {"Slot 30 - Head",       "Slot 31 - Hair",       "Slot 32 - Body",
+                             "Slot 33 - Hands",      "Slot 34 - Forearms",   "Slot 35 - Amulet",
+                             "Slot 36 - Ring",       "Slot 37 - Feet",       "Slot 38 - Calves",
+                             "Slot 39 - Shield",     "Slot 40 - Tail",       "Slot 41 - Long Hair",
+                             "Slot 42 - Circlet",    "Slot 43 - Ears",       "Slot 44 - Face",
+                             "Slot 45 - Neck",       "Slot 46 - Chest",      "Slot 47 - Back",
+                             "Slot 48 - ???",        "Slot 49 - Pelvis",     "Slot 50 - Decapitated Head",
+                             "Slot 51 - Decapitate", "Slot 52 - Lower body", "Slot 53 - Leg (right)",
+                             "Slot 54 - Leg (left)", "Slot 55 - Face2",      "Slot 56 - Chest2",
+                             "Slot 57 - Shoulder",   "Slot 58 - Arm (left)", "Slot 59 - Arm (right)",
+                             "Slot 60 - ???",        "Slot 61 - ???",        "<REMOVE SLOT>"};
+
 static ImVec2 operator+(const ImVec2& a, const ImVec2& b) { return {a.x + b.x, a.y + b.y}; }
 static ImVec2 operator/(const ImVec2& a, int b) { return {a.x / b, a.y / b}; }
 
@@ -22,6 +34,65 @@ void MakeTooltip(const char* str, bool delay = false) {
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | (delay ? ImGuiHoveredFlags_DelayNormal : 0)))
         ImGui::SetTooltip(str);
 }
+
+
+struct ItemFilter {
+    char nameFilter[200]{""};
+
+    enum TypeFilter { ItemType_All, ItemType_Armor, ItemType_Weapon, ItemType_Ammo };
+
+    int nType = 0;
+
+    enum SlotFilterMode { SlotsAny, SlotsAll, SlotsNot };
+
+    int slotMode = SlotsAny;
+    ArmorSlots slots = 0;
+
+    bool bUnmodified = false;
+
+    bool Pass(RE::TESBoundObject* obj) const {
+        if (bUnmodified && (g_Data.modifiedItems.contains(obj) || g_Data.modifiedItemsShared.contains(obj))) return false;
+        if (*nameFilter && !StringContainsI(obj->GetName(), nameFilter)) return false;
+
+        if (nType) {
+            switch (nType) {
+                case ItemType_Armor:
+                    if (!obj->As<RE::TESObjectARMO>()) return false;
+                    break;
+                case ItemType_Weapon:
+                    if (!obj->As<RE::TESObjectWEAP>()) return false;
+                    break;
+                case ItemType_Ammo:
+                    if (!obj->As<RE::TESAmmo>()) return false;
+                    break;
+            }
+        }
+
+        if (slots) {
+            if (auto armor = obj->As<RE::TESObjectARMO>())
+            {
+                auto s = MapFindOr(g_Data.modifiedArmorSlots, armor, (ArmorSlots)armor->GetSlotMask());
+                switch (slotMode) {
+                    case SlotsAny:
+                        if ((s & slots) == 0) return false;
+                        break;
+                    case SlotsAll:
+                        if ((s & slots) != slots) return false;
+                        break;
+                    case SlotsNot:
+                        if ((s & slots) != 0) return false;
+                        break;
+                }
+            } else
+                return false;
+        }
+
+        return true;
+    }
+
+};
+
+
 
 void RightAlign(const char* text) {
     float w = ImGui::CalcTextSize(text).x + ImGui::GetStyle().FramePadding.x * 2.f;
@@ -136,30 +207,23 @@ void PermissionsChecklist(const char* id, Permissions& p) {
     ImGui::PopID();
 }
 
-void GetCurrentListItems(ModData* curMod, bool bFilterModified, const char* itemFilter) {
+void GetCurrentListItems(ModData* curMod, bool bFilterModified, const ItemFilter& filter) {
     ArmorChangeParams& params = g_Config.acParams;
     params.items.clear();
     if (curMod) {
         for (auto i : curMod->items) {
-            if (bFilterModified && (g_Data.modifiedItems.contains(i) || g_Data.modifiedItemsShared.contains(i)))
-                continue;
-            if (*itemFilter && !StringContainsI(i->GetName(), itemFilter)) continue;
+            if (!filter.Pass(i)) continue;
 
             params.items.push_back(i);
         }
     } else {
         if (auto player = RE::PlayerCharacter::GetSingleton()) {
             for (auto& item : player->GetInventory()) {
-                if (item.second.second->IsWorn() && item.first->IsArmor()) {
-                    if (auto i = item.first->As<RE::TESObjectARMO>()) {
-                        if (!IsValidItem(i)) continue;
-                        if (bFilterModified &&
-                            (g_Data.modifiedItems.contains(i) || g_Data.modifiedItemsShared.contains(i)))
-                            continue;
-                        if (*itemFilter && !StringContainsI(i->GetFullName(), itemFilter)) continue;
+                if (item.second.second->IsWorn()) {
+                    if (!IsValidItem(item.first)) continue;
+                    if (!filter.Pass(item.first)) continue;
 
-                        params.items.push_back(i);
-                    }
+                    params.items.push_back(item.first);
                 }
             }
         }
@@ -224,6 +288,7 @@ void QuickArmorRebalance::RenderUI() {
     const auto colorDeleted = IM_COL32(255, 0, 0, 255);
 
     const char* rarity[] = {"Common", "Uncommon", "Rare", nullptr};
+    const char* itemTypes[] = {"Any", "Armor", "Weapons", "Ammo", nullptr};
 
     bool isActive = true;
     static std::set<RE::TESBoundObject*> selectedItems;
@@ -237,6 +302,8 @@ void QuickArmorRebalance::RenderUI() {
     const bool isShiftDown = ImGui::IsKeyDown(ImGuiKey_LeftShift) || ImGui::IsKeyDown(ImGuiKey_RightShift);
     const bool isCtrlDown = ImGui::IsKeyDown(ImGuiKey_LeftCtrl) || ImGui::IsKeyDown(ImGuiKey_RightCtrl);
     const bool isAltDown = ImGui::IsKeyDown(ImGuiKey_LeftAlt) || ImGui::IsKeyDown(ImGuiKey_RightAlt);
+
+    static ItemFilter filter;
 
     static HighlightTrack hlConvert;
     static HighlightTrack hlDistributeAs;
@@ -257,7 +324,6 @@ void QuickArmorRebalance::RenderUI() {
         remappedSrc |= 1 << i.first;
         remappedTar |= i.second < 32 ? (1 << i.second) : 0;
     }
-
 
     ImGuiWindowFlags wndFlags = ImGuiWindowFlags_NoScrollbar;
     if (bMenuHovered) wndFlags |= ImGuiWindowFlags_MenuBar;
@@ -296,7 +362,8 @@ void QuickArmorRebalance::RenderUI() {
             }
             bMenuHovered |= ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenOverlapped);
 
-            ImGui::PushItemWidth(-FLT_MIN);
+            //ImGui::PushItemWidth(-FLT_MIN);
+            ImGui::SetNextItemWidth(-FLT_MIN);
 
             if (ImGui::BeginTable("WindowTable", 2, ImGuiTableFlags_Resizable | ImGuiTableFlags_BordersInnerV)) {
                 ImGui::TableSetupColumn("LeftCol", ImGuiTableColumnFlags_WidthStretch);
@@ -304,14 +371,14 @@ void QuickArmorRebalance::RenderUI() {
                                         0.25f * ImGui::GetContentRegionAvail().x);
 
                 static bool bFilterModified = false;
-                static char itemFilter[200] = "";
                 bool showPopup = false;
 
                 ImGui::TableNextColumn();
                 if (ImGui::BeginChild("LeftPane")) {
-                    ImGui::PushItemWidth(-FLT_MIN);
+                    //ImGui::PushItemWidth(-FLT_MIN);
 
-                    if (ImGui::BeginTable("Mod Table", 3, ImGuiTableFlags_SizingFixedFit)) {
+                    //ImGui::SetNextItemWidth(-FLT_MIN);
+                    if (ImGui::BeginTable("Mod Table", 3, ImGuiTableFlags_SizingFixedFit, {-FLT_MIN, 0.0f})) {
                         ImGui::TableSetupColumn("ModCol1");
                         ImGui::TableSetupColumn("ModCol2", ImGuiTableColumnFlags_WidthStretch);
                         ImGui::TableSetupColumn("ModCol3");
@@ -420,13 +487,56 @@ void QuickArmorRebalance::RenderUI() {
 
                     ImGui::Separator();
 
-                    ImGui::Text("Filter Items");
-                    ImGui::Indent();
-                    ImGui::Text("Name contains");
+                    ImGui::Text("Filter");
+                    //ImGui::Indent();
+                    // ImGui::Text("Name contains");
                     ImGui::SameLine();
-                    if (ImGui::InputText("##ItemFilter", itemFilter, sizeof(itemFilter) - 1)) g_highlightRound++;
-                    if (ImGui::Checkbox("Hide modified items", &bFilterModified)) g_highlightRound++;
-                    ImGui::Unindent();
+                    ImGui::SetNextItemWidth(200);
+                    if (ImGui::InputTextWithHint("##ItemFilter", "by Name", filter.nameFilter, sizeof(filter.nameFilter) - 1))
+                        g_highlightRound++;
+
+                    ImGui::SameLine();
+                    ImGui::SetNextItemWidth(80);
+                    if (ImGui::BeginCombo("##Typefilter", filter.nType ? itemTypes[filter.nType] : "by Type")) {                                                                                               
+                        for (int i = 0; itemTypes[i]; i++) {
+                            if (ImGui::Selectable(itemTypes[i])) {
+                                filter.nType = i;
+                            }
+                        }
+                        ImGui::EndCombo();
+                    }
+
+                    ImGui::SameLine();
+                    ImGui::SetNextItemWidth(120);
+                    if (ImGui::BeginCombo("##Slotfilter", "by Slot", ImGuiComboFlags_HeightLargest)) {
+                        if (ImGui::Selectable("Clear filter")) {
+                            filter.slots = 0;                            
+                        }
+                        ImGui::RadioButton("Any of", &filter.slotMode, ItemFilter::SlotFilterMode::SlotsAny);
+                        ImGui::RadioButton("All of", &filter.slotMode, ItemFilter::SlotFilterMode::SlotsAll);
+                        ImGui::RadioButton("Not", &filter.slotMode, ItemFilter::SlotFilterMode::SlotsNot);
+
+                        if (ImGui::BeginTable("##SlotFilterTable", 4)) {
+                            for (int i = 0; i < 32; i++) {
+                                bool bCheck = filter.slots & (1<<i);
+                                ImGui::TableNextColumn();                        
+                                if (ImGui::Checkbox(strSlotDesc[i], &bCheck)) {
+                                    if (bCheck)
+                                        filter.slots |= (1 << i);
+                                    else
+                                        filter.slots &= ~(1 << i);
+                                }
+                            }
+                            ImGui::EndTable();
+                        }
+
+
+                        ImGui::EndCombo();
+                    }
+
+                    ImGui::SameLine();
+                    if (ImGui::Checkbox("Unmodified", &bFilterModified)) g_highlightRound++;
+                    //ImGui::Unindent();
 
                     if (ImGui::BeginTable("Convert Table", 3, ImGuiTableFlags_SizingFixedFit)) {
                         ImGui::TableSetupColumn("ConvertCol1");
@@ -441,12 +551,13 @@ void QuickArmorRebalance::RenderUI() {
 
                         ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
 
+                        int nArmorSet = 0;
                         hlConvert.Push();
                         if (ImGui::BeginCombo("##ConvertTo", params.armorSet->name.c_str(),
                                               ImGuiComboFlags_PopupAlignLeft | ImGuiComboFlags_HeightLarge)) {
                             for (auto& i : g_Config.armorSets) {
                                 bool selected = params.armorSet == &i;
-                                ImGui::PushID(i.name.c_str());
+                                ImGui::PushID(nArmorSet++);
                                 if (ImGui::Selectable(i.name.c_str(), selected)) params.armorSet = &i;
                                 if (selected) ImGui::SetItemDefaultFocus();
                                 MakeTooltip(i.strContents.c_str(), true);
@@ -458,6 +569,13 @@ void QuickArmorRebalance::RenderUI() {
                         hlConvert.Pop();
 
                         ImGui::TableNextColumn();
+
+                        ImGui::Checkbox("Merge", &g_Config.acParams.bMerge);
+                        MakeTooltip(
+                            "When enabled, merge will keep any previous changes not currently being modified.\n"
+                            "Enable only the fields you want to be changing.\n"
+                            "Disable this to clear all previous changes.");
+                        ImGui::SameLine();
 
                         static HighlightTrack hlApply;
                         hlApply.Push(hlConvert && hlDistributeAs && hlRarity && hlSlots);
@@ -479,7 +597,7 @@ void QuickArmorRebalance::RenderUI() {
                         ImGui::EndTable();
                     }
 
-                    GetCurrentListItems(curMod, bFilterModified, itemFilter);
+                    GetCurrentListItems(curMod, bFilterModified, filter);
                     g_Config.slotsWillChange = GetConvertableArmorSlots(params);
 
                     bool hasEnabledArmor = false;
@@ -710,7 +828,7 @@ void QuickArmorRebalance::RenderUI() {
                         ImGui::EndTable();
                     }
 
-                    ImGui::PopItemWidth();
+                    //ImGui::PopItemWidth();
                 }
                 ImGui::EndChild();
 
@@ -902,11 +1020,10 @@ void QuickArmorRebalance::RenderUI() {
                     }
                 }
 
-
                 ImGui::EndTable();
             }
 
-            ImGui::PopItemWidth();
+            //ImGui::PopItemWidth();
         } else {
             ImGui::Text(g_Config.strCriticalError.c_str());
         }
@@ -1018,18 +1135,6 @@ void QuickArmorRebalance::RenderUI() {
                 }
             }
 
-            const char* strSlotDesc[] = {"Slot 30 - Head",       "Slot 31 - Hair",       "Slot 32 - Body",
-                                         "Slot 33 - Hands",      "Slot 34 - Forearms",   "Slot 35 - Amulet",
-                                         "Slot 36 - Ring",       "Slot 37 - Feet",       "Slot 38 - Calves",
-                                         "Slot 39 - Shield",     "Slot 40 - Tail",       "Slot 41 - Long Hair",
-                                         "Slot 42 - Circlet",    "Slot 43 - Ears",       "Slot 44 - Face",
-                                         "Slot 45 - Neck",       "Slot 46 - Chest",      "Slot 47 - Back",
-                                         "Slot 48 - ???",        "Slot 49 - Pelvis",     "Slot 50 - Decapitated Head",
-                                         "Slot 51 - Decapitate", "Slot 52 - Lower body", "Slot 53 - Leg (right)",
-                                         "Slot 54 - Leg (left)", "Slot 55 - Face2",      "Slot 56 - Chest2",
-                                         "Slot 57 - Shoulder",   "Slot 58 - Arm (left)", "Slot 59 - Arm (right)",
-                                         "Slot 60 - ???",        "Slot 61 - ???",        "<REMOVE SLOT>"};
-
             nSlotView = 33;
             if (auto payload = ImGui::GetDragDropPayload()) {
                 if (payload->IsDataType("ARMOR SLOT")) {
@@ -1071,21 +1176,19 @@ void QuickArmorRebalance::RenderUI() {
                             strWarn =
                                 "Warning: Items in this slot will not be changed unless remapped to another slot.";
                             popCol++;
-                        } else if ((1 << i) & slotsUsed & (remappedTar & ~remappedSrc)) {
+                        } else if ((1ull << i) & slotsUsed & (remappedTar & ~remappedSrc)) {
                             ImGui::PushStyleColor(ImGuiCol_Text, colorDeleted);
                             strWarn =
                                 "Warning: Other items are being remapped to this slot.\n"
                                 "This will cause conflicts unless this slot is also remapped.";
                             popCol++;
-                        
                         }
 
                         bool bSelected = false;
                         if (ImGui::Selectable(strSlotDesc[i], &bSelected, 0)) {
                         }
 
-                        if (strWarn)
-                            MakeTooltip(strWarn);
+                        if (strWarn) MakeTooltip(strWarn);
 
                         if (ImGui::BeginDragDropSource(0)) {
                             nSlotView = i;

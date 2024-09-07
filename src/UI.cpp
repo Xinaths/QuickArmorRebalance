@@ -8,6 +8,8 @@
 
 using namespace QuickArmorRebalance;
 
+const int kItemListLimit = 2000;
+
 const char* strSlotDesc[] = {"Slot 30 - Head",       "Slot 31 - Hair",       "Slot 32 - Body",
                              "Slot 33 - Hands",      "Slot 34 - Forearms",   "Slot 35 - Amulet",
                              "Slot 36 - Ring",       "Slot 37 - Feet",       "Slot 38 - Calves",
@@ -35,7 +37,6 @@ void MakeTooltip(const char* str, bool delay = false) {
         ImGui::SetTooltip(str);
 }
 
-
 struct ItemFilter {
     char nameFilter[200]{""};
 
@@ -48,29 +49,13 @@ struct ItemFilter {
     int slotMode = SlotsAny;
     ArmorSlots slots = 0;
 
+    bool bFilterChanged = true;
     bool bUnmodified = false;
 
     bool Pass(RE::TESBoundObject* obj) const {
-        if (bUnmodified && (g_Data.modifiedItems.contains(obj) || g_Data.modifiedItemsShared.contains(obj))) return false;
-        if (*nameFilter && !StringContainsI(obj->GetName(), nameFilter)) return false;
-
-        if (nType) {
-            switch (nType) {
-                case ItemType_Armor:
-                    if (!obj->As<RE::TESObjectARMO>()) return false;
-                    break;
-                case ItemType_Weapon:
-                    if (!obj->As<RE::TESObjectWEAP>()) return false;
-                    break;
-                case ItemType_Ammo:
-                    if (!obj->As<RE::TESAmmo>()) return false;
-                    break;
-            }
-        }
-
+        // Run these fastest to slowest
         if (slots) {
-            if (auto armor = obj->As<RE::TESObjectARMO>())
-            {
+            if (auto armor = obj->As<RE::TESObjectARMO>()) {
                 auto s = MapFindOr(g_Data.modifiedArmorSlots, armor, (ArmorSlots)armor->GetSlotMask());
                 switch (slotMode) {
                     case SlotsAny:
@@ -87,12 +72,27 @@ struct ItemFilter {
                 return false;
         }
 
+        if (nType) {
+            switch (nType) {
+                case ItemType_Armor:
+                    if (!obj->As<RE::TESObjectARMO>()) return false;
+                    break;
+                case ItemType_Weapon:
+                    if (!obj->As<RE::TESObjectWEAP>()) return false;
+                    break;
+                case ItemType_Ammo:
+                    if (!obj->As<RE::TESAmmo>()) return false;
+                    break;
+            }
+        }
+
+        if (bUnmodified && (g_Data.modifiedItems.contains(obj) || g_Data.modifiedItemsShared.contains(obj)))
+            return false;
+        if (*nameFilter && !StringContainsI(obj->GetName(), nameFilter)) return false;
+
         return true;
     }
-
 };
-
-
 
 void RightAlign(const char* text) {
     float w = ImGui::CalcTextSize(text).x + ImGui::GetStyle().FramePadding.x * 2.f;
@@ -207,30 +207,57 @@ void PermissionsChecklist(const char* id, Permissions& p) {
     ImGui::PopID();
 }
 
-void GetCurrentListItems(ModData* curMod, bool bFilterModified, const ItemFilter& filter) {
+enum { ModSpecial_Worn, ModSpecial_All };
+
+void AddFormsToList(const auto& all, const ItemFilter& filter) {
     ArmorChangeParams& params = g_Config.acParams;
-    params.items.clear();
+    for (auto i : all) {
+        if (!IsValidItem(i)) continue;
+        if (!filter.Pass(i)) continue;
+
+        if (params.filteredItems.size() < kItemListLimit) params.filteredItems.push_back(i);
+    }
+}
+
+short g_filterRound = 0;
+
+void GetCurrentListItems(ModData* curMod, int nModSpecial, const ItemFilter& filter) {
+    static short filterRound = -1;
+    if (filterRound == g_filterRound) return;
+
+    ArmorChangeParams& params = g_Config.acParams;
+    params.filteredItems.clear();
     if (curMod) {
         for (auto i : curMod->items) {
             if (!filter.Pass(i)) continue;
 
-            params.items.push_back(i);
+            params.filteredItems.push_back(i);
         }
     } else {
-        if (auto player = RE::PlayerCharacter::GetSingleton()) {
-            for (auto& item : player->GetInventory()) {
-                if (item.second.second->IsWorn()) {
-                    if (!IsValidItem(item.first)) continue;
-                    if (!filter.Pass(item.first)) continue;
+        switch (nModSpecial) {
+            case ModSpecial_Worn:
+                if (auto player = RE::PlayerCharacter::GetSingleton()) {
+                    for (auto& item : player->GetInventory()) {
+                        if (item.second.second->IsWorn()) {
+                            if (!IsValidItem(item.first)) continue;
+                            if (!filter.Pass(item.first)) continue;
 
-                    params.items.push_back(item.first);
+                            params.filteredItems.push_back(item.first);
+                        }
+                    }
                 }
-            }
+                break;
+            case ModSpecial_All:
+                auto dh = RE::TESDataHandler::GetSingleton();
+                AddFormsToList(dh->GetFormArray<RE::TESObjectARMO>(), filter);
+                AddFormsToList(dh->GetFormArray<RE::TESObjectWEAP>(), filter);
+                AddFormsToList(dh->GetFormArray<RE::TESAmmo>(), filter);
+                break;
         }
     }
 
-    if (!params.items.empty()) {
-        std::sort(params.items.begin(), params.items.end(),
+    if (!params.filteredItems.empty()) {
+        std::sort(params.filteredItems.begin(), params.filteredItems.end(),
                   [](RE::TESBoundObject* const a, RE::TESBoundObject* const b) {
                       return _stricmp(a->GetName(), b->GetName()) < 0;
                   });
@@ -250,19 +277,17 @@ bool WillBeModified(RE::TESBoundObject* i, ArmorSlots remapped) {
     return true;
 }
 
-short g_highlightRound = 0;
-
 struct HighlightTrack {
     short round = -1;
     char pop = 0;
     bool enabled = false;
 
-    void Touch() { round = g_highlightRound; }
-    operator bool() { return !enabled || g_highlightRound == round; }
+    void Touch() { round = g_filterRound; }
+    operator bool() { return !enabled || g_filterRound == round; }
 
     void Push(bool show = true) {
         enabled = show;
-        if (g_Config.bHighlights && round != g_highlightRound && show) {
+        if (g_Config.bHighlights && round != g_filterRound && show) {
             auto phase = 0.5 + 0.5 * sin(ImGui::GetTime() * (std::_Pi_val / 1.0));
             auto brightness = std::lerp(64, 255, phase);
             const auto colorHighlight = IM_COL32(0, brightness, brightness, 255);
@@ -275,7 +300,7 @@ struct HighlightTrack {
     }
 
     void Pop() {
-        if (ImGui::IsItemActive()) round = g_highlightRound;
+        if (ImGui::IsItemActive()) round = g_filterRound;
 
         ImGui::PopStyleVar(pop);
         ImGui::PopStyleColor(pop);
@@ -333,7 +358,10 @@ void QuickArmorRebalance::RenderUI() {
         if (g_Config.strCriticalError.empty()) {
             ArmorChangeParams& params = g_Config.acParams;
 
-            const char* noMod = "<Currently Worn Armor>";
+            const char* strModSpecial[] = {"<Currently Worn Armor>", "<All Items>", nullptr};
+            bool bModSpecialEnabled[] = {true, g_Config.bEnableAllItems};
+            static int nModSpecial = 0;
+
             static bool bFilterChangedMods = false;
 
             if (bMenuHovered) {
@@ -362,7 +390,7 @@ void QuickArmorRebalance::RenderUI() {
             }
             bMenuHovered |= ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenOverlapped);
 
-            //ImGui::PushItemWidth(-FLT_MIN);
+            // ImGui::PushItemWidth(-FLT_MIN);
             ImGui::SetNextItemWidth(-FLT_MIN);
 
             if (ImGui::BeginTable("WindowTable", 2, ImGuiTableFlags_Resizable | ImGuiTableFlags_BordersInnerV)) {
@@ -370,14 +398,13 @@ void QuickArmorRebalance::RenderUI() {
                 ImGui::TableSetupColumn("RightCol", ImGuiTableColumnFlags_WidthFixed,
                                         0.25f * ImGui::GetContentRegionAvail().x);
 
-                static bool bFilterModified = false;
                 bool showPopup = false;
 
                 ImGui::TableNextColumn();
                 if (ImGui::BeginChild("LeftPane")) {
-                    //ImGui::PushItemWidth(-FLT_MIN);
+                    // ImGui::PushItemWidth(-FLT_MIN);
 
-                    //ImGui::SetNextItemWidth(-FLT_MIN);
+                    // ImGui::SetNextItemWidth(-FLT_MIN);
                     if (ImGui::BeginTable("Mod Table", 3, ImGuiTableFlags_SizingFixedFit, {-FLT_MIN, 0.0f})) {
                         ImGui::TableSetupColumn("ModCol1");
                         ImGui::TableSetupColumn("ModCol2", ImGuiTableColumnFlags_WidthStretch);
@@ -390,12 +417,19 @@ void QuickArmorRebalance::RenderUI() {
                         RE::TESFile* blacklist = nullptr;
 
                         ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
-                        if (ImGui::BeginCombo("##Mod", curMod ? curMod->mod->fileName : noMod,
+                        if (ImGui::BeginCombo("##Mod", curMod ? curMod->mod->fileName : strModSpecial[nModSpecial],
                                               ImGuiComboFlags_HeightLarge)) {
                             {
-                                bool selected = !curMod;
-                                if (ImGui::Selectable(noMod, selected)) curMod = nullptr;
-                                if (selected) ImGui::SetItemDefaultFocus();
+                                for (int i = 0; strModSpecial[i]; i++) {
+                                    if (!bModSpecialEnabled[i]) continue;
+                                    bool selected = !curMod && i == nModSpecial;
+                                    if (ImGui::Selectable(strModSpecial[i], selected)) {
+                                        curMod = nullptr;
+                                        nModSpecial = i;
+                                        g_filterRound++;
+                                    }
+                                    if (selected) ImGui::SetItemDefaultFocus();
+                                }
                             }
 
                             for (auto i : g_Data.sortedMods) {
@@ -438,7 +472,7 @@ void QuickArmorRebalance::RenderUI() {
                                         params.mapArmorSlots.clear();
                                     }
 
-                                    g_highlightRound++;
+                                    g_filterRound++;
                                 }
                                 if (isCtrlDown && isAltDown && ImGui::IsItemHovered() &&
                                     ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
@@ -488,55 +522,89 @@ void QuickArmorRebalance::RenderUI() {
                     ImGui::Separator();
 
                     ImGui::Text("Filter");
-                    //ImGui::Indent();
-                    // ImGui::Text("Name contains");
+                    // ImGui::Indent();
+                    //  ImGui::Text("Name contains");
                     ImGui::SameLine();
                     ImGui::SetNextItemWidth(200);
-                    if (ImGui::InputTextWithHint("##ItemFilter", "by Name", filter.nameFilter, sizeof(filter.nameFilter) - 1))
-                        g_highlightRound++;
+                    if (ImGui::InputTextWithHint("##ItemFilter", "by Name", filter.nameFilter,
+                                                 sizeof(filter.nameFilter) - 1))
+                        g_filterRound++;
 
                     ImGui::SameLine();
                     ImGui::SetNextItemWidth(80);
-                    if (ImGui::BeginCombo("##Typefilter", filter.nType ? itemTypes[filter.nType] : "by Type")) {                                                                                               
+
+                    int popCol = 0;
+                    if (!filter.nType) {
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+                        popCol++;
+                    }
+
+                    if (ImGui::BeginCombo("##Typefilter", filter.nType ? itemTypes[filter.nType] : "by Type")) {
+                        ImGui::PopStyleColor(popCol);
+                        popCol = 0;
+
                         for (int i = 0; itemTypes[i]; i++) {
                             if (ImGui::Selectable(itemTypes[i])) {
                                 filter.nType = i;
+                                g_filterRound++;
                             }
                         }
                         ImGui::EndCombo();
                     }
+                    ImGui::PopStyleColor(popCol);
+                    popCol = 0;
 
                     ImGui::SameLine();
                     ImGui::SetNextItemWidth(120);
-                    if (ImGui::BeginCombo("##Slotfilter", "by Slot", ImGuiComboFlags_HeightLargest)) {
-                        if (ImGui::Selectable("Clear filter")) {
-                            filter.slots = 0;                            
-                        }
-                        ImGui::RadioButton("Any of", &filter.slotMode, ItemFilter::SlotFilterMode::SlotsAny);
-                        ImGui::RadioButton("All of", &filter.slotMode, ItemFilter::SlotFilterMode::SlotsAll);
-                        ImGui::RadioButton("Not", &filter.slotMode, ItemFilter::SlotFilterMode::SlotsNot);
 
-                        if (ImGui::BeginTable("##SlotFilterTable", 4)) {
-                            for (int i = 0; i < 32; i++) {
-                                bool bCheck = filter.slots & (1<<i);
-                                ImGui::TableNextColumn();                        
-                                if (ImGui::Checkbox(strSlotDesc[i], &bCheck)) {
-                                    if (bCheck)
-                                        filter.slots |= (1 << i);
-                                    else
-                                        filter.slots &= ~(1 << i);
+                    popCol = 0;
+                    if (!filter.slots) {
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+                        popCol++;
+                    }
+
+                    if (ImGui::BeginCombo("##Slotfilter", filter.slots ? "Filtering by Slot" : "by Slot",
+                                          ImGuiComboFlags_HeightLargest)) {
+                        ImGui::PopStyleColor(popCol);
+                        popCol = 0;
+
+                        if (ImGui::Selectable("Clear filter")) {
+                            filter.slots = 0;
+                        }
+                        if (ImGui::RadioButton("Any of", &filter.slotMode, ItemFilter::SlotFilterMode::SlotsAny))
+                            g_filterRound++;
+                        if (ImGui::RadioButton("All of", &filter.slotMode, ItemFilter::SlotFilterMode::SlotsAll))
+                            g_filterRound++;
+                        if (ImGui::RadioButton("Not", &filter.slotMode, ItemFilter::SlotFilterMode::SlotsNot))
+                            g_filterRound++;
+
+                        constexpr auto slotCols = 4;
+                        if (ImGui::BeginTable("##SlotFilterTable", slotCols)) {
+                            for (int i = 0; i < 32 / slotCols; i ++) {
+                                for (int j = 0; j < slotCols; j++) {
+                                    auto s = i + j * 32 / slotCols;
+                                    bool bCheck = filter.slots & (1 << s);
+                                    ImGui::TableNextColumn();
+                                    if (ImGui::Checkbox(strSlotDesc[s], &bCheck)) {
+                                        g_filterRound++;
+                                        if (bCheck)
+                                            filter.slots |= (1 << s);
+                                        else
+                                            filter.slots &= ~(1 << s);
+                                    }
                                 }
                             }
                             ImGui::EndTable();
                         }
 
-
                         ImGui::EndCombo();
                     }
+                    ImGui::PopStyleColor(popCol);
+                    popCol = 0;
 
                     ImGui::SameLine();
-                    if (ImGui::Checkbox("Unmodified", &bFilterModified)) g_highlightRound++;
-                    //ImGui::Unindent();
+                    if (ImGui::Checkbox("Unmodified", &filter.bUnmodified)) g_filterRound++;
+                    // ImGui::Unindent();
 
                     if (ImGui::BeginTable("Convert Table", 3, ImGuiTableFlags_SizingFixedFit)) {
                         ImGui::TableSetupColumn("ConvertCol1");
@@ -580,6 +648,8 @@ void QuickArmorRebalance::RenderUI() {
                         static HighlightTrack hlApply;
                         hlApply.Push(hlConvert && hlDistributeAs && hlRarity && hlSlots);
 
+                        ImGui::BeginDisabled(params.filteredItems.size() >= kItemListLimit);
+
                         if (ImGui::Button("Apply changes")) {
                             g_Config.Save();
                             MakeArmorChanges(params);
@@ -592,24 +662,28 @@ void QuickArmorRebalance::RenderUI() {
                             hlSlots.Touch();
                         }
 
+                        ImGui::EndDisabled();
+
                         hlApply.Pop();
 
                         ImGui::EndTable();
                     }
 
-                    GetCurrentListItems(curMod, bFilterModified, filter);
+                    GetCurrentListItems(curMod, nModSpecial, filter);
                     g_Config.slotsWillChange = GetConvertableArmorSlots(params);
 
                     bool hasEnabledArmor = false;
                     bool hasEnabledWeap = false;
 
-                    for (auto i : params.items) {
-                        if (i->As<RE::TESObjectARMO>()) {
-                            if (!uncheckedItems.contains(i)) hasEnabledArmor = true;
-                        } else if (i->As<RE::TESObjectWEAP>()) {
-                            if (!uncheckedItems.contains(i)) hasEnabledWeap = true;
-                        } else if (i->As<RE::TESAmmo>()) {
-                            if (!uncheckedItems.contains(i)) hasEnabledWeap = true;
+                    if (params.filteredItems.size() < kItemListLimit) {
+                        for (auto i : params.filteredItems) {
+                            if (i->As<RE::TESObjectARMO>()) {
+                                if (!uncheckedItems.contains(i)) hasEnabledArmor = true;
+                            } else if (i->As<RE::TESObjectWEAP>()) {
+                                if (!uncheckedItems.contains(i)) hasEnabledWeap = true;
+                            } else if (i->As<RE::TESAmmo>()) {
+                                if (!uncheckedItems.contains(i)) hasEnabledWeap = true;
+                            }
                         }
                     }
 
@@ -828,194 +902,200 @@ void QuickArmorRebalance::RenderUI() {
                         ImGui::EndTable();
                     }
 
-                    //ImGui::PopItemWidth();
+                    // ImGui::PopItemWidth();
                 }
                 ImGui::EndChild();
 
                 ImGui::TableNextColumn();
-                ImGui::Text("Items");
+                if (params.filteredItems.size() >= kItemListLimit) {
+                    ImGui::Text(
+                        "Too many items.\n"
+                        "Limit the amount of items by using the filters.");
+                } else {
+                    ImGui::Text((std::format("{}", params.filteredItems.size()) + " Items").c_str());
 
-                // ImGui::SameLine();
-                // RightButton("Settings");
+                    // ImGui::SameLine();
+                    // RightButton("Settings");
 
-                auto avail = ImGui::GetContentRegionAvail();
-                avail.y -= ImGui::GetFontSize() * 1 + ImGui::GetStyle().FramePadding.y * 2;
+                    auto avail = ImGui::GetContentRegionAvail();
+                    avail.y -= ImGui::GetFontSize() * 1 + ImGui::GetStyle().FramePadding.y * 2;
 
-                auto player = RE::PlayerCharacter::GetSingleton();
-                decltype(params.items) finalItems;
-                finalItems.reserve(params.items.size());
+                    auto player = RE::PlayerCharacter::GetSingleton();
+                    // decltype(params.items) finalItems;
+                    params.items.clear();
+                    params.items.reserve(params.filteredItems.size());
 
-                bool modChangesDeleted = g_Data.modifiedFilesDeleted.contains(curMod->mod);
+                    bool modChangesDeleted = g_Data.modifiedFilesDeleted.contains(curMod->mod);
 
-                if (ImGui::BeginListBox("##Items", avail)) {
-                    if (ImGui::BeginPopupContextWindow()) {
-                        if (ImGui::Selectable("Enable all")) uncheckedItems.clear();
-                        if (ImGui::Selectable("Disable all"))
-                            for (auto i : params.items) uncheckedItems.insert(i);
-                        ImGui::Separator();
+                    if (ImGui::BeginListBox("##Items", avail)) {
+                        if (ImGui::BeginPopupContextWindow()) {
+                            if (ImGui::Selectable("Enable all")) uncheckedItems.clear();
+                            if (ImGui::Selectable("Disable all"))
+                                for (auto i : params.filteredItems) uncheckedItems.insert(i);
+                            ImGui::Separator();
 
-                        ImGui::BeginDisabled(selectedItems.empty());
-                        if (ImGui::Selectable("Enable selected")) {
-                            for (auto i : selectedItems) uncheckedItems.erase(i);
-                        }
-                        if (ImGui::Selectable("Disable selected")) {
-                            for (auto i : selectedItems) uncheckedItems.insert(i);
-                        }
-                        ImGui::EndDisabled();
+                            ImGui::BeginDisabled(selectedItems.empty());
+                            if (ImGui::Selectable("Enable selected")) {
+                                for (auto i : selectedItems) uncheckedItems.erase(i);
+                            }
+                            if (ImGui::Selectable("Disable selected")) {
+                                for (auto i : selectedItems) uncheckedItems.insert(i);
+                            }
+                            ImGui::EndDisabled();
 
-                        ImGui::EndPopup();
-                    }
-
-                    if (!selectedItems.contains(lastSelectedItem)) lastSelectedItem = nullptr;
-
-                    // Clear out selections that are no longer visible
-                    auto lastSelected(std::move(selectedItems));
-                    for (auto i : params.items)
-                        if (lastSelected.contains(i)) selectedItems.insert(i);
-
-                    for (auto i : params.items) {
-                        int pop = 0;
-                        if (g_Data.modifiedItems.contains(i)) {
-                            if (modChangesDeleted)
-                                ImGui::PushStyleColor(ImGuiCol_Text, colorDeleted);
-                            else
-                                ImGui::PushStyleColor(ImGuiCol_Text, colorChanged);
-                            pop++;
-                        } else if (g_Data.modifiedItemsShared.contains(i)) {
-                            ImGui::PushStyleColor(ImGuiCol_Text, colorChangedShared);
-                            pop++;
-                        } else if (!WillBeModified(i, remappedSrc)) {
-                            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
-                            pop++;
+                            ImGui::EndPopup();
                         }
 
-                        std::string name(i->GetName());
-                        // if (!i->fullName.empty()) name = i->GetFullName();
+                        if (!selectedItems.contains(lastSelectedItem)) lastSelectedItem = nullptr;
 
-                        if (name.empty()) name = std::format("{}:{:010x}", i->GetFile(0)->fileName, i->formID);
+                        // Clear out selections that are no longer visible
+                        auto lastSelected(std::move(selectedItems));
+                        for (auto i : params.filteredItems)
+                            if (lastSelected.contains(i)) selectedItems.insert(i);
 
-                        ImGui::BeginGroup();
+                        for (auto i : params.filteredItems) {
+                            int pop = 0;
+                            if (g_Data.modifiedItems.contains(i)) {
+                                if (modChangesDeleted)
+                                    ImGui::PushStyleColor(ImGuiCol_Text, colorDeleted);
+                                else
+                                    ImGui::PushStyleColor(ImGuiCol_Text, colorChanged);
+                                pop++;
+                            } else if (g_Data.modifiedItemsShared.contains(i)) {
+                                ImGui::PushStyleColor(ImGuiCol_Text, colorChangedShared);
+                                pop++;
+                            } else if (!WillBeModified(i, remappedSrc)) {
+                                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+                                pop++;
+                            }
 
-                        bool isChecked = !uncheckedItems.contains(i);
-                        ImGui::PushID(name.c_str());
-                        if (ImGui::Checkbox("##ItemCheckbox", &isChecked)) {
-                            if (!isChecked)
-                                uncheckedItems.insert(i);
-                            else
-                                uncheckedItems.erase(i);
-                        }
-                        if (isChecked) finalItems.push_back(i);
+                            std::string name(i->GetName());
+                            // if (!i->fullName.empty()) name = i->GetFullName();
 
-                        // ImGui::PopID();
+                            if (name.empty()) name = std::format("{}:{:010x}", i->GetFile(0)->fileName, i->formID);
 
-                        ImGui::SameLine();
+                            ImGui::BeginGroup();
 
-                        bool selected = selectedItems.contains(i);
+                            bool isChecked = !uncheckedItems.contains(i);
+                            ImGui::PushID(name.c_str());
+                            if (ImGui::Checkbox("##ItemCheckbox", &isChecked)) {
+                                if (!isChecked)
+                                    uncheckedItems.insert(i);
+                                else
+                                    uncheckedItems.erase(i);
+                            }
+                            if (isChecked) params.items.push_back(i);
 
-                        // ImGui::PushID(name.c_str());
-                        if (ImGui::Selectable(name.c_str(), &selected, ImGuiSelectableFlags_AllowDoubleClick)) {
-                            if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
-                                if (!isInventoryOpen) {
-                                    if (isShiftDown) {
-                                        if (isAltDown) {
-                                            auto armorSet = BuildSetFrom(i, params.items);
+                            // ImGui::PopID();
 
-                                            if (!isCtrlDown) selectedItems.clear();
-                                            for (auto piece : armorSet) selectedItems.insert(piece);
-                                        }
-                                    } else {
-                                        if (isAltDown) {
-                                            auto armorSet = BuildSetFrom(i, params.items);
-                                            givenItems.UnequipCurrent();
-                                            for (auto piece : armorSet) givenItems.Give(piece, true);
+                            ImGui::SameLine();
+
+                            bool selected = selectedItems.contains(i);
+
+                            // ImGui::PushID(name.c_str());
+                            if (ImGui::Selectable(name.c_str(), &selected, ImGuiSelectableFlags_AllowDoubleClick)) {
+                                if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                                    if (!isInventoryOpen) {
+                                        if (isShiftDown) {
+                                            if (isAltDown) {
+                                                auto armorSet = BuildSetFrom(i, params.filteredItems);
+
+                                                if (!isCtrlDown) selectedItems.clear();
+                                                for (auto piece : armorSet) selectedItems.insert(piece);
+                                            }
                                         } else {
-                                            givenItems.Give(i, true);
+                                            if (isAltDown) {
+                                                auto armorSet = BuildSetFrom(i, params.filteredItems);
+                                                givenItems.UnequipCurrent();
+                                                for (auto piece : armorSet) givenItems.Give(piece, true);
+                                            } else {
+                                                givenItems.Give(i, true);
+                                            }
                                         }
                                     }
-                                }
-                            } else {
-                                if (!isCtrlDown) selectedItems.clear();
-
-                                if (!isShiftDown) {
-                                    if (selected)
-                                        selectedItems.insert(i);
-                                    else
-                                        selectedItems.erase(i);
-
-                                    lastSelectedItem = i;
                                 } else {
-                                    if (lastSelectedItem) {
-                                        bool adding = false;
-                                        for (auto j : params.items) {
-                                            if (j == i || j == lastSelectedItem) {
-                                                if (adding) {
-                                                    selectedItems.insert(j);
-                                                    break;
-                                                }
-                                                adding = true;
-                                            }
+                                    if (!isCtrlDown) selectedItems.clear();
 
-                                            if (adding) selectedItems.insert(j);
+                                    if (!isShiftDown) {
+                                        if (selected)
+                                            selectedItems.insert(i);
+                                        else
+                                            selectedItems.erase(i);
+
+                                        lastSelectedItem = i;
+                                    } else {
+                                        if (lastSelectedItem) {
+                                            bool adding = false;
+                                            for (auto j : params.filteredItems) {
+                                                if (j == i || j == lastSelectedItem) {
+                                                    if (adding) {
+                                                        selectedItems.insert(j);
+                                                        break;
+                                                    }
+                                                    adding = true;
+                                                }
+
+                                                if (adding) selectedItems.insert(j);
+                                            }
                                         }
                                     }
                                 }
                             }
-                        }
 
-                        ImGui::PopID();
-                        ImGui::EndGroup();
-                        ImGui::PopStyleColor(pop);
+                            ImGui::PopID();
+                            ImGui::EndGroup();
+                            ImGui::PopStyleColor(pop);
+                        }
+                        ImGui::EndListBox();
                     }
-                    ImGui::EndListBox();
-                }
 
-                ImGui::BeginDisabled(!player || !curMod || isInventoryOpen);
+                    ImGui::BeginDisabled(!player || !curMod || isInventoryOpen);
 
-                if (ImGui::Button(selectedItems.empty() ? "Give All" : "Give Selected")) {
-                    if (selectedItems.empty())
-                        for (auto i : params.items) {
-                            givenItems.Give(i);
-                        }
-                    else
-                        for (auto i : selectedItems) {
-                            givenItems.Give(i);
-                        }
-                }
-                if (isInventoryOpen) MakeTooltip("Can't use while inventory is open");
+                    if (ImGui::Button(selectedItems.empty() ? "Give All" : "Give Selected")) {
+                        if (selectedItems.empty())
+                            for (auto i : params.filteredItems) {
+                                givenItems.Give(i);
+                            }
+                        else
+                            for (auto i : selectedItems) {
+                                givenItems.Give(i);
+                            }
+                    }
+                    if (isInventoryOpen) MakeTooltip("Can't use while inventory is open");
 
-                ImGui::SameLine();
-                if (ImGui::Button(selectedItems.empty() ? "Equip All" : "Equip Selected")) {
-                    givenItems.UnequipCurrent();
-                    if (selectedItems.empty())
-                        for (auto i : params.items) {
-                            givenItems.Give(i, true);
-                        }
-                    else
-                        for (auto i : selectedItems) {
-                            givenItems.Give(i, true);
-                        }
-                }
-                if (isInventoryOpen) MakeTooltip("Can't use while inventory is open");
+                    ImGui::SameLine();
+                    if (ImGui::Button(selectedItems.empty() ? "Equip All" : "Equip Selected")) {
+                        givenItems.UnequipCurrent();
+                        if (selectedItems.empty())
+                            for (auto i : params.filteredItems) {
+                                givenItems.Give(i, true);
+                            }
+                        else
+                            for (auto i : selectedItems) {
+                                givenItems.Give(i, true);
+                            }
+                    }
+                    if (isInventoryOpen) MakeTooltip("Can't use while inventory is open");
 
-                ImGui::BeginDisabled(givenItems.items.empty());
-                ImGui::SameLine();
-                if (ImGui::Button("Delete Given")) {
-                    givenItems.Remove();
-                }
-                if (isInventoryOpen) MakeTooltip("Can't use while inventory is open");
+                    ImGui::BeginDisabled(givenItems.items.empty());
+                    ImGui::SameLine();
+                    if (ImGui::Button("Delete Given")) {
+                        givenItems.Remove();
+                    }
+                    if (isInventoryOpen) MakeTooltip("Can't use while inventory is open");
 
-                ImGui::EndDisabled();  // givenItems.empty()
-                ImGui::EndDisabled();  //! player
+                    ImGui::EndDisabled();  // givenItems.empty()
+                    ImGui::EndDisabled();  //! player
 
-                params.items = std::move(finalItems);
-
-                bSlotWarning = false;
-                for (auto i : params.items) {
-                    if (auto armor = i->As<RE::TESObjectARMO>()) {
-                        auto itemSlots = MapFindOr(g_Data.modifiedArmorSlots, armor, (ArmorSlots)armor->GetSlotMask());
-                        if ((~g_Config.usedSlotsMask) & (~remappedSrc) & itemSlots) {
-                            bSlotWarning = true;
-                            break;
+                    bSlotWarning = false;
+                    for (auto i : params.items) {
+                        if (auto armor = i->As<RE::TESObjectARMO>()) {
+                            auto itemSlots =
+                                MapFindOr(g_Data.modifiedArmorSlots, armor, (ArmorSlots)armor->GetSlotMask());
+                            if ((~g_Config.usedSlotsMask) & (~remappedSrc) & itemSlots) {
+                                bSlotWarning = true;
+                                break;
+                            }
                         }
                     }
                 }
@@ -1023,7 +1103,7 @@ void QuickArmorRebalance::RenderUI() {
                 ImGui::EndTable();
             }
 
-            //ImGui::PopItemWidth();
+            // ImGui::PopItemWidth();
         } else {
             ImGui::Text(g_Config.strCriticalError.c_str());
         }
@@ -1056,6 +1136,10 @@ void QuickArmorRebalance::RenderUI() {
             ImGui::Checkbox("Reset sliders after changing mods", &g_Config.bResetSliders);
             ImGui::Checkbox("Reset slot remapping after changing mods", &g_Config.bResetSlotRemap);
             ImGui::Checkbox("Highlight things you may want to look at", &g_Config.bHighlights);
+            ImGui::Checkbox("USE AT YOUR OWN RISK: Enable <All Items> in item list", &g_Config.bEnableAllItems);
+            MakeTooltip(
+                "This can result in performance issues, and making a mess by changing too many items at once.\n"
+                "Use with caution.");
 
             ImGui::Separator();
             ImGui::Checkbox("Enforce loot rarity with empty loot", &g_Config.bEnableRarityNullLoot);

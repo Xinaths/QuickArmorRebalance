@@ -40,6 +40,7 @@ namespace QuickArmorRebalance {
     };
 
     struct ArmorChangeParams {
+        std::vector<RE::TESBoundObject*> filteredItems;
         std::vector<RE::TESBoundObject*> items;
 
         BaseArmorSet* armorSet = nullptr;
@@ -148,6 +149,7 @@ namespace QuickArmorRebalance {
         bool bKeepCraftingBooks = false;
         bool bEnableRarityNullLoot = false;
         bool bResetSlotRemap = true;
+        bool bEnableAllItems = false;
 
         float fDropRates = 100.0f;
         int verbosity = spdlog::level::info;

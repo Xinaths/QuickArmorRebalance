@@ -172,6 +172,7 @@ bool QuickArmorRebalance::Config::Load() {
             g_Config.bKeepCraftingBooks = config["settings"]["keepcraftingbooks"].value_or(false);
             g_Config.bEnableRarityNullLoot = config["settings"]["enforcerarity"].value_or(false);
             g_Config.bResetSlotRemap = config["settings"]["resetslotremap"].value_or(true);
+            g_Config.bEnableAllItems = config["settings"]["enableallitems"].value_or(false);
 
             LoadPermissions(g_Config.permLocal, config["localPermissions"]);
             LoadPermissions(g_Config.permShared, config["sharedPermissions"]);
@@ -528,6 +529,7 @@ void QuickArmorRebalance::Config::Save() {
              {"keepcraftingbooks", g_Config.bKeepCraftingBooks},
              {"enforcerarity", g_Config.bEnableRarityNullLoot},
              {"resetslotremap", g_Config.bResetSlotRemap},
+             {"enableallitems", g_Config.bEnableAllItems},
          }},
         {"localPermissions", SavePermissions(g_Config.permLocal)},
         {"sharedPermissions", SavePermissions(g_Config.permShared)},

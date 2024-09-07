@@ -5,7 +5,7 @@ namespace QuickArmorRebalance
     using ArmorSlot = unsigned int;
     using ArmorSlots = unsigned int;
 
-    static auto MapFindOr(const auto map, const auto val, const auto r) {
+    static auto MapFindOr(const auto& map, const auto& val, const auto r) {
         auto it = map.find(val);
         if (it == map.end())
             return r;

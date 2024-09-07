@@ -54,6 +54,22 @@ struct ItemFilter {
 
     bool Pass(RE::TESBoundObject* obj) const {
         // Run these fastest to slowest
+        if (nType) {
+            switch (nType) {
+                case ItemType_Armor:
+                    if (!obj->As<RE::TESObjectARMO>()) return false;
+                    break;
+                case ItemType_Weapon:
+                    if (!obj->As<RE::TESObjectWEAP>()) return false;
+                    break;
+                case ItemType_Ammo:
+                    if (!obj->As<RE::TESAmmo>()) return false;
+                    break;
+            }
+        }
+
+        if (*nameFilter && !StringContainsI(obj->GetName(), nameFilter)) return false;
+
         if (slots) {
             if (auto armor = obj->As<RE::TESObjectARMO>()) {
                 auto s = MapFindOr(g_Data.modifiedArmorSlots, armor, (ArmorSlots)armor->GetSlotMask());
@@ -72,23 +88,8 @@ struct ItemFilter {
                 return false;
         }
 
-        if (nType) {
-            switch (nType) {
-                case ItemType_Armor:
-                    if (!obj->As<RE::TESObjectARMO>()) return false;
-                    break;
-                case ItemType_Weapon:
-                    if (!obj->As<RE::TESObjectWEAP>()) return false;
-                    break;
-                case ItemType_Ammo:
-                    if (!obj->As<RE::TESAmmo>()) return false;
-                    break;
-            }
-        }
-
         if (bUnmodified && (g_Data.modifiedItems.contains(obj) || g_Data.modifiedItemsShared.contains(obj)))
             return false;
-        if (*nameFilter && !StringContainsI(obj->GetName(), nameFilter)) return false;
 
         return true;
     }
@@ -224,6 +225,7 @@ short g_filterRound = 0;
 void GetCurrentListItems(ModData* curMod, int nModSpecial, const ItemFilter& filter) {
     static short filterRound = -1;
     if (filterRound == g_filterRound) return;
+    filterRound = g_filterRound;
 
     ArmorChangeParams& params = g_Config.acParams;
     params.filteredItems.clear();
@@ -570,6 +572,7 @@ void QuickArmorRebalance::RenderUI() {
 
                         if (ImGui::Selectable("Clear filter")) {
                             filter.slots = 0;
+                            g_filterRound++;
                         }
                         if (ImGui::RadioButton("Any of", &filter.slotMode, ItemFilter::SlotFilterMode::SlotsAny))
                             g_filterRound++;
@@ -580,7 +583,7 @@ void QuickArmorRebalance::RenderUI() {
 
                         constexpr auto slotCols = 4;
                         if (ImGui::BeginTable("##SlotFilterTable", slotCols)) {
-                            for (int i = 0; i < 32 / slotCols; i ++) {
+                            for (int i = 0; i < 32 / slotCols; i++) {
                                 for (int j = 0; j < slotCols; j++) {
                                     auto s = i + j * 32 / slotCols;
                                     bool bCheck = filter.slots & (1 << s);

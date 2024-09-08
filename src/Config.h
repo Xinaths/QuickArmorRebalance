@@ -86,6 +86,7 @@ namespace QuickArmorRebalance {
         bool bMatchSetPieces = false;
         bool bMerge = true;
 
+        mutable ArmorSlots remapMask = 0;
         std::map<int, int> mapArmorSlots;
 
         mutable bool bMixedSetDone = false;
@@ -150,6 +151,7 @@ namespace QuickArmorRebalance {
         bool bEnableRarityNullLoot = false;
         bool bResetSlotRemap = true;
         bool bEnableAllItems = false;
+        bool bAllowInvalidRemap = false;
 
         float fDropRates = 100.0f;
         int verbosity = spdlog::level::info;

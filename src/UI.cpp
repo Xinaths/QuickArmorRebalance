@@ -1419,6 +1419,7 @@ void QuickArmorRebalance::RenderUI() {
                     ImGui::Checkbox("Round weights to 0.1", &g_Config.bRoundWeight);
                     ImGui::Checkbox("Reset sliders after changing mods", &g_Config.bResetSliders);
                     ImGui::Checkbox("Reset slot remapping after changing mods", &g_Config.bResetSlotRemap);
+                    ImGui::Checkbox("Allow remapping armor slots to unassigned slots", &g_Config.bAllowInvalidRemap);
                     ImGui::Checkbox("Highlight things you may want to look at", &g_Config.bHighlights);
                     ImGui::Checkbox("USE AT YOUR OWN RISK: Enable <All Items> in item list", &g_Config.bEnableAllItems);
                     MakeTooltip(
@@ -1642,7 +1643,7 @@ void QuickArmorRebalance::RenderUI() {
                             "Warning: Items are being remapped to this slot, but other items are already using this "
                             "slot.");
 
-                    if (!bDisabled && ImGui::BeginDragDropTarget()) {
+                    if ((g_Config.bAllowInvalidRemap || !bDisabled) && ImGui::BeginDragDropTarget()) {
                         if (auto payload = ImGui::AcceptDragDropPayload("ARMOR SLOT")) {
                             g_Config.acParams.mapArmorSlots[*(int*)payload->Data] = i;
                         }

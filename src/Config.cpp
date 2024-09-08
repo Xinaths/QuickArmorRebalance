@@ -173,6 +173,7 @@ bool QuickArmorRebalance::Config::Load() {
             g_Config.bEnableRarityNullLoot = config["settings"]["enforcerarity"].value_or(false);
             g_Config.bResetSlotRemap = config["settings"]["resetslotremap"].value_or(true);
             g_Config.bEnableAllItems = config["settings"]["enableallitems"].value_or(false);
+            g_Config.bAllowInvalidRemap = config["settings"]["allowinvalidremap"].value_or(false);
 
             LoadPermissions(g_Config.permLocal, config["localPermissions"]);
             LoadPermissions(g_Config.permShared, config["sharedPermissions"]);
@@ -530,6 +531,7 @@ void QuickArmorRebalance::Config::Save() {
              {"enforcerarity", g_Config.bEnableRarityNullLoot},
              {"resetslotremap", g_Config.bResetSlotRemap},
              {"enableallitems", g_Config.bEnableAllItems},
+             {"allowinvalidremap", g_Config.bAllowInvalidRemap},
          }},
         {"localPermissions", SavePermissions(g_Config.permLocal)},
         {"sharedPermissions", SavePermissions(g_Config.permShared)},

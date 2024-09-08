@@ -62,40 +62,58 @@ namespace {
     void ClearRecipe(RE::BGSConstructibleObject* tar);
     void ReplaceRecipe(RE::BGSConstructibleObject* tar, const RE::BGSConstructibleObject* src, float w);
 
-    std::pair<unsigned int, unsigned int> CalcCoveredSlots(const ArmorChangeParams& params) {
+    ArmorSlots RemapSlots(ArmorSlots slots, const ArmorChangeParams& params) {
+        ArmorSlots slotsRemapped = slots;
+        if (slots & params.remapMask) {
+            for (auto s : params.mapArmorSlots) {
+                if (slots &
+                    (1 << s.first))  // Test on different data then the changes, so that changes aren't chained together
+                    slotsRemapped = (slotsRemapped & ~(1 << s.first)) | (s.second < 32 ? (1 << s.second) : 0);
+            }
+            slots = slotsRemapped;
+        }
+        return slots;
+    }
+
+    ArmorSlots PromoteHeadSlots(ArmorSlots slots, ArmorSlots coveredHeadSlots) {
+        slots &= ~kCosmeticSlotMask;
+
+        // Promote to head slot if needed
+        if (slots & coveredHeadSlots)
+            slots = (slots & ~coveredHeadSlots) | (ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kHead;
+        return slots;
+    }
+
+    std::pair<ArmorSlots, ArmorSlots> CalcCoveredSlots(const auto& items, const ArmorChangeParams& params,
+                                                       bool remap = false) {
         ArmorSlots coveredSlots = 0;
         // Build list of slots that will be used for scaling
-        for (auto i : params.items) {
-            if (auto armor = i->As<RE::TESObjectARMO>()) coveredSlots |= (unsigned int)armor->GetSlotMask();
+        for (auto i : items) {
+            if (auto armor = i->As<RE::TESObjectARMO>()) {
+                auto slots = (ArmorSlots)armor->GetSlotMask();
+                if (remap) slots = MapFindOr(g_Data.modifiedArmorSlots, armor, slots);
+                coveredSlots |= slots;
+            }
         }
 
+        if (remap) coveredSlots = RemapSlots(coveredSlots, params);
+
         // Head slot is weird and needs special handling
-        unsigned int coveredHeadSlots = 0;
-        for (auto i : params.armorSet->items) {
-            coveredHeadSlots |= kHeadSlotMask & (unsigned int)i->GetSlotMask();
-        }
-        if (coveredHeadSlots & (unsigned int)RE::BIPED_MODEL::BipedObjectSlot::kHead)
+        ArmorSlots coveredHeadSlots = kHeadSlotMask & coveredSlots;
+
+        if (coveredHeadSlots & (ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kHead)
             coveredHeadSlots = 0;  // If we have a head slot, don't need to do anything
         else                       // Pick the best slot only to promote
         {
             coveredHeadSlots &= (coveredHeadSlots ^ (coveredHeadSlots - 1));  // Isolate lowest bit
         }
 
-        return {coveredSlots, coveredHeadSlots};
-    }
-
-    ArmorSlots PromoteHeadSlots(RE::TESObjectARMO* i, unsigned int coveredHeadSlots) {
-        unsigned int slots = (unsigned int)i->GetSlotMask();
-        slots &= ~kCosmeticSlotMask;
-
-        // Promote to head slot if needed
-        if (slots & coveredHeadSlots) slots = (unsigned int)RE::BIPED_MODEL::BipedObjectSlot::kHead;
-        return slots;
+        return {PromoteHeadSlots(coveredSlots, coveredHeadSlots), coveredHeadSlots};
     }
 
     void ProcessBaseArmorSet(const ArmorChangeParams& params, ArmorSlots coveredHeadSlots, const auto& fn) {
         for (auto i : params.armorSet->items) {
-            auto slots = PromoteHeadSlots(i, coveredHeadSlots);
+            auto slots = PromoteHeadSlots((ArmorSlots)i->GetSlotMask(), coveredHeadSlots);
 
             // Handling multi-slot items makes things a giant mess, just use the lowest one instead
             // while (slots) {  // hair can cause multiple
@@ -132,7 +150,11 @@ namespace {
 }
 
 ArmorSlots QuickArmorRebalance::GetConvertableArmorSlots(const ArmorChangeParams& params) {
-    auto [coveredSlots, coveredHeadSlots] = CalcCoveredSlots(params);
+    params.remapMask = 0;
+    for (auto i : params.mapArmorSlots) params.remapMask |= (1 << i.first);
+
+    auto [coveredSlots, coveredHeadSlots] = CalcCoveredSlots(params.armorSet->items, params);
+
     coveredSlots = 0;  // weird case where an item's in the armor set but not in the curve tree
 
     ProcessBaseArmorSet(params, coveredHeadSlots, [&](ArmorSlot slot, RE::TESObjectARMO*) {
@@ -146,27 +168,15 @@ void QuickArmorRebalance::MakeArmorChanges(const ArmorChangeParams& params) {
     if (params.items.empty()) return;
     params.bMixedSetDone = false;
 
-    auto [coveredSlots, coveredHeadSlots] = CalcCoveredSlots(params);
-    SlotRelativeWeight slotValues[32];
+    params.remapMask = 0;
+    for (auto i : params.mapArmorSlots) params.remapMask |= (1 << i.first);
 
     // Build list of base items per slot
+    auto [_discard, coveredHeadSlots] = CalcCoveredSlots(params.armorSet->items, params);
+    auto [coveredSlots, coveredHeadSlotsChanges] = CalcCoveredSlots(params.items, params, true);
 
-    /*
-    for (auto i : params.armorSet->items) {
-        auto slots = PromoteHeadSlots(i, coveredHeadSlots);
+    SlotRelativeWeight slotValues[32];
 
-        // Handling multi-slot items makes things a giant mess, just use the lowest one instead
-        // while (slots) {  // hair can cause multiple
-        if (slots) {
-            unsigned long slot;
-            _BitScanForward(&slot, slots);
-            slots &= slots - 1; //Removes lowest bit
-
-
-            slotValues[slot].item = i;
-        }
-    }
-    */
     ProcessBaseArmorSet(params, coveredHeadSlots,
                         [&](ArmorSlot slot, RE::TESObjectARMO* i) { slotValues[slot].item = i; });
 
@@ -178,9 +188,6 @@ void QuickArmorRebalance::MakeArmorChanges(const ArmorChangeParams& params) {
     Document doc;
     auto& al = doc.GetAllocator();
 
-    ArmorSlots remap = 0;
-    for (auto i : params.mapArmorSlots) remap |= (1<<i.first);
-
     std::map<RE::TESFile*, Value> mapFileChanges;
 
     for (auto i : params.items) {
@@ -188,17 +195,12 @@ void QuickArmorRebalance::MakeArmorChanges(const ArmorChangeParams& params) {
             SlotRelativeWeight* itemBase = nullptr;
             int weight = 0;
 
-            ArmorSlots slots = (ArmorSlots)armor->GetSlotMask();
-            ArmorSlots slotsOrig = MapFindOr(g_Data.modifiedArmorSlots, armor, slots); //Need to retrieve the original slots, or double-applying will loose data
+            // Need to retrieve the original slots, or double-applying will loose data
+            ArmorSlots slotsOrig = MapFindOr(g_Data.modifiedArmorSlots, armor, (ArmorSlots)armor->GetSlotMask());
+            ArmorSlots slotsRemapped = RemapSlots(slotsOrig, params);
+            ArmorSlots slots = slotsRemapped;
 
-            ArmorSlots slotsRemapped = slots;
-            if (slots & remap) {
-                for (auto s : params.mapArmorSlots) {
-                    if (slots & (1 << s.first)) //Test on different data then the changes, so that changes aren't chained together
-                        slotsRemapped = (slotsRemapped & ~(1 << s.first)) | (s.second < 32 ? (1 << s.second) : 0);
-                }
-                slots = slotsRemapped;
-            }
+            slots = PromoteHeadSlots(slots, coveredHeadSlotsChanges);
 
             while (slots) {
                 unsigned long slot;
@@ -377,9 +379,8 @@ void QuickArmorRebalance::MakeArmorChanges(const ArmorChangeParams& params) {
             } else {
                 if (doc.HasMember(j.name)) {
                     auto& prev = doc[j.name];
-                    if (!prev.IsObject())
-                    {
-                        doc.RemoveMember(j.name);  
+                    if (!prev.IsObject()) {
+                        doc.RemoveMember(j.name);
                         doc.AddMember(j.name, j.value, al);
                         continue;
                     }
@@ -805,7 +806,7 @@ void ::ClearRecipe(RE::BGSConstructibleObject* tar) {
                 head->data.functionData.function == RE::FUNCTION_DATA::FunctionID::kGetItemCount) {
                 head->next = book;
                 head->data.flags.isOR = false;
-                book = head;                
+                book = head;
             } else
                 delete head;
 
@@ -840,7 +841,8 @@ void ::ReplaceRecipe(RE::BGSConstructibleObject* tar, const RE::BGSConstructible
         const auto& srcConds = src->conditions;
 
         auto prev = tar->conditions.head;
-        if (prev) while (prev->next) prev = prev->next;
+        if (prev)
+            while (prev->next) prev = prev->next;
 
         if (srcConds.head) {
             for (auto psrc = srcConds.head; psrc; psrc = psrc->next) {

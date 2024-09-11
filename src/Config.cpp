@@ -25,23 +25,35 @@ namespace QuickArmorRebalance {
     RebalanceCurveNode::Tree LoadCurveNode(const Value& node);
     bool LoadArmorSet(BaseArmorSet& s, const Value& node);
 
-    RE::TESObjectWEAP* BaseArmorSet::FindMatching(RE::TESObjectWEAP* w) const
-    { 
+    RE::TESObjectARMO* BaseArmorSet::FindMatching(RE::TESObjectARMO* w) const {
+        auto slots = (ArmorSlots)w->GetSlotMask();
+
+        auto it = items.begin();
+
+        if (slots & kHeadSlotMask)  // Match with any head slot
+            it = std::find_if(items.begin(), items.end(), [=](RE::TESObjectARMO* armor) {
+                return (kHeadSlotMask & (ArmorSlots)armor->GetSlotMask());
+            });
+        else
+            it = std::find_if(items.begin(), items.end(),
+                              [=](RE::TESObjectARMO* armor) { return (slots & (ArmorSlots)armor->GetSlotMask()); });
+
+        return it != items.end() ? *it : nullptr;
+    }
+
+    RE::TESObjectWEAP* BaseArmorSet::FindMatching(RE::TESObjectWEAP* w) const {
         for (auto i : weaps) {
-            if (i->GetWeaponType() == w->GetWeaponType())
-            {
-                //2h maces use the same weapon type as 2h axe, so need to actually compare keywords
-                for (unsigned int j = 0; j<i->numKeywords; j++)
-                {
+            if (i->GetWeaponType() == w->GetWeaponType()) {
+                // 2h maces use the same weapon type as 2h axe, so need to actually compare keywords
+                for (unsigned int j = 0; j < i->numKeywords; j++) {
                     if (g_Config.kwSetWeapTypes.contains(i->keywords[j])) {
                         if (w->HasKeyword(i->keywords[j])) return i;
                         break;
                     }
                 }
-
             }
         }
-        return nullptr; 
+        return nullptr;
     }
 
     RE::TESAmmo* BaseArmorSet::FindMatching(RE::TESAmmo* w) const {
@@ -99,7 +111,8 @@ bool QuickArmorRebalance::Config::Load() {
     if (!bSuccess) {
         logger::error("Failed to read any config files");
     } else {
-        if (kwSet.empty() || kwSetWeap.empty() || kwSetWeapTypes.empty() || armorSets.empty() || curves.empty() || lootProfiles.empty()) {
+        if (kwSet.empty() || kwSetWeap.empty() || kwSetWeapTypes.empty() || armorSets.empty() || curves.empty() ||
+            lootProfiles.empty()) {
             bSuccess = false;
             logger::error("Missing required data, disabling");
         }
@@ -120,13 +133,13 @@ bool QuickArmorRebalance::Config::Load() {
             g_Config.acParams.weapon.weight.bModify = config["modifyWeapWeight"].value_or(true);
             g_Config.acParams.weapon.speed.bModify = config["modifyWeapSpeed"].value_or(true);
             g_Config.acParams.weapon.stagger.bModify = config["modifyWeapStagger"].value_or(true);
-            
 
-            g_Config.acParams.value.bModify= config["modifyValue"].value_or(true);
+            g_Config.acParams.value.bModify = config["modifyValue"].value_or(true);
 
             auto armorSet = config["armorset"];
             if (armorSet.is_string()) {
                 auto str = armorSet.value<std::string>();
+                g_Config.acParams.armorSet = FindArmorSet(str->c_str());
                 for (auto& i : g_Config.armorSets) {
                     if (!_stricmp(str->c_str(), i.name.c_str())) {
                         g_Config.acParams.armorSet = &i;
@@ -174,6 +187,10 @@ bool QuickArmorRebalance::Config::Load() {
             g_Config.bResetSlotRemap = config["settings"]["resetslotremap"].value_or(true);
             g_Config.bEnableAllItems = config["settings"]["enableallitems"].value_or(false);
             g_Config.bAllowInvalidRemap = config["settings"]["allowinvalidremap"].value_or(false);
+            g_Config.bUseSecondaryRecipes = config["settings"]["usesecondaryrecipes"].value_or(true);
+            g_Config.fTemperGoldCostRatio = std::clamp(config["settings"]["goldcosttemper"].value_or(20.f), 0.0f, 200.0f);
+            g_Config.fCraftGoldCostRatio = std::clamp(config["settings"]["goldcostcraft"].value_or(70.f), 0.0f, 200.0f);
+            g_Config.bEnableSmeltingRecipes = config["settings"]["enablesmeltingrecipes"].value_or(false);
 
             LoadPermissions(g_Config.permLocal, config["localPermissions"]);
             LoadPermissions(g_Config.permShared, config["sharedPermissions"]);
@@ -187,7 +204,6 @@ bool QuickArmorRebalance::Config::Load() {
             g_Config.acParams.distProfile = g_Config.lootProfiles.find(lootProfile)->c_str();
         else if (!lootProfiles.empty())
             g_Config.acParams.distProfile = lootProfiles.begin()->c_str();
-
     }
 
     ValidateLootConfig();
@@ -219,7 +235,7 @@ namespace {
             return true;
         } else
             ConfigFileWarning(path, std::format("{} expected to be an array", field).c_str());
-        
+
         return false;
     }
 }
@@ -271,8 +287,8 @@ bool QuickArmorRebalance::Config::LoadFile(std::filesystem::path path) {
         const auto& jsonRequires = d["requires"];
         if (jsonRequires.IsString()) {
             if (!dataHandler->LookupModByName(jsonRequires.GetString())) {
-                logger::debug("{}: Lacking required mod \"{}\", skipping",
-                              path.filename().generic_string(), jsonRequires.GetString());
+                logger::debug("{}: Lacking required mod \"{}\", skipping", path.filename().generic_string(),
+                              jsonRequires.GetString());
                 return true;
             }
         }
@@ -377,6 +393,10 @@ bool QuickArmorRebalance::LoadArmorSet(BaseArmorSet& s, const Value& node) {
             return false;
         }
 
+        if (node.HasMember("recipeFallbackSet")) {
+            as.strFallbackRecipeSet = node["recipeFallbackSet"].GetString();
+        }
+
         if (node.HasMember("file")) {
             if (auto mod = dataHandler->LookupModByName(node["file"].GetString())) {
                 if (node.HasMember("items") && node["items"].IsArray()) {
@@ -387,8 +407,7 @@ bool QuickArmorRebalance::LoadArmorSet(BaseArmorSet& s, const Value& node) {
                             bool bOther;
                             auto item = FindIn(mod, str, &bOther);
                             if (!item) {
-                                if (!bOther)
-                                    logger::error("Item not found for set {}", str);
+                                if (!bOther) logger::error("Item not found for set {}", str);
                                 continue;
                             }
 
@@ -417,13 +436,11 @@ bool QuickArmorRebalance::LoadArmorSet(BaseArmorSet& s, const Value& node) {
                                     logger::error("Item has no slots {:#010x}", item->formID);
                                 }
                             } else if (auto weap = item->As<RE::TESObjectWEAP>()) {
-                                if (!as.FindMatching(weap))
-                                {
+                                if (!as.FindMatching(weap)) {
                                     as.weaps.insert(weap);
                                 } else
-                                    logger::error("Duplicate weapon type found for item {}",str);
-                            } 
-                            else if (auto ammo = item->As<RE::TESAmmo>()) {
+                                    logger::error("Duplicate weapon type found for item {}", str);
+                            } else if (auto ammo = item->As<RE::TESAmmo>()) {
                                 if (!as.FindMatching(ammo)) {
                                     as.ammo.insert(ammo);
                                 } else
@@ -449,9 +466,7 @@ bool QuickArmorRebalance::LoadArmorSet(BaseArmorSet& s, const Value& node) {
     for (auto i : as.weaps) names.push_back(i->GetName());
     for (auto i : as.ammo) names.push_back(i->GetName());
 
-    std::sort(names.begin(), names.end(), [](const char* a, const char* b) {
-        return _stricmp(a,b) < 0;
-    });
+    std::sort(names.begin(), names.end(), [](const char* a, const char* b) { return _stricmp(a, b) < 0; });
     size_t nLen = 0;
     for (auto i : names) nLen += strlen(i) + 1;
 
@@ -459,7 +474,7 @@ bool QuickArmorRebalance::LoadArmorSet(BaseArmorSet& s, const Value& node) {
     for (auto i : names) {
         if (!as.strContents.empty()) as.strContents.append("\n");
         as.strContents.append(i);
-    }        
+    }
 
     s = std::move(as);
     return bSuccess;
@@ -532,6 +547,10 @@ void QuickArmorRebalance::Config::Save() {
              {"resetslotremap", g_Config.bResetSlotRemap},
              {"enableallitems", g_Config.bEnableAllItems},
              {"allowinvalidremap", g_Config.bAllowInvalidRemap},
+             {"usesecondaryrecipes", g_Config.bUseSecondaryRecipes},
+             {"goldcosttemper", g_Config.fTemperGoldCostRatio},
+             {"goldcostcraft", g_Config.fCraftGoldCostRatio},
+             {"enablesmeltingrecipes", g_Config.bEnableSmeltingRecipes},
          }},
         {"localPermissions", SavePermissions(g_Config.permLocal)},
         {"sharedPermissions", SavePermissions(g_Config.permShared)},
@@ -600,12 +619,10 @@ void QuickArmorRebalance::Config::AddUserBlacklist(RE::TESFile* mod) {
 
     g_Config.blacklist.insert(mod);
 
-    for (auto i = g_Data.sortedMods.begin(); i != g_Data.sortedMods.end(); i++)
-    {
+    for (auto i = g_Data.sortedMods.begin(); i != g_Data.sortedMods.end(); i++) {
         if ((*i)->mod == mod) {
             g_Data.sortedMods.erase(i);
             break;
         }
     }
-
 }

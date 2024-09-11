@@ -777,12 +777,8 @@ void QuickArmorRebalance::RenderUI() {
                             hlConvert.Touch();
                             hlDistributeAs.Touch();
                             hlRarity.Touch();
-                            hlSlots.Touch();                        
+                            hlSlots.Touch();
                         }
-
-
-
-
                     }
 
                     GetCurrentListItems(curMod, nModSpecial, filter);
@@ -984,7 +980,9 @@ void QuickArmorRebalance::RenderUI() {
                             "If an item being modified lacks an existing temper recipe to modify, checking\n"
                             "this will create one automatically");
                         ImGui::TableNextColumn();
-                        ImGui::Checkbox("Make free if no recipe to copy##Temper", &params.temper.bFree);
+                        ImGui::Checkbox(g_Config.fTemperGoldCostRatio > 0 ? "Cost gold if no recipe to copy##Temper"
+                                                                          : "Make free if no recipe to copy##Temper",
+                                        &params.temper.bFree);
                         MakeTooltip(
                             "If the item being copied lacks a tempering recipe, checking will remove all\n"
                             "components and conditions to temper the modified item");
@@ -1001,7 +999,9 @@ void QuickArmorRebalance::RenderUI() {
                                 "If an item being modified lacks an existing crafting recipe to modify,\n"
                                 "checking this will create one automatically");
                         ImGui::TableNextColumn();
-                        ImGui::Checkbox("Make free if no recipe to copy##Craft", &params.craft.bFree);
+                        ImGui::Checkbox(g_Config.fCraftGoldCostRatio > 0 ? "Cost gold if no recipe to copy##Craft"
+                                                                         : "Make free if no recipe to copy##Craft",
+                                        &params.craft.bFree);
                         if (ImGui::IsItemHovered())
                             ImGui::SetTooltip(
                                 "If the item being copied lacks a crafting recipe, checking will remove all\n"
@@ -1393,15 +1393,15 @@ void QuickArmorRebalance::RenderUI() {
 
         bool bPopupActive = true;
         if (ImGui::BeginPopupModal("Settings", &bPopupActive, ImGuiWindowFlags_AlwaysAutoResize)) {
-
+            ImGui::Text("NOTE: Many changes require restarting Skyrim to take full effect.");
             if (ImGui::BeginTabBar("Settings Tabs")) {
-
                 if (ImGui::BeginTabItem("General")) {
                     const char* logLevels[] = {"Trace", "Debug", "Info", "Warn", "Error", "Critical", "Off"};
 
                     ImGui::Text("Log verbsity");
                     ImGui::SameLine();
-                    if (ImGui::BeginCombo("##Verbosity", logLevels[g_Config.verbosity], ImGuiComboFlags_PopupAlignLeft)) {
+                    if (ImGui::BeginCombo("##Verbosity", logLevels[g_Config.verbosity],
+                                          ImGuiComboFlags_PopupAlignLeft)) {
                         for (int i = 0; i < spdlog::level::n_levels; i++) {
                             bool selected = g_Config.verbosity == i;
                             if (ImGui::Selectable(logLevels[i], selected)) {
@@ -1424,8 +1424,8 @@ void QuickArmorRebalance::RenderUI() {
                     ImGui::Checkbox("USE AT YOUR OWN RISK: Enable <All Items> in item list", &g_Config.bEnableAllItems);
                     MakeTooltip(
                         "This can result in performance issues, and making a mess by changing too many items at once.\n"
-                        "Use with caution.");                
-                
+                        "Use with caution.");
+
                     ImGui::EndTabItem();
                 }
 
@@ -1445,7 +1445,7 @@ void QuickArmorRebalance::RenderUI() {
 
                     ImGui::EndTabItem();
                 }
-                
+
                 if (ImGui::BeginTabItem("Crafting")) {
                     ImGui::Text("Only generate crafting recipes for");
                     ImGui::SameLine();
@@ -1471,9 +1471,30 @@ void QuickArmorRebalance::RenderUI() {
 
                     ImGui::Checkbox("Keep crafting books as requirement", &g_Config.bKeepCraftingBooks);
 
+                    ImGui::Checkbox("Use recipes from as similar item if primary item is lacking",
+                                    &g_Config.bUseSecondaryRecipes);
+
+                    ImGui::Checkbox("Enable smelting recipes", &g_Config.bEnableSmeltingRecipes);
+
+                    ImGui::Text("Instead of free recipes, make recipes cost gold as a portion of the item's value:");
+                    ImGui::Indent();
+                    ImGui::Text("Temper recipes");
+                    ImGui::SameLine();
+                    ImGui::SetNextItemWidth(-FLT_MIN);
+                    ImGui::SliderFloat("##TemperRatio", &g_Config.fTemperGoldCostRatio, 0.0f, 200.0f, "%.0f%%",
+                                       ImGuiSliderFlags_AlwaysClamp);
+                    MakeTooltip("Set to 0%% to keep free");
+                    ImGui::Text("Craft recipes");
+                    ImGui::SameLine();
+                    ImGui::SetNextItemWidth(-FLT_MIN);
+                    ImGui::SliderFloat("##CraftRatio", &g_Config.fCraftGoldCostRatio, 0.0f, 200.0f, "%.0f%%",
+                                       ImGuiSliderFlags_AlwaysClamp);
+                    MakeTooltip("Set to 0%% to keep free");
+                    ImGui::Unindent();
+
                     ImGui::EndTabItem();
                 }
-            
+
                 if (ImGui::BeginTabItem("Permissions")) {
                     if (ImGui::BeginTable("Permissions", 2,
                                           ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_SizingFixedFit |
@@ -1498,10 +1519,6 @@ void QuickArmorRebalance::RenderUI() {
 
                 ImGui::EndTabBar();
             }
-
-
-
-
 
             ImGui::EndPopup();
         }

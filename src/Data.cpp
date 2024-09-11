@@ -62,6 +62,14 @@ void ProcessItem(RE::TESBoundObject* i) {
     data->items.insert(i);
 }
 
+void CopyRecipe(std::map<RE::TESBoundObject*, RE::BGSConstructibleObject*>& map, RE::TESBoundObject* src,
+                RE::TESBoundObject* tar) {
+    if (map.find(tar) != map.end()) return;  
+    
+    auto it = map.find(src);
+    if (it != map.end()) map.insert({tar, it->second});
+}
+
 void QuickArmorRebalance::ProcessData() {
     auto dataHandler = RE::TESDataHandler::GetSingleton();
 
@@ -89,6 +97,9 @@ void QuickArmorRebalance::ProcessData() {
     auto temperWeapBench = RE::TESForm::LookupByEditorID<RE::BGSKeyword>("CraftingSmithingSharpeningWheel");
     if (!temperWeapBench) return;
 
+    auto smelter = RE::TESForm::LookupByEditorID<RE::BGSKeyword>("CraftingSmelter");
+    if (!temperBench) return;
+
     auto& lsRecipies = dataHandler->GetFormArray<RE::BGSConstructibleObject>();
     for (auto i : lsRecipies) {
         if (!i->createdItem) continue;
@@ -97,8 +108,49 @@ void QuickArmorRebalance::ProcessData() {
 
         if (i->benchKeyword == temperBench || i->benchKeyword == temperWeapBench)
             g_Data.temperRecipe.insert({pObj, i});
-        else
+        else if (i->benchKeyword == smelter) {
+            auto& mats = i->requiredItems;
+            if (mats.numContainerObjects == 1) g_Data.smeltRecipe.insert({mats.containerObjects[0]->obj, i});        
+        } else
             g_Data.craftRecipe.insert({pObj, i});
+    }
+
+    if (g_Config.bUseSecondaryRecipes) {
+        for (auto& i : g_Config.armorSets) {
+            if (!i.strFallbackRecipeSet.empty()) {
+                if (auto as = g_Config.FindArmorSet(i.strFallbackRecipeSet.c_str())) {
+                    auto fillRecipes = [as](auto item) {
+                        bool hasTemper = g_Data.temperRecipe.find(item) != g_Data.temperRecipe.end();
+                        bool hasCraft = g_Data.craftRecipe.find(item) != g_Data.craftRecipe.end();
+
+                        if (!hasTemper || !hasCraft) {
+                            if (auto copy = as->FindMatching(item)) {
+                                if (!hasTemper) CopyRecipe(g_Data.temperRecipe, copy, item);
+                                if (!hasCraft) CopyRecipe(g_Data.craftRecipe, copy, item);
+                            }
+                        }
+                    };
+
+                    std::for_each(i.items.begin(), i.items.end(), fillRecipes);
+                    std::for_each(i.weaps.begin(), i.weaps.end(), fillRecipes);
+                    std::for_each(i.ammo.begin(), i.ammo.end(), fillRecipes);
+                } else
+                    logger::warn("Fallback recipe set not found : {}", i.strFallbackRecipeSet);
+            }
+
+            /*
+            auto reportMissingRecipies = [](auto item) {
+                if (g_Data.temperRecipe.find(item) == g_Data.temperRecipe.end())
+                    logger::info("{}: Missing temper recipe", item->GetName());
+                if (g_Data.craftRecipe.find(item) == g_Data.craftRecipe.end())
+                    logger::info("{}: Missing craft recipe", item->GetName());
+            };
+
+            std::for_each(i.items.begin(), i.items.end(), reportMissingRecipies);
+            std::for_each(i.weaps.begin(), i.weaps.end(), reportMissingRecipies);
+            std::for_each(i.ammo.begin(), i.ammo.end(), reportMissingRecipies);
+            */
+        }
     }
 }
 

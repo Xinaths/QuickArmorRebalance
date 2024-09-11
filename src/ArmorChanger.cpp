@@ -59,8 +59,9 @@ namespace {
             return w;
     }
 
+    void CopyConditions(RE::TESCondition& tar, const RE::TESCondition& src, void* replace, void* replaceWith);
     void ClearRecipe(RE::BGSConstructibleObject* tar);
-    void ReplaceRecipe(RE::BGSConstructibleObject* tar, const RE::BGSConstructibleObject* src, float w);
+    void ReplaceRecipe(RE::BGSConstructibleObject* tar, const RE::BGSConstructibleObject* src, float w, float fCost);
 
     ArmorSlots RemapSlots(ArmorSlots slots, const ArmorChangeParams& params) {
         ArmorSlots slotsRemapped = slots;
@@ -729,7 +730,7 @@ bool QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, RE::FormID id, c
             }
         }
 
-        if (recipeItem && bFree) ::ReplaceRecipe(recipeItem, recipeSrc, weight);
+        if (recipeItem && bFree) ::ReplaceRecipe(recipeItem, recipeSrc, weight, g_Config.fTemperGoldCostRatio);
     }
 
     if (perm.crafting.bModify && changes.HasMember("craft")) {
@@ -773,14 +774,85 @@ bool QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, RE::FormID id, c
                 }
             }
 
-            if (recipeItem && bFree) ::ReplaceRecipe(recipeItem, recipeSrc, weight);
+            if (recipeItem && bFree) ::ReplaceRecipe(recipeItem, recipeSrc, weight, g_Config.fCraftGoldCostRatio);
         } else if (g_Config.bDisableCraftingRecipesOnRarity && recipeItem) {
             logger::trace("Disabling recipe for {}", item->GetName());
             recipeItem->benchKeyword = nullptr;
         }
     }
 
+    if (g_Config.bEnableSmeltingRecipes) {
+        RE::BGSConstructibleObject *recipeItem = nullptr, *recipeSrc = nullptr;
+
+        auto it = g_Data.smeltRecipe.find(bo);
+        if (it != g_Data.smeltRecipe.end()) recipeItem = it->second;
+
+        it = g_Data.smeltRecipe.find(boSrc);
+        if (it != g_Data.smeltRecipe.end()) recipeSrc = it->second;
+
+        if (recipeSrc) {
+            if (!recipeItem) {
+                auto newForm = static_cast<RE::BGSConstructibleObject*>(
+                    RE::IFormFactory::GetFormFactoryByType(RE::FormType::ConstructibleObject)->Create());
+
+                if (newForm) {
+                    newForm->benchKeyword = recipeSrc
+                                                ? recipeSrc->benchKeyword
+                                                : RE::TESForm::LookupByEditorID<RE::BGSKeyword>("CraftingSmelter");
+
+                    dataHandler->GetFormArray<RE::BGSConstructibleObject>().push_back(
+                        newForm);  // For whatever reason, it's not added automatically and thus won't show up in game
+                    g_Data.smeltRecipe.insert({bo, recipeItem});
+                    recipeItem = newForm;
+                }
+
+            } else
+                ::ClearRecipe(recipeItem);
+
+            if (recipeItem) {
+                ::CopyConditions(recipeItem->conditions, recipeSrc->conditions,
+                                 recipeSrc->requiredItems.containerObjects[0]->obj, bo);
+
+                auto& mats = recipeItem->requiredItems;
+                mats.containerObjects = RE::calloc<RE::ContainerObject*>(mats.numContainerObjects = 1);
+                mats.containerObjects[0] =
+                    new RE::ContainerObject(bo, recipeSrc->requiredItems.containerObjects[0]->count);
+
+                recipeItem->data.numConstructed = (uint16_t)std::max(1, (int)(weight * recipeSrc->data.numConstructed));
+                recipeItem->createdItem = recipeSrc->createdItem;
+            }
+        }
+    }
+
     return true;
+}
+
+void ::CopyConditions(RE::TESCondition& tar, const RE::TESCondition& src, void* replace, void* replaceWith) {
+    auto prev = tar.head;
+    if (prev)
+        while (prev->next) prev = prev->next;
+
+    if (src.head) {
+        for (auto psrc = src.head; psrc; psrc = psrc->next) {
+            auto p = new RE::TESConditionItem();
+
+            if (!prev)
+                tar.head = p;
+            else
+                prev->next = p;
+
+            p->data = psrc->data;
+
+                switch (p->data.functionData.function.get()) {
+                    case RE::FUNCTION_DATA::FunctionID::kGetItemCount:
+                    case RE::FUNCTION_DATA::FunctionID::kGetEquipped:
+                        if (p->data.functionData.params[0] == replace) p->data.functionData.params[0] = replaceWith;
+                        break;
+                }
+            p->next = nullptr;
+            prev = p;
+        }
+    }
 }
 
 void ::ClearRecipe(RE::BGSConstructibleObject* tar) {
@@ -795,6 +867,7 @@ void ::ClearRecipe(RE::BGSConstructibleObject* tar) {
         mats.containerObjects = nullptr;
         mats.numContainerObjects = 0;
     }
+
     {  // Conditions
         RE::TESConditionItem* book = nullptr;
         auto& conds = tar->conditions;
@@ -816,47 +889,39 @@ void ::ClearRecipe(RE::BGSConstructibleObject* tar) {
     }
 }
 
-void ::ReplaceRecipe(RE::BGSConstructibleObject* tar, const RE::BGSConstructibleObject* src, float w) {
+void ::ReplaceRecipe(RE::BGSConstructibleObject* tar, const RE::BGSConstructibleObject* src, float w, float fCost) {
     ::ClearRecipe(tar);
-    if (!src) return;
+    if (src) {
+        tar->benchKeyword = src->benchKeyword;
+        tar->data.numConstructed = src->data.numConstructed;
 
-    tar->benchKeyword = src->benchKeyword;
-    tar->data.numConstructed = src->data.numConstructed;
+        {  // Materials
+            const auto& srcmats = src->requiredItems;
+            auto& mats = tar->requiredItems;
 
-    {  // Materials
-        const auto& srcmats = src->requiredItems;
+            if (src->requiredItems.numContainerObjects > 0) {
+                mats.containerObjects = RE::calloc<RE::ContainerObject*>(srcmats.numContainerObjects);
+                mats.numContainerObjects = srcmats.numContainerObjects;
+
+                for (unsigned int i = 0; i < srcmats.numContainerObjects; i++) {
+                    mats.containerObjects[i] = new RE::ContainerObject(
+                        srcmats.containerObjects[i]->obj, std::max(1, (int)(w * srcmats.containerObjects[i]->count)));
+                }
+            }
+        }
+
+        ::CopyConditions(tar->conditions, src->conditions, src->createdItem, tar->createdItem);
+    } else if (fCost > 0) {
         auto& mats = tar->requiredItems;
 
-        if (src->requiredItems.numContainerObjects > 0) {
-            mats.containerObjects = RE::calloc<RE::ContainerObject*>(srcmats.numContainerObjects);
-            mats.numContainerObjects = srcmats.numContainerObjects;
+        auto goldForm = RE::TESForm::LookupByID(0xf);
+        if (!goldForm) return;
 
-            for (unsigned int i = 0; i < srcmats.numContainerObjects; i++) {
-                mats.containerObjects[i] = new RE::ContainerObject(
-                    srcmats.containerObjects[i]->obj, std::max(1, (int)(w * srcmats.containerObjects[i]->count)));
-            }
-        }
-    }
-    {  // Conditions
-        const auto& srcConds = src->conditions;
+        auto goldObj = goldForm->As<RE::TESBoundObject>();
+        if (!goldObj) return;
 
-        auto prev = tar->conditions.head;
-        if (prev)
-            while (prev->next) prev = prev->next;
-
-        if (srcConds.head) {
-            for (auto psrc = srcConds.head; psrc; psrc = psrc->next) {
-                auto p = new RE::TESConditionItem();
-
-                if (!prev)
-                    tar->conditions.head = p;
-                else
-                    prev->next = p;
-
-                p->data = psrc->data;
-                p->next = nullptr;
-                prev = p;
-            }
-        }
+        mats.containerObjects = RE::calloc<RE::ContainerObject*>(mats.numContainerObjects = 1);
+        mats.containerObjects[0] =
+            new RE::ContainerObject(goldObj, std::max(1, (int)(0.01f * fCost * tar->createdItem->GetGoldValue())));
     }
 }

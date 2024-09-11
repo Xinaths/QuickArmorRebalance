@@ -30,11 +30,13 @@ namespace QuickArmorRebalance {
     struct BaseArmorSet {
         std::string name;
         std::string strContents;
+        std::string strFallbackRecipeSet;
         LootDistGroup* loot = nullptr;
         std::set<RE::TESObjectARMO*> items;
         std::set<RE::TESObjectWEAP*> weaps;
         std::set<RE::TESAmmo*> ammo;
 
+        RE::TESObjectARMO* FindMatching(RE::TESObjectARMO* w) const;
         RE::TESObjectWEAP* FindMatching(RE::TESObjectWEAP* w) const;
         RE::TESAmmo* FindMatching(RE::TESAmmo* w) const;
     };
@@ -124,6 +126,12 @@ namespace QuickArmorRebalance {
 
         void AddUserBlacklist(RE::TESFile* mod);
 
+        BaseArmorSet* FindArmorSet(const char* name) {
+            auto it = std::find_if(armorSets.begin(), armorSets.end(),
+                                   [=](const BaseArmorSet& as) { return !as.name.compare(name); });
+            return it != armorSets.end() ? &*it : nullptr;
+        }
+
         std::set<const RE::TESFile*> blacklist;
         std::set<RE::BGSKeyword*> kwSet;
         std::set<RE::BGSKeyword*> kwSlotSpecSet;
@@ -152,11 +160,17 @@ namespace QuickArmorRebalance {
         bool bResetSlotRemap = true;
         bool bEnableAllItems = false;
         bool bAllowInvalidRemap = false;
+        bool bUseSecondaryRecipes = true;
+        bool bEnableSmeltingRecipes = false;
+
 
         float fDropRates = 100.0f;
         int verbosity = spdlog::level::info;
         int levelGranularity = 3;
         int craftingRarityMax = 2;
+
+        float fTemperGoldCostRatio = 20.0f;
+        float fCraftGoldCostRatio = 70.0f;
 
         Permissions permLocal;
         Permissions permShared;

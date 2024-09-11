@@ -121,6 +121,7 @@ namespace QuickArmorRebalance
         std::set<RE::TESBoundObject*> modifiedItemsShared;
         std::map<RE::TESBoundObject*, RE::BGSConstructibleObject*> temperRecipe;
         std::map<RE::TESBoundObject*, RE::BGSConstructibleObject*> craftRecipe;
+        std::map<RE::TESBoundObject*, RE::BGSConstructibleObject*> smeltRecipe;
 
         std::map<RE::TESObjectARMO*, ArmorSlots> modifiedArmorSlots;
 

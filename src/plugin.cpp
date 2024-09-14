@@ -4,6 +4,7 @@
 #include "ImGUIIntegration.h"
 #include "UI.h"
 #include "LootLists.h"
+#include "WarmthHook.h"
 
 namespace QuickArmorRebalance {
     void OnDataLoaded();
@@ -43,6 +44,8 @@ namespace QuickArmorRebalance {
         SetupLootLists();
 
         g_Data.loot.release();
+
+        InstallWarmthHooks();
     }
 
     void Papyrus_OpenUI(RE::StaticFunctionTag*) {

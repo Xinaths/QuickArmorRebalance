@@ -262,7 +262,8 @@ bool SliderTable() {
     return false;
 }
 
-void SliderRow(const char* field, ArmorChangeParams::SliderPair& pair, float min = 0.0f, float max = 300.0f) {
+void SliderRow(const char* field, ArmorChangeParams::SliderPair& pair, float min = 0.0f, float max = 300.0f,
+               float def = 100.0f) {
     ImGui::TableNextRow();
     ImGui::TableNextColumn();
     ImGui::PushID(field);
@@ -272,7 +273,7 @@ void SliderRow(const char* field, ArmorChangeParams::SliderPair& pair, float min
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
     ImGui::SliderFloat("##Scale", &pair.fScale, min, max, "%.0f%%", ImGuiSliderFlags_AlwaysClamp);
     ImGui::TableNextColumn();
-    if (ImGui::Button("Reset")) pair.fScale = 100.0f;
+    if (ImGui::Button("Reset")) pair.fScale = def;
     ImGui::EndDisabled();
     ImGui::PopID();
 }
@@ -284,6 +285,7 @@ void PermissionsChecklist(const char* id, Permissions& p) {
     ImGui::Checkbox("Modify armor slots", &p.bModifySlots);
     ImGui::Checkbox("Modify armor rating", &p.bModifyArmorRating);
     ImGui::Checkbox("Modify armor weight", &p.bModifyWeight);
+    ImGui::Checkbox("Modify armor warmth", &p.bModifyWarmth);
     ImGui::Checkbox("Modify weapon damage", &p.bModifyWeapDamage);
     ImGui::Checkbox("Modify weapon weight", &p.bModifyWeapWeight);
     ImGui::Checkbox("Modify weapon speed", &p.bModifyWeapSpeed);
@@ -554,6 +556,7 @@ void QuickArmorRebalance::RenderUI() {
                                     if (g_Config.bResetSliders) {
                                         params.armor.rating.fScale = 100.0f;
                                         params.armor.weight.fScale = 100.0f;
+                                        params.armor.warmth.fScale = 50.0f;
                                         params.weapon.damage.fScale = 100.0f;
                                         params.weapon.speed.fScale = 100.0f;
                                         params.weapon.weight.fScale = 100.0f;
@@ -895,6 +898,71 @@ void QuickArmorRebalance::RenderUI() {
                                 if (SliderTable()) {
                                     SliderRow("Armor Rating", params.armor.rating);
                                     SliderRow("Weight", params.armor.weight);
+
+                                    // Warmth
+                                    {
+                                        const char* warmthDesc[] = {
+                                            "None",       //<0.1
+                                            "Cold",       //<0.2
+                                            "Poor",       //<0.3
+                                            "Limited",    //<0.4
+                                            "Fair",       //<0.5
+                                            "Average",    //<0.6
+                                            "Good",       //<0.7
+                                            "Warm",       //<0.8
+                                            "Full",       //<0.9
+                                            "Excellent",  //<1.0
+                                            "Maximum",    //=1.0
+                                        };
+
+                                        const char* coverageDesc[] = {
+                                            "None",       //<0.1
+                                            "Minimal",       //<0.2
+                                            "Poor",       //<0.3
+                                            "Limited",    //<0.4
+                                            "Fair",       //<0.5
+                                            "Average",    //<0.6
+                                            "Good",       //<0.7
+                                            "Significant",//<0.8
+                                            "Full",       //<0.9
+                                            "Excellent",  //<1.0
+                                            "Maximum",    //=1.0
+                                        };
+
+                                        bool showCoverage =
+                                            g_Config.isFrostfallInstalled || g_Config.bShowFrostfallCoverage;
+
+                                        auto& pair = params.armor.warmth;
+                                        ImGui::TableNextRow();
+                                        ImGui::TableNextColumn();
+
+                                        ImGui::Checkbox("Modify Warmth", &pair.bModify);
+                                        MakeTooltip(
+                                            "The total warmth of the armor set.\n"
+                                            "This number is NOT relative to the base armor set's warmth.");
+                                        ImGui::BeginDisabled(!pair.bModify);
+                                        ImGui::TableNextColumn();
+                                        
+                                        ImGui::SetNextItemWidth((showCoverage ? 0.5f : 1.0f) * ImGui::GetContentRegionAvail().x);
+                                        ImGui::SliderFloat("##WarmthSlider", &pair.fScale, 0.f, 100.f, "%.0f%% Warmth",
+                                                           ImGuiSliderFlags_AlwaysClamp);
+                                        MakeTooltip(warmthDesc[(int)(0.1f * pair.fScale)]);
+
+                                        if (showCoverage) {
+                                            ImGui::SameLine();
+                                            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+                                            ImGui::SliderFloat("##CoverageSlider", &params.armor.coverage, 0.f, 100.f,
+                                                               "%.0f%% Coverage", ImGuiSliderFlags_AlwaysClamp);
+                                            MakeTooltip(coverageDesc[(int)(0.1f * params.armor.coverage)]);
+                                        }
+
+                                        ImGui::TableNextColumn();
+                                        if (ImGui::Button("Reset")) {
+                                            pair.fScale = 50.0f;
+                                            params.armor.coverage = 50.0f;
+                                        }
+                                        ImGui::EndDisabled();
+                                    }
 
                                     ImGui::EndTable();
                                 }
@@ -1421,6 +1489,8 @@ void QuickArmorRebalance::RenderUI() {
                     ImGui::Checkbox("Reset slot remapping after changing mods", &g_Config.bResetSlotRemap);
                     ImGui::Checkbox("Allow remapping armor slots to unassigned slots", &g_Config.bAllowInvalidRemap);
                     ImGui::Checkbox("Highlight things you may want to look at", &g_Config.bHighlights);
+                    ImGui::Checkbox("Show Frostfall coverage slider even if not installed",
+                                    &g_Config.bShowFrostfallCoverage);
                     ImGui::Checkbox("USE AT YOUR OWN RISK: Enable <All Items> in item list", &g_Config.bEnableAllItems);
                     MakeTooltip(
                         "This can result in performance issues, and making a mess by changing too many items at once.\n"

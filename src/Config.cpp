@@ -75,6 +75,7 @@ void LoadPermissions(QuickArmorRebalance::Permissions& p, toml::node_view<toml::
     p.bModifyArmorRating = tbl["modifyArmor"].value_or(true);
     p.bModifyValue = tbl["modifyValue"].value_or(true);
     p.bModifyWeight = tbl["modifyWeight"].value_or(true);
+    p.bModifyWarmth = tbl["modifyWarmth"].value_or(true);
     p.bModifyWeapDamage = tbl["modifyWeapDamage"].value_or(true);
     p.bModifyWeapWeight = tbl["modifyWeapWeight"].value_or(true);
     p.bModifyWeapSpeed = tbl["modifyWeapSpeed"].value_or(true);
@@ -188,9 +189,11 @@ bool QuickArmorRebalance::Config::Load() {
             g_Config.bEnableAllItems = config["settings"]["enableallitems"].value_or(false);
             g_Config.bAllowInvalidRemap = config["settings"]["allowinvalidremap"].value_or(false);
             g_Config.bUseSecondaryRecipes = config["settings"]["usesecondaryrecipes"].value_or(true);
-            g_Config.fTemperGoldCostRatio = std::clamp(config["settings"]["goldcosttemper"].value_or(20.f), 0.0f, 200.0f);
+            g_Config.fTemperGoldCostRatio =
+                std::clamp(config["settings"]["goldcosttemper"].value_or(20.f), 0.0f, 200.0f);
             g_Config.fCraftGoldCostRatio = std::clamp(config["settings"]["goldcostcraft"].value_or(70.f), 0.0f, 200.0f);
             g_Config.bEnableSmeltingRecipes = config["settings"]["enablesmeltingrecipes"].value_or(false);
+            g_Config.bShowFrostfallCoverage = config["settings"]["showffcoverage"].value_or(false);
 
             LoadPermissions(g_Config.permLocal, config["localPermissions"]);
             LoadPermissions(g_Config.permShared, config["sharedPermissions"]);
@@ -204,6 +207,45 @@ bool QuickArmorRebalance::Config::Load() {
             g_Config.acParams.distProfile = g_Config.lootProfiles.find(lootProfile)->c_str();
         else if (!lootProfiles.empty())
             g_Config.acParams.distProfile = lootProfiles.begin()->c_str();
+    }
+
+    auto dataHandler = RE::TESDataHandler::GetSingleton();
+    if (dataHandler->LookupModByName("Frostfall.esp")) {
+        isFrostfallInstalled = true;
+
+        const char* kws[] = {"FrostfallEnableKeywordProtection", "FrostfallIgnore", "FrostfallWarmthPoor", "FrostfallWarmthFair",
+                             "FrostfallWarmthGood", "FrostfallWarmthExcellent", "FrostfallWarmthMax",
+                             "FrostfallCoveragePoor", "FrostfallCoverageFair", "FrostfallCoverageGood",
+                             "FrostfallCoverageExcellent",
+                             "FrostfallCoverageMax",
+                             
+                             /*
+                             "FrostfallIsCloakCloth",
+                             "FrostfallIsCloakLeather",
+                             "FrostfallIsCloakFur",
+                             "FrostfallIsWeatherproofAccessory",
+                             "FrostfallIsWarmAccessory",
+                             "FrostfallExtraHeadCloth",
+                             "FrostfallExtraHeadWeatherproof",
+                             "FrostfallExtraHeadWarm",
+                             "FrostfallExtraCloakCloth",
+                             "FrostfallExtraCloakLeather",
+                             "FrostfallExtraCloakFur",
+                             */
+                             nullptr};
+        for (auto id = kws; *id; id++) {
+            auto kw = RE::TESForm::LookupByEditorID<RE::BGSKeyword>(*id);
+            if (kw) {
+                kwFFSet.insert(kw);
+            }
+        }
+
+        ffKeywords.enable = RE::TESForm::LookupByEditorID<RE::BGSKeyword>(kws[0]);
+        ffKeywords.ignore = RE::TESForm::LookupByEditorID<RE::BGSKeyword>(kws[1]);
+        for (int i = 0; i < 5; i++) {
+            ffKeywords.warmth[i] = RE::TESForm::LookupByEditorID<RE::BGSKeyword>(kws[2 + i]);
+            ffKeywords.coverage[i] = RE::TESForm::LookupByEditorID<RE::BGSKeyword>(kws[2 + 5 + i]);
+        }
     }
 
     ValidateLootConfig();
@@ -487,6 +529,7 @@ toml::table SavePermissions(const QuickArmorRebalance::Permissions& p) {
         {"modifySlots", p.bModifySlots},
         {"modifyArmor", p.bModifyArmorRating},
         {"modifyWeight", p.bModifyWeight},
+        {"modifyWarmth", p.bModifyWarmth},
         {"modifyWeapDamage", p.bModifyWeapDamage},
         {"modifyWeapWeight", p.bModifyWeapWeight},
         {"modifyWeapSpeed", p.bModifyWeapSpeed},
@@ -551,6 +594,7 @@ void QuickArmorRebalance::Config::Save() {
              {"goldcosttemper", g_Config.fTemperGoldCostRatio},
              {"goldcostcraft", g_Config.fCraftGoldCostRatio},
              {"enablesmeltingrecipes", g_Config.bEnableSmeltingRecipes},
+             {"showffcoverage", g_Config.bShowFrostfallCoverage},
          }},
         {"localPermissions", SavePermissions(g_Config.permLocal)},
         {"sharedPermissions", SavePermissions(g_Config.permShared)},

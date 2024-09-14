@@ -16,9 +16,11 @@ using namespace rapidjson;
 namespace {
     using namespace QuickArmorRebalance;
 
-    int GetTotalWeight(RebalanceCurveNode const* node) {
+    int GetTotalWeight(RebalanceCurveNode const* node, ArmorSlots mask) {
+        if (!(mask & node->GetSlots())) return 0;
+
         int w = node->weight;
-        for (auto& i : node->children) w += GetTotalWeight(&i);
+        for (auto& i : node->children) w += GetTotalWeight(&i, mask);
         return w;
     }
 
@@ -182,7 +184,8 @@ void QuickArmorRebalance::MakeArmorChanges(const ArmorChangeParams& params) {
                         [&](ArmorSlot slot, RE::TESObjectARMO* i) { slotValues[slot].item = i; });
 
     int totalWeight = 0;
-    for (const auto& i : *params.curve) totalWeight += GetTotalWeight(&i);
+    for (const auto& i : *params.curve)
+        totalWeight += GetTotalWeight(&i, ~(ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kShield);
     for (const auto& i : *params.curve) PropogateBaseValues(slotValues, nullptr, &i);
     for (const auto& i : *params.curve) CalcCoveredValues(slotValues, coveredSlots, &i);
 
@@ -216,18 +219,29 @@ void QuickArmorRebalance::MakeArmorChanges(const ArmorChangeParams& params) {
             }
 
             if (itemBase) {
-                float rel = itemBase->weightBase > 0 ? (float)weight / itemBase->weightBase : 0.0f;
+                // float rel = itemBase->weightBase > 0 ? (float)weight / itemBase->weightBase : 0.0f;
                 Value changes(kObjectType);
                 changes.AddMember("name", Value(i->GetName(), al), al);
                 changes.AddMember("srcname", Value(itemBase->item->GetFullName(), al), al);
                 changes.AddMember("srcfile", Value(itemBase->item->GetFile(0)->fileName, al), al);
                 changes.AddMember("srcid", Value(GetFileId(itemBase->item)), al);
-                changes.AddMember("w", Value(rel), al);
+
+                // changes.AddMember("w", Value(rel), al);
+                Value weights(kObjectType);
+                weights.AddMember("item", weight, al);
+                weights.AddMember("base", itemBase->weightBase, al);
+                weights.AddMember("set", totalWeight, al);
+                changes.AddMember("w", weights, al);
+
                 if (params.bModifyKeywords) changes.AddMember("keywords", Value(true), al);
 
                 AddModification("armor", params.armor.rating, changes, al);
                 AddModification("weight", params.armor.weight, changes, al);
+                AddModification("warmth", params.armor.warmth, changes, al);
+                if (g_Config.isFrostfallInstalled || g_Config.bShowFrostfallCoverage)
+                    changes.AddMember("coverage", Value(0.01f * params.armor.coverage), al);
                 AddModification("value", params.value, changes, al);
+
                 if (slotsRemapped != slotsOrig) changes.AddMember("slots", slotsRemapped, al);
 
                 if (params.temper.bModify) {
@@ -245,12 +259,6 @@ void QuickArmorRebalance::MakeArmorChanges(const ArmorChangeParams& params) {
 
                 auto loot = MakeLootChanges(params, armor, al);
                 if (!loot.IsNull()) changes.AddMember("loot", loot, al);
-
-                /*
-                if (!ApplyChanges(i->GetFile(0), GetFileId(i), changes, g_Config.permLocal)) {
-                    logger::error("Failed to apply changes");
-                }
-                */
 
                 Value* ls = &mapFileChanges[i->GetFile(0)];
                 if (!ls->IsObject()) ls->SetObject();
@@ -465,6 +473,7 @@ bool ChangeField(bool bAllowed, const char* field, const rapidjson::Value& chang
 void GetMatchingKeywords(const std::set<RE::BGSKeyword*>& set, std::vector<RE::BGSKeyword*>& addKwds,
                          const RE::BGSKeywordForm* src) {
     for (unsigned int i = 0; i < src->numKeywords; i++) {
+        if (!src->keywords[i]) continue;
         if (set.contains(src->keywords[i])) addKwds.push_back(src->keywords[i]);
     }
 }
@@ -473,7 +482,7 @@ void MatchKeywords(RE::BGSKeywordForm* item, std::vector<RE::BGSKeyword*>& addKw
     std::vector<RE::BGSKeyword*> delKwds;
 
     for (unsigned int i = 0; i < item->numKeywords; i++) {
-        if (fn(item->keywords[i])) {
+        if (!item->keywords[i] || fn(item->keywords[i])) {
             if (addKwds.empty())
                 delKwds.push_back(item->keywords[i]);
             else {
@@ -544,8 +553,22 @@ bool QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, RE::FormID id, c
         if (!changes.HasMember("w")) return false;
         auto& jsonW = changes["w"];
 
-        if (!jsonW.IsFloat()) return false;
-        weight = jsonW.GetFloat();
+        int itemW = 0;
+        int baseW = 0;
+        int setW = 0;
+
+        if (jsonW.IsFloat())
+            weight = jsonW.GetFloat();
+        else if (jsonW.IsObject()) {
+            auto wObj = jsonW.GetObj();
+
+            itemW = wObj["item"].GetInt();
+            baseW = wObj["base"].GetInt();
+            setW = wObj["set"].GetInt();
+
+            weight = baseW > 0 ? (float)itemW / baseW : 0.0f;
+        } else
+            return false;
 
         if (!ChangeField<RE::TESObjectARMO>(perm.bModifyArmorRating, "armor", changes, src, armor,
                                             &RE::TESObjectARMO::armorRating,
@@ -574,6 +597,50 @@ bool QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, RE::FormID id, c
             armor->bipedModelData.bipedObjectSlots = (RE::BIPED_MODEL::BipedObjectSlot)jsonOption.GetUint();
         }
 
+        bool bModifyFFKeywords = false;
+        std::vector<RE::BGSKeyword*> addKwds;
+
+        if (perm.bModifyWarmth && changes.HasMember("warmth") && setW > 0) {
+            float warmth = 0.0f;
+            auto& jsonScale = changes["warmth"];
+            if (jsonScale.IsFloat()) {
+                auto scale = warmth = jsonScale.GetFloat();
+                g_Data.modifiedWarmth[armor] = scale * itemW / setW * 150.0f;
+            }
+
+            if (g_Config.isFrostfallInstalled && changes.HasMember("coverage")) {
+                auto coverage = changes["coverage"].GetFloat();
+                bModifyFFKeywords = true;
+
+                constexpr auto ffSlots = (ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kBody |
+                                         (ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kHead |
+                                         (ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kFeet |
+                                         (ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kHands;
+
+                if ((ArmorSlots)armor->GetSlotMask() & ffSlots) {
+                    constexpr float warmthMin[] = {1.0f, 0.9f, 0.7f, 0.55f, 0.3f};
+                    constexpr float coverageMin[] = {1.0f, 0.8f, 0.6f, 0.4f, 0.2f};
+
+                    int nWarmth = 0;
+                    int nCoverage = 0;
+                    for (; nWarmth < 5; nWarmth++) {
+                        if (warmth >= warmthMin[nWarmth]) break;
+                    }
+                    for (; nCoverage < 5; nCoverage++) {
+                        if (coverage >= coverageMin[nCoverage]) break;
+                    }
+
+                    addKwds.push_back(g_Config.ffKeywords.enable);
+                    if (nWarmth < 5 && nCoverage < 5) {
+                        addKwds.push_back(g_Config.ffKeywords.warmth[4 - nWarmth]);
+                        addKwds.push_back(g_Config.ffKeywords.coverage[4 - nCoverage]);
+                    } else
+                        addKwds.push_back(g_Config.ffKeywords.ignore);
+                } else
+                    addKwds.push_back(g_Config.ffKeywords.ignore);
+            }
+        }
+
         if (perm.bModifyKeywords && changes.HasMember("keywords")) {
             auto& jsonOption = changes["keywords"];
             if (!jsonOption.IsBool()) return false;
@@ -582,16 +649,15 @@ bool QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, RE::FormID id, c
                 logger::trace("Changing keywords");
                 armor->bipedModelData.armorType = src->bipedModelData.armorType;
 
-                std::vector<RE::BGSKeyword*> addKwds;
-
                 GetMatchingKeywords(g_Config.kwSet, addKwds, src);
 
                 if ((unsigned int)src->GetSlotMask() & (unsigned int)armor->GetSlotMask()) {
                     GetMatchingKeywords(g_Config.kwSlotSpecSet, addKwds, src);
                 }
 
-                MatchKeywords(armor, addKwds, [](RE::BGSKeyword* kw) {
-                    return g_Config.kwSet.contains(kw) || g_Config.kwSlotSpecSet.contains(kw);
+                MatchKeywords(armor, addKwds, [=](RE::BGSKeyword* kw) {
+                    return g_Config.kwSet.contains(kw) || g_Config.kwSlotSpecSet.contains(kw) ||
+                           (bModifyFFKeywords && g_Config.kwFFSet.contains(kw));
                 });
             }
         }
@@ -843,12 +909,12 @@ void ::CopyConditions(RE::TESCondition& tar, const RE::TESCondition& src, void* 
 
             p->data = psrc->data;
 
-                switch (p->data.functionData.function.get()) {
-                    case RE::FUNCTION_DATA::FunctionID::kGetItemCount:
-                    case RE::FUNCTION_DATA::FunctionID::kGetEquipped:
-                        if (p->data.functionData.params[0] == replace) p->data.functionData.params[0] = replaceWith;
-                        break;
-                }
+            switch (p->data.functionData.function.get()) {
+                case RE::FUNCTION_DATA::FunctionID::kGetItemCount:
+                case RE::FUNCTION_DATA::FunctionID::kGetEquipped:
+                    if (p->data.functionData.params[0] == replace) p->data.functionData.params[0] = replaceWith;
+                    break;
+            }
             p->next = nullptr;
             prev = p;
         }

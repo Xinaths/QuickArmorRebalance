@@ -49,8 +49,8 @@ namespace QuickArmorRebalance {
         RebalanceCurveNode::Tree* curve = nullptr;
 
         struct SliderPair {
-            bool bModify = true;
             float fScale = 100.0f;
+            bool bModify = true;
         };
 
         bool isWornArmor = false;
@@ -60,6 +60,8 @@ namespace QuickArmorRebalance {
         struct {
             SliderPair rating;
             SliderPair weight;
+            SliderPair warmth{50.0f};
+            float coverage = 50.0f;
         } armor;
 
         struct {
@@ -108,6 +110,7 @@ namespace QuickArmorRebalance {
         bool bModifyArmorRating = true;
         bool bModifyValue = true;
         bool bModifyWeight = true;
+        bool bModifyWarmth = true;
         bool bModifyWeapDamage = true;
         bool bModifyWeapWeight = true;
         bool bModifyWeapSpeed = true;
@@ -135,6 +138,7 @@ namespace QuickArmorRebalance {
         std::set<const RE::TESFile*> blacklist;
         std::set<RE::BGSKeyword*> kwSet;
         std::set<RE::BGSKeyword*> kwSlotSpecSet;
+        std::set<RE::BGSKeyword*> kwFFSet;
 
         std::set<RE::BGSKeyword*> kwSetWeap;
         std::set<RE::BGSKeyword*> kwSetWeapTypes;
@@ -162,6 +166,10 @@ namespace QuickArmorRebalance {
         bool bAllowInvalidRemap = false;
         bool bUseSecondaryRecipes = true;
         bool bEnableSmeltingRecipes = false;
+        bool bShowFrostfallCoverage = false;
+
+
+        bool isFrostfallInstalled = false;
 
 
         float fDropRates = 100.0f;
@@ -176,6 +184,13 @@ namespace QuickArmorRebalance {
         Permissions permShared;
 
         ArmorSlots slotsWillChange = 0;
+
+        struct {
+            RE::BGSKeyword* enable;
+            RE::BGSKeyword* ignore;
+            RE::BGSKeyword* warmth[5];
+            RE::BGSKeyword* coverage[5];
+        } ffKeywords;
     };
 
     extern Config g_Config;

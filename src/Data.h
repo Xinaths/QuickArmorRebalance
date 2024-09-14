@@ -124,6 +124,7 @@ namespace QuickArmorRebalance
         std::map<RE::TESBoundObject*, RE::BGSConstructibleObject*> smeltRecipe;
 
         std::map<RE::TESObjectARMO*, ArmorSlots> modifiedArmorSlots;
+        std::map<RE::TESObjectARMO*, float> modifiedWarmth;
 
         std::unique_ptr<ModLootData> loot;
         std::map<std::string, LootDistGroup> distGroups;

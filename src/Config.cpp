@@ -92,6 +92,8 @@ bool QuickArmorRebalance::Config::Load() {
     bool bSuccess = false;
     auto pathConfig = std::filesystem::current_path() / PATH_ROOT PATH_CONFIGS;
 
+    bEnableSkyrimWarmthHook = !REL::Module::IsVR();
+
     if (!std::filesystem::exists(pathConfig) || !std::filesystem::is_directory(pathConfig)) {
         logger::error("Config file directory missing ({})", pathConfig.generic_string());
         return false;
@@ -193,6 +195,7 @@ bool QuickArmorRebalance::Config::Load() {
                 std::clamp(config["settings"]["goldcosttemper"].value_or(20.f), 0.0f, 200.0f);
             g_Config.fCraftGoldCostRatio = std::clamp(config["settings"]["goldcostcraft"].value_or(70.f), 0.0f, 200.0f);
             g_Config.bEnableSmeltingRecipes = config["settings"]["enablesmeltingrecipes"].value_or(false);
+            g_Config.bEnableSkyrimWarmthHook = config["settings"]["enablewarmthhook"].value_or(!REL::Module::IsVR());
             g_Config.bShowFrostfallCoverage = config["settings"]["showffcoverage"].value_or(false);
 
             LoadPermissions(g_Config.permLocal, config["localPermissions"]);
@@ -594,6 +597,7 @@ void QuickArmorRebalance::Config::Save() {
              {"goldcosttemper", g_Config.fTemperGoldCostRatio},
              {"goldcostcraft", g_Config.fCraftGoldCostRatio},
              {"enablesmeltingrecipes", g_Config.bEnableSmeltingRecipes},
+             {"enablewarmthhook", g_Config.bEnableSkyrimWarmthHook},
              {"showffcoverage", g_Config.bShowFrostfallCoverage},
          }},
         {"localPermissions", SavePermissions(g_Config.permLocal)},

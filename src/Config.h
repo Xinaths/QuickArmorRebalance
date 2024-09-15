@@ -166,6 +166,7 @@ namespace QuickArmorRebalance {
         bool bAllowInvalidRemap = false;
         bool bUseSecondaryRecipes = true;
         bool bEnableSmeltingRecipes = false;
+        bool bEnableSkyrimWarmthHook = true;
         bool bShowFrostfallCoverage = false;
 
 

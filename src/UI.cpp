@@ -1495,6 +1495,9 @@ void QuickArmorRebalance::RenderUI() {
                     MakeTooltip(
                         "This can result in performance issues, and making a mess by changing too many items at once.\n"
                         "Use with caution.");
+                    ImGui::Checkbox("Enable Skyrim warmth system hook", &g_Config.bEnableSkyrimWarmthHook);
+                    MakeTooltip("Required to enable changes to item warmth.\n"
+                            "WARNING: Likely to cause crashes on VR!");
 
                     ImGui::EndTabItem();
                 }

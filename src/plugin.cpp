@@ -45,7 +45,8 @@ namespace QuickArmorRebalance {
 
         g_Data.loot.release();
 
-        InstallWarmthHooks();
+        if (g_Config.bEnableSkyrimWarmthHook)
+            InstallWarmthHooks();
     }
 
     void Papyrus_OpenUI(RE::StaticFunctionTag*) {

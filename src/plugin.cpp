@@ -5,6 +5,7 @@
 #include "UI.h"
 #include "LootLists.h"
 #include "WarmthHook.h"
+#include "ModelArmorSlotFix.h"
 
 namespace QuickArmorRebalance {
     void OnDataLoaded();
@@ -47,6 +48,8 @@ namespace QuickArmorRebalance {
 
         if (g_Config.bEnableSkyrimWarmthHook)
             InstallWarmthHooks();
+
+        InstallModelArmorSlotFixHooks();
     }
 
     void Papyrus_OpenUI(RE::StaticFunctionTag*) {

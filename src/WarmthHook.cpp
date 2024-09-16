@@ -42,8 +42,8 @@ static void GetWarmthRating(RE::BGSKeywordForm* form, ArmorWarmthInfo* info) {
 
 
 struct GetWarmthRatingHook {
-    static constexpr auto id = REL::ID(26393);
-    static constexpr auto offset = REL::Offset(0x6C);
+    static constexpr auto id = REL::VariantID(25833, 26393, 0);
+    static constexpr auto offset = REL::VariantOffset(0x6E, 0x6C, 0);
 
     static void thunk(RE::BGSKeywordForm* form, ArmorWarmthInfo* info) {
         func(form, info);
@@ -53,7 +53,7 @@ struct GetWarmthRatingHook {
 };
 
 struct WarmthCalcFuncVisitHook {
-    static constexpr auto id = REL::ID(26404);
+    static constexpr auto id = REL::ID(26404); //Might be @0x3BDD30 in SE?
     static constexpr auto offset = REL::Offset(0x78);
 
     static void thunk(RE::BGSKeywordForm* form, ArmorWarmthInfo* info) {
@@ -73,8 +73,11 @@ void write_thunk_call() {
 }
 
 void QuickArmorRebalance::InstallWarmthHooks() {
-    SKSE::AllocTrampoline(14 * 2);
-
+    SKSE::AllocTrampoline(14 * 1);
     write_thunk_call<GetWarmthRatingHook>();
-    write_thunk_call<WarmthCalcFuncVisitHook>();
+
+    if (REL::Module::IsAE()) {
+        SKSE::AllocTrampoline(14 * 1);
+        write_thunk_call<WarmthCalcFuncVisitHook>();
+    }
 }

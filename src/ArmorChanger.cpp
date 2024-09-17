@@ -594,7 +594,44 @@ bool QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, RE::FormID id, c
 
             if (!g_Data.modifiedArmorSlots.contains(armor))  // Don't overwrite previous
                 g_Data.modifiedArmorSlots[armor] = armor->bipedModelData.bipedObjectSlots.underlying();
-            armor->bipedModelData.bipedObjectSlots = (RE::BIPED_MODEL::BipedObjectSlot)jsonOption.GetUint();
+
+            auto slots = (RE::BIPED_MODEL::BipedObjectSlot)jsonOption.GetUint();
+            armor->bipedModelData.bipedObjectSlots = slots;
+            for (auto addon : armor->armorAddons) {
+                if (addon->GetFile(0) == armor->GetFile(0)) {  // Don't match other files, might be placeholders
+                    addon->bipedModelData.bipedObjectSlots = slots;
+                    
+                    for (int i = 0; i < RE::SEXES::kTotal; i++) {
+                        if (!addon->bipedModels[i].model.empty())
+                        {
+                            std::string modelPath(addon->bipedModels[i].model);
+                            std::transform(modelPath.begin(), modelPath.end(), modelPath.begin(), ::tolower);
+
+                            auto hash = std::hash<std::string>{}(modelPath);
+                            if (!g_Data.noModifyModels.contains(hash))
+                                g_Data.remapFileArmorSlots[hash] = (ArmorSlots)slots;
+
+                            if (modelPath.length() > 6) {
+                                char* pChar = modelPath.data() + modelPath.length() - 6;  //'_X.nif'
+                                if (*pChar++ == '_') {
+                                    if (*pChar == '0') {
+                                        *pChar = '1';
+                                        hash = std::hash<std::string>{}(modelPath);
+                                        if (!g_Data.noModifyModels.contains(hash))
+                                            g_Data.remapFileArmorSlots[hash] = (ArmorSlots)slots;
+                                    }
+                                    else if (*pChar == '1') {
+                                        *pChar = '0';
+                                        hash = std::hash<std::string>{}(modelPath);
+                                        if (!g_Data.noModifyModels.contains(hash))
+                                            g_Data.remapFileArmorSlots[hash] = (ArmorSlots)slots;
+                                    }                                       
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         bool bModifyFFKeywords = false;

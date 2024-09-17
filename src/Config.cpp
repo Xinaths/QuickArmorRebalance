@@ -197,6 +197,8 @@ bool QuickArmorRebalance::Config::Load() {
             g_Config.bEnableSmeltingRecipes = config["settings"]["enablesmeltingrecipes"].value_or(false);
             g_Config.bEnableSkyrimWarmthHook = config["settings"]["enablewarmthhook"].value_or(!REL::Module::IsVR());
             g_Config.bShowFrostfallCoverage = config["settings"]["showffcoverage"].value_or(false);
+            g_Config.bEnableProtectedSlotRemapping = config["settings"]["enableprotectedslotremapping"].value_or(false);
+            g_Config.bEnableArmorSlotModelFixHook = config["settings"]["enablearmorslotmodelfixhook"].value_or(true);
 
             LoadPermissions(g_Config.permLocal, config["localPermissions"]);
             LoadPermissions(g_Config.permShared, config["sharedPermissions"]);
@@ -599,6 +601,8 @@ void QuickArmorRebalance::Config::Save() {
              {"enablesmeltingrecipes", g_Config.bEnableSmeltingRecipes},
              {"enablewarmthhook", g_Config.bEnableSkyrimWarmthHook},
              {"showffcoverage", g_Config.bShowFrostfallCoverage},
+             {"enableprotectedslotremapping", g_Config.bEnableProtectedSlotRemapping},
+             {"enablearmorslotmodelfixhook", g_Config.bEnableArmorSlotModelFixHook},
          }},
         {"localPermissions", SavePermissions(g_Config.permLocal)},
         {"sharedPermissions", SavePermissions(g_Config.permShared)},

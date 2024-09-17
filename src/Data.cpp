@@ -64,8 +64,8 @@ void ProcessItem(RE::TESBoundObject* i) {
 
 void CopyRecipe(std::map<RE::TESBoundObject*, RE::BGSConstructibleObject*>& map, RE::TESBoundObject* src,
                 RE::TESBoundObject* tar) {
-    if (map.find(tar) != map.end()) return;  
-    
+    if (map.find(tar) != map.end()) return;
+
     auto it = map.find(src);
     if (it != map.end()) map.insert({tar, it->second});
 }
@@ -110,7 +110,7 @@ void QuickArmorRebalance::ProcessData() {
             g_Data.temperRecipe.insert({pObj, i});
         else if (i->benchKeyword == smelter) {
             auto& mats = i->requiredItems;
-            if (mats.numContainerObjects == 1) g_Data.smeltRecipe.insert({mats.containerObjects[0]->obj, i});        
+            if (mats.numContainerObjects == 1) g_Data.smeltRecipe.insert({mats.containerObjects[0]->obj, i});
         } else
             g_Data.craftRecipe.insert({pObj, i});
     }
@@ -150,6 +150,37 @@ void QuickArmorRebalance::ProcessData() {
             std::for_each(i.weaps.begin(), i.weaps.end(), reportMissingRecipies);
             std::for_each(i.ammo.begin(), i.ammo.end(), reportMissingRecipies);
             */
+        }
+    }
+
+    auto& lsAddons = dataHandler->GetFormArray<RE::TESObjectARMA>();
+    for (auto addon : lsAddons) {
+        if ((addon->GetFormID() & 0xff000000) == 0) {  // Skyrim.esm only
+
+            for (int i = 0; i < RE::SEXES::kTotal; i++) {
+                if (!addon->bipedModels[i].model.empty()) {
+                    std::string modelPath(addon->bipedModels[i].model);
+                    std::transform(modelPath.begin(), modelPath.end(), modelPath.begin(), ::tolower);
+
+                    auto hash = std::hash<std::string>{}(modelPath);
+                    g_Data.noModifyModels.insert(hash);
+
+                    if (modelPath.length() > 6) {
+                        char* pChar = modelPath.data() + modelPath.length() - 6;  //'_X.nif'
+                        if (*pChar++ == '_') {
+                            if (*pChar == '0') {
+                                *pChar = '1';
+                                hash = std::hash<std::string>{}(modelPath);
+                                g_Data.noModifyModels.insert(hash);
+                            } else if (*pChar == '1') {
+                                *pChar = '0';
+                                hash = std::hash<std::string>{}(modelPath);
+                                g_Data.noModifyModels.insert(hash);
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

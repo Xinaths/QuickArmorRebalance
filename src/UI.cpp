@@ -1487,7 +1487,9 @@ void QuickArmorRebalance::RenderUI() {
                     ImGui::Checkbox("Round weights to 0.1", &g_Config.bRoundWeight);
                     ImGui::Checkbox("Reset sliders after changing mods", &g_Config.bResetSliders);
                     ImGui::Checkbox("Reset slot remapping after changing mods", &g_Config.bResetSlotRemap);
-                    ImGui::Checkbox("Allow remapping armor slots to unassigned slots", &g_Config.bAllowInvalidRemap);
+                    ImGui::Checkbox("Allow remapping armor slots to unhandled slots", &g_Config.bAllowInvalidRemap);
+                    ImGui::Checkbox("Allow remapping of protected armor slots (Not recommended)", &g_Config.bEnableProtectedSlotRemapping);
+                    MakeTooltip("Body, hands, feet, and head slots tend to break in various ways if you move them to other slots.");
                     ImGui::Checkbox("Highlight things you may want to look at", &g_Config.bHighlights);
                     ImGui::Checkbox("Show Frostfall coverage slider even if not installed",
                                     &g_Config.bShowFrostfallCoverage);
@@ -1495,12 +1497,6 @@ void QuickArmorRebalance::RenderUI() {
                     MakeTooltip(
                         "This can result in performance issues, and making a mess by changing too many items at once.\n"
                         "Use with caution.");
-
-                    ImGui::BeginDisabled(REL::Module::IsVR());
-                    ImGui::Checkbox("Enable Skyrim warmth system hook", &g_Config.bEnableSkyrimWarmthHook);
-                    MakeTooltip("Required to enable changes to item warmth.\n"
-                            "WARNING: Likely to cause crashes on VR!");
-                    ImGui::EndDisabled();
 
                     ImGui::EndTabItem();
                 }
@@ -1593,6 +1589,20 @@ void QuickArmorRebalance::RenderUI() {
                     ImGui::EndTabItem();
                 }
 
+                if (ImGui::BeginTabItem("Hooks")) {
+                    ImGui::Checkbox("Enable NIF armor slot remapping hook", &g_Config.bEnableArmorSlotModelFixHook);
+                    MakeTooltip("Fixes armor pieces not rendering when remapping their armor slots");
+
+                    ImGui::BeginDisabled(REL::Module::IsVR());
+                    ImGui::Checkbox("Enable Skyrim warmth system hook", &g_Config.bEnableSkyrimWarmthHook);
+                    MakeTooltip(
+                        "Required to enable changes to item warmth.\n"
+                        "WARNING: Likely to cause crashes on VR!");
+                    ImGui::EndDisabled();
+
+                    ImGui::EndTabItem();
+                }
+
                 ImGui::EndTabBar();
             }
 
@@ -1608,6 +1618,7 @@ void QuickArmorRebalance::RenderUI() {
         if (ImGui::BeginPopupModal("Remap Slots", &bPopupActive, ImGuiWindowFlags_NoScrollbar)) {
             static int nSlotView = 33;
             uint64_t slotsUsed = 0;
+            ArmorSlots slotsProtected = g_Config.bEnableProtectedSlotRemapping ? 0 : kProtectedSlotMask;
 
             std::vector<RE::TESObjectARMO*> lsSlotItems;
             for (auto i : g_Config.acParams.items) {
@@ -1643,10 +1654,11 @@ void QuickArmorRebalance::RenderUI() {
                 ImVec2 tarCenter[33];
 
                 for (int i = 0; i < 33; i++) {
-                    ImGui::TableNextColumn();
+                    bool bProtected = i < 32 ? slotsProtected & (1 << i) : false;
 
+                    ImGui::TableNextColumn();
                     if (i < 32) {
-                        ImGui::BeginDisabled((((uint64_t)1 << i) & slotsUsed) == 0);
+                        ImGui::BeginDisabled(bProtected || (((uint64_t)1 << i) & slotsUsed) == 0);
                         ImGui::BeginGroup();
 
                         const char* strWarn = nullptr;
@@ -1700,7 +1712,7 @@ void QuickArmorRebalance::RenderUI() {
                         ImGui::PopStyleColor(popCol);
 
                         ImGui::EndGroup();
-                        if (ImGui::IsItemHovered()) nSlotView = i;
+                        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) nSlotView = i;
 
                         ImGui::EndDisabled();
                     }
@@ -1710,7 +1722,7 @@ void QuickArmorRebalance::RenderUI() {
 
                     ImGui::TableNextColumn();
                     auto bDisabled = i != 32 && ((1 << i) & g_Config.usedSlotsMask) == 0;
-                    ImGui::BeginDisabled(bDisabled);
+                    ImGui::BeginDisabled(bProtected || bDisabled);
                     ImGui::BeginGroup();
 
                     bool bWarn = false;
@@ -1736,7 +1748,7 @@ void QuickArmorRebalance::RenderUI() {
                             "Warning: Items are being remapped to this slot, but other items are already using this "
                             "slot.");
 
-                    if ((g_Config.bAllowInvalidRemap || !bDisabled) && ImGui::BeginDragDropTarget()) {
+                    if (!bProtected && (g_Config.bAllowInvalidRemap || !bDisabled) && ImGui::BeginDragDropTarget()) {
                         if (auto payload = ImGui::AcceptDragDropPayload("ARMOR SLOT")) {
                             g_Config.acParams.mapArmorSlots[*(int*)payload->Data] = i;
                         }
@@ -1755,7 +1767,7 @@ void QuickArmorRebalance::RenderUI() {
                     ImGui::EndGroup();
 
                     ImGui::EndDisabled();
-                    if (ImGui::IsItemHovered()) nSlotView = i;
+                    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) nSlotView = i;
                 }
 
                 ImGui::EndTable();

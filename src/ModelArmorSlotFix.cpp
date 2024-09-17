@@ -1,58 +1,85 @@
 #include "ModelArmorSlotFix.h"
 
+#include "Data.h"
 
-struct ProcessGeometryHook {
-    static constexpr auto id = REL::VariantID(15535, 15712, 0);
-    static constexpr auto offset = REL::VariantOffset(0x79A, 0x72F, 0);
+/*////////////////////////////////////////////////////////////////////
+    When changing armor slots, there's 3 places that need to be changed
+    - The armor itself
+    - The armor addon
+    - The nif (model) file
 
-    static void thunk(RE::BipedAnim* a_biped, RE::BSGeometry* a_object,
-                      RE::BSDismemberSkinInstance* a_dismemberInstance, std::int32_t a_slot, bool a_unk05) {
-        func(a_biped, a_object, a_dismemberInstance, a_slot, a_unk05);
+    If these don't match you get invisible armor parts
 
-        a_object->CullNode(false);
+    This code sits in the middle of the loading code for the part of nifs that loads body slots
+    If the filenames match, it changes non-matching slots to be ones that match
 
-        /*
-        if (auto userData = a_object->GetUserData()) {
-            logger::info("name: {} [{}]", userData->GetName(), a_slot);
-            if (auto armor = userData->As<RE::TESObjectARMO>()) {
-                logger::info("Process geometry: {}", armor->GetName());
+    There is almost certainly a better way to do this, but this is lightweight enough
+    that I don't feel the need to go digging deep into Skyrims code to find it
+*//////////////////////////////////////////////////////////////////////
+
+
+namespace {
+    using namespace QuickArmorRebalance;
+
+    struct BSDismemberSkinInstance_LoadBinary_Hook {
+        static constexpr auto id = RE::VTABLE_BSDismemberSkinInstance[0];
+        static constexpr auto offset = REL::Offset(0x18);
+
+        static void thunk(RE::BSDismemberSkinInstance* skin, RE::NiStream& a_stream) {
+            func(skin, a_stream);
+
+            constexpr std::string_view strPrefix{"data\\MESHES\\"};
+            if (!strncmp(a_stream.inputFilePath, strPrefix.data(), strPrefix.length())) {
+                std::string modelPath(a_stream.inputFilePath + strPrefix.length());
+                std::transform(modelPath.begin(), modelPath.end(), modelPath.begin(), ::tolower);
+
+                auto hash = std::hash<std::string>{}(modelPath);
+                auto it = g_Data.remapFileArmorSlots.find(hash);
+                if (it != g_Data.remapFileArmorSlots.end()) {
+                    auto slots = it->second;
+                    auto missing = slots;
+
+                    auto& data = skin->GetRuntimeData();
+
+
+                    //First pass - figure out what slots are missing
+                    for (int i = 0; i < data.numPartitions; i++) {
+                        auto& part = data.partitions[i];
+                        if (part.slot < 30 || part.slot > 62) continue;
+                        missing &= ~(1 << (part.slot - 30));
+                        if (!missing) return; //Have everything, can abort
+                    }
+
+                    //Second pass - update slots for missing parts
+                    for (int i = 0; i < data.numPartitions; i++) {
+                        auto& part = data.partitions[i];
+                        if (part.slot < 30 || part.slot > 62) continue;
+                        if (((1 << (part.slot - 30)) & slots) == 0) { //Mismatched slot - remap
+                            unsigned long slot;
+                            _BitScanForward(&slot, missing);
+                            missing &= missing - 1;  // Removes lowest bit
+
+                            //logger::info("{} changing {}->{}", a_stream.inputFilePath, part.slot, slot + 30);
+                            part.slot = (uint16_t)slot + 30;
+                            if (!missing) break;
+                        }
+                    }
+                }
             }
         }
-        */
-    }
-    static inline REL::Relocation<decltype(thunk)> func;
-};
+        static inline REL::Relocation<decltype(thunk)> func;
+    };
 
-struct HideShowBufferedSkinHook {
-    static constexpr auto id = REL::VariantID(15501, 15678, 0);
-    static constexpr auto offset = REL::Offset(0x1EA);
+}
 
-    static void thunk(RE::BipedAnim* a_biped, RE::NiAVObject* a_object, std::int32_t a_slot, bool a_unk04) {
-        func(a_biped, a_object, a_slot, a_unk04);
+template <class T>
+void HookVirtualFunction() {
+    auto vtbl = (std::uintptr_t*)T::id.address();
 
-        for (int i = 0; i < 32; i++) {
-            if (auto item = a_biped->objects[i].item) {
-                logger::info("[{}] has {}", i, item->GetName());
-            }
-        }
-        /*
-        if (auto userData = a_object->GetUserData()) {
-            logger::info("name: {} [{}]", userData->GetName(), a_slot);
-            if (auto armor = userData->As<RE::TESObjectARMO>()) {
-                logger::info("Process geometry: {}", armor->GetName());
-            }
-        }
-        */
-    }
-    static inline REL::Relocation<decltype(thunk)> func;
-};
-
+    T::func = vtbl[T::offset.offset()];
+    REL::safe_write((std::uintptr_t)&vtbl[T::offset.offset()], (std::uintptr_t)T::thunk);
+}
 
 void QuickArmorRebalance::InstallModelArmorSlotFixHooks() {
-    return;
-
-    SKSE::AllocTrampoline(14 * 2);
-
-    write_thunk_call<ProcessGeometryHook>();
-    write_thunk_call<HideShowBufferedSkinHook>();
+    HookVirtualFunction<BSDismemberSkinInstance_LoadBinary_Hook>();
 }

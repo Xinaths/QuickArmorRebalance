@@ -49,7 +49,8 @@ namespace QuickArmorRebalance {
         if (g_Config.bEnableSkyrimWarmthHook)
             InstallWarmthHooks();
 
-        InstallModelArmorSlotFixHooks();
+        if (g_Config.bEnableArmorSlotModelFixHook)
+            InstallModelArmorSlotFixHooks();
     }
 
     void Papyrus_OpenUI(RE::StaticFunctionTag*) {

@@ -125,6 +125,9 @@ namespace QuickArmorRebalance
 
         std::map<RE::TESObjectARMO*, ArmorSlots> modifiedArmorSlots;
         std::map<RE::TESObjectARMO*, float> modifiedWarmth;
+        
+        std::unordered_map<size_t, ArmorSlots> remapFileArmorSlots;
+        std::set<size_t> noModifyModels;        
 
         std::unique_ptr<ModLootData> loot;
         std::map<std::string, LootDistGroup> distGroups;

@@ -13,9 +13,13 @@ namespace QuickArmorRebalance {
     const unsigned int kCosmeticSlotMask = 0;
     //(unsigned int)RE::BIPED_MODEL::BipedObjectSlot::kHead | (unsigned int)RE::BIPED_MODEL::BipedObjectSlot::kHair;
 
-    const unsigned int kHeadSlotMask = (unsigned int)RE::BIPED_MODEL::BipedObjectSlot::kHead |
-                                       (unsigned int)RE::BIPED_MODEL::BipedObjectSlot::kHair |
-                                       (unsigned int)RE::BIPED_MODEL::BipedObjectSlot::kCirclet;
+    const ArmorSlots kHeadSlotMask = (ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kHead |
+                                     (ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kHair |
+                                     (ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kCirclet;
+
+    const ArmorSlots kProtectedSlotMask =
+        (ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kBody | (ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kHands |
+        (ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kFeet | (ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kHead;
 
     struct RebalanceCurveNode {
         using Tree = std::vector<RebalanceCurveNode>;
@@ -102,7 +106,6 @@ namespace QuickArmorRebalance {
             bool bCreate = true;
             bool bFree = true;
         };
-            
 
         bool bDistributeLoot = true;
         bool bModifyKeywords = true;
@@ -118,7 +121,6 @@ namespace QuickArmorRebalance {
 
         RecipePermissions crafting;
         RecipePermissions temper;
-
     };
 
     struct Config {
@@ -168,10 +170,10 @@ namespace QuickArmorRebalance {
         bool bEnableSmeltingRecipes = false;
         bool bEnableSkyrimWarmthHook = true;
         bool bShowFrostfallCoverage = false;
-
+        bool bEnableProtectedSlotRemapping = false;
+        bool bEnableArmorSlotModelFixHook = true;
 
         bool isFrostfallInstalled = false;
-
 
         float fDropRates = 100.0f;
         int verbosity = spdlog::level::info;

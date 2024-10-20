@@ -8,6 +8,23 @@
 
 namespace QuickArmorRebalance {
 
+    using WordSet = std::set<std::size_t>;
+
+    struct DynamicVariant {
+        std::string name;
+        WordSet hints;
+        WordSet autos;
+
+        struct {
+            bool perSlot = false;
+            std::string display;
+            std::string variant;
+        } DAV;
+    };
+
+    using VariantSetMap = std::map<std::size_t, ArmorSet>;
+    using DynamicVariantSets = std::map<const DynamicVariant*, VariantSetMap>;
+
     struct LootDistGroup;
 
     const unsigned int kCosmeticSlotMask = 0;
@@ -97,6 +114,8 @@ namespace QuickArmorRebalance {
         mutable ArmorSlots remapMask = 0;
         std::map<int, int> mapArmorSlots;
 
+        DynamicVariantSets dvSets;
+
         mutable bool bMixedSetDone = false;
     };
 
@@ -123,6 +142,7 @@ namespace QuickArmorRebalance {
         RecipePermissions temper;
     };
 
+
     struct Config {
         bool Load();
         bool LoadFile(std::filesystem::path path);
@@ -148,6 +168,16 @@ namespace QuickArmorRebalance {
         std::vector<std::pair<std::string, RebalanceCurveNode::Tree>> curves;
         std::vector<BaseArmorSet> armorSets;
         std::set<std::string> lootProfiles;
+
+        WordSet wordsDynamicVariants;
+        WordSet wordsStaticVariants;
+        WordSet wordsEitherVariants;
+        WordSet wordsPieces;
+        WordSet wordsDescriptive;
+
+        WordSet wordsAllVariants;
+
+        std::map<std::string, DynamicVariant> mapDynamicVariants;
 
         unsigned int usedSlotsMask = 0;
         ArmorChangeParams acParams;

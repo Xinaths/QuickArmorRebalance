@@ -6,7 +6,9 @@
 #include "rapidjson/error/en.h"
 #include "rapidjson/error/error.h"
 #include "rapidjson/filereadstream.h"
+#include "rapidjson/filewritestream.h"
 #include "rapidjson/stringbuffer.h"
+#include "rapidjson/prettywriter.h"
 
 using namespace rapidjson;
 
@@ -18,6 +20,57 @@ namespace QuickArmorRebalance {
 using namespace QuickArmorRebalance;
 
 ProcessedData QuickArmorRebalance::g_Data;
+
+bool QuickArmorRebalance::ReadJSONFile(std::filesystem::path path, Document& doc, bool bEditing) {
+    if (std::filesystem::exists(path.generic_string().c_str())) {
+        if (auto fp = std::fopen(path.generic_string().c_str(), "rb")) {
+            char readBuffer[1 << 16];
+            FileReadStream is(fp, readBuffer, sizeof(readBuffer));
+            doc.ParseStream(is);
+            std::fclose(fp);
+
+            if (doc.HasParseError()) {
+                logger::warn("{}: JSON parse error: {} ({})", path.generic_string(),
+                             GetParseError_En(doc.GetParseError()), doc.GetErrorOffset());
+                if (bEditing) {
+                    logger::warn("{}: Overwriting previous file contents due to parsing error", path.generic_string());
+                    doc.SetObject();
+                }
+            }
+
+            if (!doc.IsObject()) {
+                if (bEditing) {
+                    logger::warn("{}: Unexpected contents, overwriting previous contents", path.generic_string());
+                    doc.SetObject();
+                }
+            }
+
+        } else {
+            logger::warn("Could not open file {}", path.filename().generic_string());
+            return false;
+        }
+    } else {
+        doc.SetObject();
+    }
+
+    return true;
+}
+
+bool QuickArmorRebalance::WriteJSONFile(std::filesystem::path path, rapidjson::Document& doc) {
+    if (auto fp = std::fopen(path.generic_string().c_str(), "wb")) {
+        char buffer[1 << 16];
+        FileWriteStream ws(fp, buffer, sizeof(buffer));
+        PrettyWriter<FileWriteStream> writer(ws);
+        writer.SetIndent('\t', 1);
+        doc.Accept(writer);
+        std::fclose(fp);
+        return true;
+    } else {
+        logger::error("Could not open file to write {}: {}", path.generic_string(), std::strerror(errno));
+        return false;
+    }
+
+}
 
 bool QuickArmorRebalance::IsValidItem(RE::TESBoundObject* i) {
     auto mod = i->GetFile(0);
@@ -240,6 +293,11 @@ void QuickArmorRebalance::LoadChangesFromFolder(const char* sub, const Permissio
 bool QuickArmorRebalance::LoadFileChanges(const RE::TESFile* mod, std::filesystem::path path, const Permissions& perm) {
     Document doc;
 
+    if (!ReadJSONFile(path, doc, false)) return false;
+
+    if (doc.HasParseError() || !doc.IsObject()) return false;
+
+    /*
     if (auto fp = std::fopen(path.generic_string().c_str(), "rb")) {
         char readBuffer[1 << 16];
         FileReadStream is(fp, readBuffer, sizeof(readBuffer));
@@ -260,6 +318,7 @@ bool QuickArmorRebalance::LoadFileChanges(const RE::TESFile* mod, std::filesyste
         logger::warn("{}: Couldn't open file", path.generic_string());
         return false;
     }
+    */
 
     ApplyChanges(mod, doc.GetObj(), perm);
 

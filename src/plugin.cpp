@@ -6,6 +6,7 @@
 #include "LootLists.h"
 #include "WarmthHook.h"
 #include "ModelArmorSlotFix.h"
+#include "ArmorSetBuilder.h"
 
 namespace QuickArmorRebalance {
     void OnDataLoaded();
@@ -51,6 +52,8 @@ namespace QuickArmorRebalance {
 
         if (g_Config.bEnableArmorSlotModelFixHook)
             InstallModelArmorSlotFixHooks();
+
+        //AnalyzeAllArmor();
     }
 
     void Papyrus_OpenUI(RE::StaticFunctionTag*) {

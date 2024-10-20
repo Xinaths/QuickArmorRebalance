@@ -3,13 +3,11 @@
 #include "Config.h"
 #include "Data.h"
 #include "LootLists.h"
+#include "Exporting.h"
+
 #include "rapidjson/document.h"
 #include "rapidjson/error/en.h"
 #include "rapidjson/error/error.h"
-#include "rapidjson/filereadstream.h"
-#include "rapidjson/filewritestream.h"
-#include "rapidjson/prettywriter.h"
-#include "rapidjson/stringbuffer.h"
 
 using namespace rapidjson;
 
@@ -150,6 +148,10 @@ namespace {
                          MemoryPoolAllocator<>& al) {
         if (pair.bModify) changes.AddMember(StringRef(field), Value(0.01f * pair.fScale), al);
     }
+
+    void AddDynamicVariants(const RE::TESFile* file, const DynamicVariantSets& sets, rapidjson::Value& ls,
+                            MemoryPoolAllocator<>& al);
+
 }
 
 ArmorSlots QuickArmorRebalance::GetConvertableArmorSlots(const ArmorChangeParams& params) {
@@ -344,7 +346,13 @@ void QuickArmorRebalance::MakeArmorChanges(const ArmorChangeParams& params) {
     }
 
     for (auto& i : mapFileChanges) {
+        AddDynamicVariants(i.first, params.dvSets, i.second, al);
+    }
+
+    for (auto& i : mapFileChanges) {
         ApplyChanges(i.first, i.second, g_Config.permLocal);
+
+        ExportToDAV(i.first, i.second);
 
         std::filesystem::path path(std::filesystem::current_path() / PATH_ROOT PATH_CHANGES "local/");
         std::filesystem::create_directories(path);
@@ -352,32 +360,7 @@ void QuickArmorRebalance::MakeArmorChanges(const ArmorChangeParams& params) {
         path /= i.first->fileName;
         path += ".json";
 
-        if (std::filesystem::exists(path.generic_string().c_str())) {
-            if (auto fp = std::fopen(path.generic_string().c_str(), "rb")) {
-                char readBuffer[1 << 16];
-                FileReadStream is(fp, readBuffer, sizeof(readBuffer));
-                doc.ParseStream(is);
-                std::fclose(fp);
-
-                if (doc.HasParseError()) {
-                    logger::warn("{}: JSON parse error: {} ({})", path.generic_string(),
-                                 GetParseError_En(doc.GetParseError()), doc.GetErrorOffset());
-                    logger::warn("{}: Overwriting previous file contents due to parsing error", path.generic_string());
-                    doc.SetObject();
-                }
-
-                if (!doc.IsObject()) {
-                    logger::warn("{}: Unexpected contents, overwriting previous contents", path.generic_string());
-                    doc.SetObject();
-                }
-
-            } else {
-                logger::warn("Could not open file {}", path.filename().generic_string());
-                continue;
-            }
-        } else {
-            doc.SetObject();
-        }
+        if (!ReadJSONFile(path, doc)) continue;
 
         if (!i.second.IsObject()) continue;
 
@@ -403,22 +386,52 @@ void QuickArmorRebalance::MakeArmorChanges(const ArmorChangeParams& params) {
             }
         }
 
-        if (auto fp = std::fopen(path.generic_string().c_str(), "wb")) {
-            char buffer[1 << 16];
-            FileWriteStream ws(fp, buffer, sizeof(buffer));
-            PrettyWriter<FileWriteStream> writer(ws);
-            writer.SetIndent('\t', 1);
-            doc.Accept(writer);
-            std::fclose(fp);
-        } else {
-            logger::error("Could not open file to write {}: {}", path.generic_string(), std::strerror(errno));
-
+        if (!WriteJSONFile(path, doc)) {
             g_Config.strCriticalError = std::format(
                 "Unable to write to file {}\n"
                 "Path: {}\n"
                 "Error: {}\n"
                 "Changes cannot be saved so further use of QAR is disabled",
-                path.filename().generic_string(), path.generic_string(), std::strerror(errno));
+                path.filename().generic_string(), path.generic_string(), std::strerror(errno));            
+        }
+    }
+}
+
+void ::AddDynamicVariants(const RE::TESFile* file, const DynamicVariantSets& sets, rapidjson::Value& ls,
+                        MemoryPoolAllocator<>& al) {
+    for (auto& dv : sets) {
+        for (auto& set : dv.second) {
+            if (dv.second.size() < 2) continue;
+
+            auto base = set.second[0];
+            for (int i = 1; i < set.second.size(); i++) {
+                auto item = set.second[i];
+
+                if (item->GetFile(0) != file) continue;
+                if (item->GetFile(0) != base->GetFile(0)) continue;  // Not supported
+
+                auto itemId = std::to_string(GetFileId(item));
+                auto it = ls.FindMember(itemId.c_str());
+                if (it == ls.MemberEnd()) continue;
+
+                auto& vals = it->value;
+                if (!vals.IsObject()) continue;  // Somethings broken
+
+                Value dvVal(kObjectType);
+                //dvVal.AddMember("base", Value(std::to_string(GetFileId(base)).c_str(), al), al);
+                dvVal.AddMember("base", GetFileId(base), al);
+                dvVal.AddMember("stage", Value(i), al);
+
+                it = vals.FindMember("dynamicVariants");
+                if (it == vals.MemberEnd()) {
+                    Value dvs(kObjectType);
+                    dvs.AddMember(Value(dv.first->name.c_str(), al), dvVal, al);
+                    vals.AddMember("dynamicVariants", dvs, al);
+                } else {
+                    it->value.RemoveMember(dv.first->name.c_str());
+                    it->value.AddMember(Value(dv.first->name.c_str(), al), dvVal, al);
+                }
+            }
         }
     }
 }
@@ -600,10 +613,9 @@ bool QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, RE::FormID id, c
             for (auto addon : armor->armorAddons) {
                 if (addon->GetFile(0) == armor->GetFile(0)) {  // Don't match other files, might be placeholders
                     addon->bipedModelData.bipedObjectSlots = slots;
-                    
+
                     for (int i = 0; i < RE::SEXES::kTotal; i++) {
-                        if (!addon->bipedModels[i].model.empty())
-                        {
+                        if (!addon->bipedModels[i].model.empty()) {
                             std::string modelPath(addon->bipedModels[i].model);
                             std::transform(modelPath.begin(), modelPath.end(), modelPath.begin(), ::tolower);
 
@@ -619,13 +631,12 @@ bool QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, RE::FormID id, c
                                         hash = std::hash<std::string>{}(modelPath);
                                         if (!g_Data.noModifyModels.contains(hash))
                                             g_Data.remapFileArmorSlots[hash] = (ArmorSlots)slots;
-                                    }
-                                    else if (*pChar == '1') {
+                                    } else if (*pChar == '1') {
                                         *pChar = '0';
                                         hash = std::hash<std::string>{}(modelPath);
                                         if (!g_Data.noModifyModels.contains(hash))
                                             g_Data.remapFileArmorSlots[hash] = (ArmorSlots)slots;
-                                    }                                       
+                                    }
                                 }
                             }
                         }

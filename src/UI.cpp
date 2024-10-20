@@ -314,7 +314,7 @@ void AddFormsToList(const auto& all, const ItemFilter& filter) {
 
 short g_filterRound = 0;
 
-void GetCurrentListItems(ModData* curMod, int nModSpecial, const ItemFilter& filter) {
+void GetCurrentListItems(ModData* curMod, int nModSpecial, const ItemFilter& filter, AnalyzeResults& results) {
     static short filterRound = -1;
     if (filterRound == g_filterRound) return;
     filterRound = g_filterRound;
@@ -350,11 +350,17 @@ void GetCurrentListItems(ModData* curMod, int nModSpecial, const ItemFilter& fil
         }
     }
 
+    results.Clear();
+    params.dvSets.clear();
+
+
     if (!params.filteredItems.empty()) {
         std::sort(params.filteredItems.begin(), params.filteredItems.end(),
                   [](RE::TESBoundObject* const a, RE::TESBoundObject* const b) {
                       return _stricmp(a->GetName(), b->GetName()) < 0;
                   });
+
+        if (curMod) AnalyzeArmor(params.filteredItems, results);
     }
 }
 
@@ -422,11 +428,13 @@ void QuickArmorRebalance::RenderUI() {
     const bool isCtrlDown = ImGui::IsKeyDown(ImGuiKey_LeftCtrl) || ImGui::IsKeyDown(ImGuiKey_RightCtrl);
     const bool isAltDown = ImGui::IsKeyDown(ImGuiKey_LeftAlt) || ImGui::IsKeyDown(ImGuiKey_RightAlt);
 
+    static AnalyzeResults analyzeResults;
     static ItemFilter filter;
 
     static HighlightTrack hlConvert;
     static HighlightTrack hlDistributeAs;
     static HighlightTrack hlRarity;
+    static HighlightTrack hlDynamicVariants;
     static HighlightTrack hlSlots;
 
     auto isInventoryOpen = RE::UI::GetSingleton()->IsItemMenuOpen();
@@ -435,9 +443,12 @@ void QuickArmorRebalance::RenderUI() {
     static bool bSlotWarning = false;
     bool popupSettings = false;
     bool popupRemapSlots = false;
+    bool popupDynamicVariants = false;
 
     ArmorSlots remappedSrc = 0;
     ArmorSlots remappedTar = 0;
+
+    static int nShowWords = AnalyzeResults::eWords_EitherVariants;
 
     for (auto i : g_Config.acParams.mapArmorSlots) {
         remappedSrc |= 1 << i.first;
@@ -781,10 +792,11 @@ void QuickArmorRebalance::RenderUI() {
                             hlDistributeAs.Touch();
                             hlRarity.Touch();
                             hlSlots.Touch();
+                            hlDynamicVariants.Touch();
                         }
                     }
 
-                    GetCurrentListItems(curMod, nModSpecial, filter);
+                    GetCurrentListItems(curMod, nModSpecial, filter, analyzeResults);
                     g_Config.slotsWillChange = GetConvertableArmorSlots(params);
 
                     bool hasEnabledArmor = false;
@@ -859,6 +871,16 @@ void QuickArmorRebalance::RenderUI() {
                         "Attempts to match sets together - for example, if there are green and blue variants, it will\n"
                         "try to distribute only green or only blue parts as a single set");
                     ImGui::EndDisabled();
+
+                    hlDynamicVariants.Push(!analyzeResults.sets[AnalyzeResults::eWords_DynamicVariants].empty() ||
+                                           !analyzeResults.sets[AnalyzeResults::eWords_EitherVariants].empty());
+
+                    ImGui::SameLine();
+                    if (ImGui::Button("Dynamic Variants")) {
+                        popupDynamicVariants = true;
+                    }
+                    hlDynamicVariants.Pop();
+
                     ImGui::Unindent(60);
 
                     ImGui::EndDisabled();
@@ -916,17 +938,17 @@ void QuickArmorRebalance::RenderUI() {
                                         };
 
                                         const char* coverageDesc[] = {
-                                            "None",       //<0.1
-                                            "Minimal",       //<0.2
-                                            "Poor",       //<0.3
-                                            "Limited",    //<0.4
-                                            "Fair",       //<0.5
-                                            "Average",    //<0.6
-                                            "Good",       //<0.7
-                                            "Significant",//<0.8
-                                            "Full",       //<0.9
-                                            "Excellent",  //<1.0
-                                            "Maximum",    //=1.0
+                                            "None",         //<0.1
+                                            "Minimal",      //<0.2
+                                            "Poor",         //<0.3
+                                            "Limited",      //<0.4
+                                            "Fair",         //<0.5
+                                            "Average",      //<0.6
+                                            "Good",         //<0.7
+                                            "Significant",  //<0.8
+                                            "Full",         //<0.9
+                                            "Excellent",    //<1.0
+                                            "Maximum",      //=1.0
                                         };
 
                                         bool showCoverage =
@@ -942,8 +964,9 @@ void QuickArmorRebalance::RenderUI() {
                                             "This number is NOT relative to the base armor set's warmth.");
                                         ImGui::BeginDisabled(!pair.bModify);
                                         ImGui::TableNextColumn();
-                                        
-                                        ImGui::SetNextItemWidth((showCoverage ? 0.5f : 1.0f) * ImGui::GetContentRegionAvail().x);
+
+                                        ImGui::SetNextItemWidth((showCoverage ? 0.5f : 1.0f) *
+                                                                ImGui::GetContentRegionAvail().x);
                                         ImGui::SliderFloat("##WarmthSlider", &pair.fScale, 0.f, 100.f, "%.0f%% Warmth",
                                                            ImGuiSliderFlags_AlwaysClamp);
                                         MakeTooltip(warmthDesc[(int)(0.1f * pair.fScale)]);
@@ -1488,8 +1511,11 @@ void QuickArmorRebalance::RenderUI() {
                     ImGui::Checkbox("Reset sliders after changing mods", &g_Config.bResetSliders);
                     ImGui::Checkbox("Reset slot remapping after changing mods", &g_Config.bResetSlotRemap);
                     ImGui::Checkbox("Allow remapping armor slots to unhandled slots", &g_Config.bAllowInvalidRemap);
-                    ImGui::Checkbox("Allow remapping of protected armor slots (Not recommended)", &g_Config.bEnableProtectedSlotRemapping);
-                    MakeTooltip("Body, hands, feet, and head slots tend to break in various ways if you move them to other slots.");
+                    ImGui::Checkbox("Allow remapping of protected armor slots (Not recommended)",
+                                    &g_Config.bEnableProtectedSlotRemapping);
+                    MakeTooltip(
+                        "Body, hands, feet, and head slots tend to break in various ways if you move them to other "
+                        "slots.");
                     ImGui::Checkbox("Highlight things you may want to look at", &g_Config.bHighlights);
                     ImGui::Checkbox("Show Frostfall coverage slider even if not installed",
                                     &g_Config.bShowFrostfallCoverage);
@@ -1787,6 +1813,195 @@ void QuickArmorRebalance::RenderUI() {
             }
 
             ImGui::EndPopup();
+        }
+
+        static WordSet wordsUsed;
+        static WordSet wordsStatic;
+        static std::map<const DynamicVariant*, std::vector<std::size_t>> mapDVWords;
+
+        if (popupDynamicVariants) {
+            ImGui::OpenPopup("Dynamic Variants");
+
+            nShowWords = AnalyzeResults::eWords_StaticVariants;
+            wordsStatic.clear();
+            wordsUsed.clear();
+            mapDVWords.clear();
+
+            auto& ws = analyzeResults.sets[AnalyzeResults::eWords_StaticVariants];
+            wordsStatic.insert(ws.begin(), ws.end());
+
+            wordsUsed.insert(wordsStatic.begin(), wordsStatic.end());
+            for (auto& i : mapDVWords) {
+                wordsUsed.insert(i.second.begin(), i.second.end());
+            }
+        }
+
+        ImGui::SetNextWindowSizeConstraints({300, 500}, {1600, 1000});
+        ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+        bPopupActive = true;
+
+        static bool dvWndWasOpen = false;
+        if (ImGui::BeginPopupModal("Dynamic Variants", &bPopupActive, ImGuiWindowFlags_NoScrollbar)) {
+            dvWndWasOpen = true;
+            ImGui::Text("Drag the appropriate words (if any) to their associated dynamic type on the right side.");
+
+            ImGui::SetNextItemWidth(-FLT_MIN);
+
+            struct DragDropWords {
+                static void Source(std::size_t w) {
+                    if (ImGui::BeginDragDropSource(0)) {
+                        std::vector<std::size_t> words;
+                        words.push_back(w);
+
+                        ImGui::SetDragDropPayload("WORD HASHES", &words[0], words.size() * sizeof(words[0]));
+                        ImGui::Text(analyzeResults.mapWordStrings[w].c_str());
+                        ImGui::EndDragDropSource();
+                    }
+                }
+
+                static void TargetCommon(const std::function<void(std::size_t)> fnInsert) {
+                    if (ImGui::BeginDragDropTarget()) {
+                        if (auto payload = ImGui::AcceptDragDropPayload("WORD HASHES")) {
+                            auto* pWords = (std::size_t*)payload->Data;
+                            int nWords = payload->DataSize / sizeof(*pWords);
+
+                            for (int i = 0; i < nWords; i++) {
+                                auto w = *pWords++;
+                                wordsStatic.erase(w);
+                                for (auto& dv : mapDVWords) {
+                                    auto it = std::find(dv.second.begin(), dv.second.end(), w);
+                                    if (it != dv.second.end()) dv.second.erase(it);
+                                }
+                                wordsUsed.erase(w);
+
+                                fnInsert(w);
+                            }
+                        }
+                        ImGui::EndDragDropTarget();
+                    }
+                }
+
+                static void Target(WordSet* pSet) {
+                    TargetCommon([&](std::size_t w) {
+                        if (pSet) {
+                            pSet->insert(w);
+                            wordsUsed.insert(w);
+                        }
+                    });
+                }
+
+                static void Target(std::vector<std::size_t>* pSet, std::size_t at) {
+                    TargetCommon([&](std::size_t w) {
+                        if (pSet) {
+                            pSet->insert(at ? std::find(pSet->begin(), pSet->end(), at) : pSet->begin(), w);
+                            wordsUsed.insert(w);
+                        }
+                    });
+                }
+            };
+
+            if (ImGui::BeginTable(
+                    "WindowTable", 3,
+                    ImGuiTableFlags_Resizable | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingStretchSame)) {
+                ImGui::TableSetupColumn("Static Variants");
+                ImGui::TableSetupColumn("Unassigned");
+                ImGui::TableSetupColumn("Dynamic Variants");
+
+                ImGui::TableNextRow(ImGuiTableRowFlags_Headers);
+                ImGui::TableNextColumn();
+                ImGui::TableHeader("Static Variants");
+                MakeTooltip(
+                    "Static Variants are similar but distinct items.\n"
+                    "Usually colors or different versions of an item piece.\n\n"
+                    "The accurracy of words in this table is not important.");
+
+                ImGui::TableNextColumn();
+                ImGui::TableHeader("Unassigned");
+
+                ImGui::TableNextColumn();
+                ImGui::TableHeader("Dynamic Variants");
+                MakeTooltip(
+                    "Dynamic Variants are the same item in different forms.\n\n"
+                    "Place associated words under the associated variant type.\n"
+                    "If there are multiple, they should be ordered that the most default is at the top and the most "
+                    "changed at the bottom.");
+
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+
+                if (ImGui::BeginListBox("##StaticWords", ImGui::GetContentRegionAvail())) {
+                    for (auto w : wordsStatic) {
+                        bool selected = false;
+                        ImGui::Selectable(analyzeResults.mapWordStrings[w].c_str(), selected);
+                        MakeTooltip(analyzeResults.mapWordItems[w].strItemList.c_str(), true);
+
+                        DragDropWords::Source(w);
+                    }
+
+                    ImGui::EndListBox();
+                    DragDropWords::Target(&wordsStatic);
+                }
+
+                ImGui::TableNextColumn();
+                if (ImGui::BeginListBox("##UnsetWords", ImGui::GetContentRegionAvail())) {
+                    for (int i = 0; i <= nShowWords; i++) {
+                        for (auto w : analyzeResults.sets[i]) {
+                            if (wordsUsed.contains(w)) continue;
+
+                            bool selected = false;
+                            ImGui::Selectable(analyzeResults.mapWordStrings[w].c_str(), selected);
+                            MakeTooltip(analyzeResults.mapWordItems[w].strItemList.c_str(), true);
+
+                            DragDropWords::Source(w);
+                        }
+                    }
+
+                    ImGui::Separator();
+
+                    ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x);
+                    if (ImGui::Button("Show More Words")) {
+                        nShowWords = std::min(nShowWords + 1, AnalyzeResults::eWords_Count - 1);
+                    }
+
+                    if (ImGui::Button("Show Less Words")) {
+                        nShowWords = std::max(nShowWords - 1, (int)AnalyzeResults::eWords_StaticVariants);
+                    }
+                    ImGui::PopItemWidth();
+                    ImGui::EndListBox();
+
+                    DragDropWords::Target(nullptr);
+                }
+
+                ImGui::TableNextColumn();
+                for (const auto& dv : g_Config.mapDynamicVariants) {
+                    if (ImGui::CollapsingHeader(dv.first.c_str(),
+                                                ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_Bullet)) {
+                        DragDropWords::Target(&mapDVWords[&dv.second], 0);
+
+                        auto copy = mapDVWords[&dv.second]; //Drag drop can modify 
+                        for (auto it = copy.begin(); it != copy.end(); it++) {
+                            // bool selected = false
+                            auto w = *it;
+                            if (ImGui::TreeNodeEx(analyzeResults.mapWordStrings[w].c_str(), ImGuiTreeNodeFlags_Leaf)) {
+                                MakeTooltip(analyzeResults.mapWordItems[w].strItemList.c_str(), true);
+
+                                DragDropWords::Source(w);
+                                DragDropWords::Target(&mapDVWords[&dv.second], w);
+
+                                ImGui::TreePop();
+                            }
+                        }
+                    }
+                }
+
+                ImGui::EndTable();
+            }
+
+            ImGui::EndPopup();
+        } else {
+            if (dvWndWasOpen) {
+                g_Config.acParams.dvSets = MapVariants(analyzeResults, mapDVWords);
+            }
         }
     }
 

@@ -12,6 +12,7 @@
 #define TOML_EXCEPTIONS 0
 #include "toml++/toml.hpp"
 
+#include <rapidjson/fwd.h>
 #include <imgui.h>
 
 using namespace std::literals;

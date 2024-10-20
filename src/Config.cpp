@@ -18,6 +18,7 @@
 #include "LootLists.h"
 
 using namespace rapidjson;
+using namespace QuickArmorRebalance;
 
 namespace QuickArmorRebalance {
     Config g_Config;
@@ -253,6 +254,15 @@ bool QuickArmorRebalance::Config::Load() {
         }
     }
 
+    for (const auto& i : mapDynamicVariants) {
+        wordsDynamicVariants.insert(i.second.autos.begin(), i.second.autos.end());
+        wordsDynamicVariants.insert(i.second.hints.begin(), i.second.hints.end());
+    }
+
+    wordsAllVariants.insert(wordsDynamicVariants.begin(), wordsDynamicVariants.end());
+    wordsAllVariants.insert(wordsStaticVariants.begin(), wordsStaticVariants.end());
+    wordsAllVariants.insert(wordsEitherVariants.begin(), wordsEitherVariants.end());
+
     ValidateLootConfig();
 
     if (bSuccess)
@@ -285,7 +295,22 @@ namespace {
 
         return false;
     }
+    
+    void LoadHashedWordArray(WordSet& set, const char* name, const Value& obj) {
+        if (obj.HasMember(name)) {
+            const auto& jsonList = obj[name];
+
+            if (jsonList.IsArray()) {
+                for (const auto& i : jsonList.GetArray()) {
+                    if (i.IsString()) {
+                        set.insert(std::hash<std::string>{}(i.GetString()));
+                    }
+                }
+            } 
+        }
+    }
 }
+
 
 bool QuickArmorRebalance::Config::LoadFile(std::filesystem::path path) {
     auto dataHandler = RE::TESDataHandler::GetSingleton();
@@ -390,6 +415,41 @@ bool QuickArmorRebalance::Config::LoadFile(std::filesystem::path path) {
 
     if (d.HasMember("loot")) {
         LoadLootConfig(d["loot"]);
+    }
+
+    if (d.HasMember("wordHints")) {
+        const auto& jsonHints = d["wordHints"];
+
+        if (jsonHints.IsObject()) {
+            LoadHashedWordArray(wordsDynamicVariants, "dynamicVariants", jsonHints);
+            LoadHashedWordArray(wordsStaticVariants, "staticVariants", jsonHints);
+            LoadHashedWordArray(wordsEitherVariants, "eitherVariants", jsonHints);
+            LoadHashedWordArray(wordsPieces, "pieces", jsonHints);
+            LoadHashedWordArray(wordsDescriptive, "descriptive", jsonHints);
+        } else
+            ConfigFileWarning(path, "variantWords expected to be an object");
+        
+    }
+
+    if (d.HasMember("dynamicVariants")) {
+        const auto& jsonVariants = d["dynamicVariants"];
+        if (jsonVariants.IsObject()) {
+            for (const auto& i : jsonVariants.GetObj()) {
+                auto& dv = mapDynamicVariants[i.name.GetString()];
+                if (dv.name.empty()) dv.DAV.display = dv.DAV.variant = dv.name = i.name.GetString();
+                LoadHashedWordArray(dv.autos, "AutoWords", i.value);
+                LoadHashedWordArray(dv.hints, "HintWords", i.value);
+
+                if (i.value.HasMember("DAV")) {
+                    auto& davParams = i.value["DAV"];
+                    if (davParams.HasMember("slotSpecific")) dv.DAV.perSlot = davParams["slotSpecific"].GetBool();
+                    if (davParams.HasMember("display")) dv.DAV.display = davParams["display"].GetString();
+                    if (davParams.HasMember("variant")) dv.DAV.variant = davParams["variant"].GetString();
+                }
+            }
+        } else
+            ConfigFileWarning(path, "dynamicVariants expected to be an object");
+    
     }
 
     return true;

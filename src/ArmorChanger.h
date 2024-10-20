@@ -3,8 +3,6 @@
 #include "Data.h"
 #include "Config.h"
 
-#include <rapidjson/fwd.h>
-
 namespace QuickArmorRebalance
 {
     ArmorSlots GetConvertableArmorSlots(const ArmorChangeParams& params);

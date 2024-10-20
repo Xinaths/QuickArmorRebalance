@@ -5,6 +5,9 @@ namespace QuickArmorRebalance
     using ArmorSlot = unsigned int;
     using ArmorSlots = unsigned int;
 
+    bool ReadJSONFile(std::filesystem::path path, rapidjson::Document& doc, bool bEditing = true);
+    bool WriteJSONFile(std::filesystem::path path, rapidjson::Document& doc);
+
     static auto MapFindOr(const auto& map, const auto& val, const auto r) {
         auto it = map.find(val);
         if (it == map.end())
@@ -43,6 +46,14 @@ namespace QuickArmorRebalance
     {
         if (auto r = FindIn(mod, str)) return r->As<T>();
         return nullptr;
+    }
+
+    inline bool IsSingleSlot(ArmorSlots slots) { return (slots & (slots - 1)) == 0; }
+
+    inline int GetSlotIndex(ArmorSlots slots) {
+        unsigned long slot;
+        _BitScanForward(&slot, slots);
+        return (int)slot;
     }
 
 	struct ModData

@@ -201,8 +201,15 @@ bool QuickArmorRebalance::Config::Load() {
             g_Config.bEnableProtectedSlotRemapping = config["settings"]["enableprotectedslotremapping"].value_or(false);
             g_Config.bEnableArmorSlotModelFixHook = config["settings"]["enablearmorslotmodelfixhook"].value_or(true);
 
+            g_Config.bEnableDAVExports = config["integrations"]["enableDAVexports"].value_or(true);
+            g_Config.bEnableDAVExportsAlways = config["integrations"]["enableDAVexportsalways"].value_or(false);
+
             LoadPermissions(g_Config.permLocal, config["localPermissions"]);
             LoadPermissions(g_Config.permShared, config["sharedPermissions"]);
+
+            if (auto tbl = config["preferenceVariants"].as_table())
+                tbl->for_each(
+                    [this](const toml::key& key, auto&& val) { mapPrefVariants[std::string(key.str())].pref = (Preference)val.value_or(0); });
 
             spdlog::set_level((spdlog::level::level_enum)g_Config.verbosity);
         }
@@ -219,12 +226,11 @@ bool QuickArmorRebalance::Config::Load() {
     if (dataHandler->LookupModByName("Frostfall.esp")) {
         isFrostfallInstalled = true;
 
-        const char* kws[] = {"FrostfallEnableKeywordProtection", "FrostfallIgnore", "FrostfallWarmthPoor", "FrostfallWarmthFair",
-                             "FrostfallWarmthGood", "FrostfallWarmthExcellent", "FrostfallWarmthMax",
-                             "FrostfallCoveragePoor", "FrostfallCoverageFair", "FrostfallCoverageGood",
-                             "FrostfallCoverageExcellent",
-                             "FrostfallCoverageMax",
-                             
+        const char* kws[] = {"FrostfallEnableKeywordProtection", "FrostfallIgnore", "FrostfallWarmthPoor",
+                             "FrostfallWarmthFair", "FrostfallWarmthGood", "FrostfallWarmthExcellent",
+                             "FrostfallWarmthMax", "FrostfallCoveragePoor", "FrostfallCoverageFair",
+                             "FrostfallCoverageGood", "FrostfallCoverageExcellent", "FrostfallCoverageMax",
+
                              /*
                              "FrostfallIsCloakCloth",
                              "FrostfallIsCloakLeather",
@@ -295,7 +301,7 @@ namespace {
 
         return false;
     }
-    
+
     void LoadHashedWordArray(WordSet& set, const char* name, const Value& obj) {
         if (obj.HasMember(name)) {
             const auto& jsonList = obj[name];
@@ -306,11 +312,10 @@ namespace {
                         set.insert(std::hash<std::string>{}(i.GetString()));
                     }
                 }
-            } 
+            }
         }
     }
 }
-
 
 bool QuickArmorRebalance::Config::LoadFile(std::filesystem::path path) {
     auto dataHandler = RE::TESDataHandler::GetSingleton();
@@ -428,7 +433,6 @@ bool QuickArmorRebalance::Config::LoadFile(std::filesystem::path path) {
             LoadHashedWordArray(wordsDescriptive, "descriptive", jsonHints);
         } else
             ConfigFileWarning(path, "variantWords expected to be an object");
-        
     }
 
     if (d.HasMember("dynamicVariants")) {
@@ -449,7 +453,20 @@ bool QuickArmorRebalance::Config::LoadFile(std::filesystem::path path) {
             }
         } else
             ConfigFileWarning(path, "dynamicVariants expected to be an object");
-    
+    }
+
+    if (d.HasMember("preferenceVariants")) {
+        const auto& jsonVariants = d["preferenceVariants"];
+        if (jsonVariants.IsArray()) {
+            for (const auto& i : jsonVariants.GetArray()) {
+                if (!i.IsString()) continue;
+
+                auto strWord = i.GetString();
+
+                mapPrefVariants[strWord].hash = std::hash<std::string>{}(MakeLower(strWord));
+            }
+        } else
+            ConfigFileWarning(path, "preferenceVariants expected to be an array");
     }
 
     return true;
@@ -614,6 +631,11 @@ void QuickArmorRebalance::Config::Save() {
     while (iCurve != g_Config.curves.end() && &iCurve->second != g_Config.acParams.curve) iCurve++;
     if (iCurve == g_Config.curves.end()) iCurve = g_Config.curves.begin();
 
+    auto tblPrefVars = toml::table{};
+    for (const auto& i : mapPrefVariants) {
+        tblPrefVars.insert(i.first, i.second.pref);
+    }
+
     auto tbl = toml::table{
         {"merge", g_Config.acParams.bMerge},
         {"modifyKeywords", g_Config.acParams.bModifyKeywords},
@@ -664,9 +686,14 @@ void QuickArmorRebalance::Config::Save() {
              {"enableprotectedslotremapping", g_Config.bEnableProtectedSlotRemapping},
              {"enablearmorslotmodelfixhook", g_Config.bEnableArmorSlotModelFixHook},
          }},
+        {"integrations",
+         toml::table{
+             {"enableDAVexports", g_Config.bEnableDAVExports},
+             {"enableDAVexportsalways", g_Config.bEnableDAVExportsAlways},
+         }},
         {"localPermissions", SavePermissions(g_Config.permLocal)},
         {"sharedPermissions", SavePermissions(g_Config.permShared)},
-
+        {"preferenceVariants", tblPrefVars},
     };
 
     std::ofstream file(std::filesystem::current_path() / PATH_ROOT SETTINGS_FILE);

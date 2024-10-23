@@ -4,6 +4,8 @@
     #define _CRT_SECURE_NO_WARNINGS
 #endif
 
+#include <unordered_set>
+
 #include "RE/Skyrim.h"
 #include "SKSE/SKSE.h"
 

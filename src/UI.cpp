@@ -5,6 +5,7 @@
 #include "Config.h"
 #include "Data.h"
 #include "ImGuiIntegration.h"
+#include "ModIntegrations.h"
 
 using namespace QuickArmorRebalance;
 
@@ -28,14 +29,64 @@ static ImVec2 operator/(const ImVec2& a, int b) { return {a.x / b, a.y / b}; }
 
 bool StringContainsI(const char* s1, const char* s2) {
     std::string str1(s1), str2(s2);
-    std::transform(str1.begin(), str1.end(), str1.begin(), ::tolower);
-    std::transform(str2.begin(), str2.end(), str2.begin(), ::tolower);
+    ToLower(str1);
+    ToLower(str2);
     return str1.contains(str2);
 }
 
 void MakeTooltip(const char* str, bool delay = false) {
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | (delay ? ImGuiHoveredFlags_DelayNormal : 0)))
         ImGui::SetTooltip(str);
+}
+
+bool MenuItemConfirmed(const char* str) {
+    bool bRet = false;
+    if (ImGui::BeginMenu(str)) {
+        if (ImGui::Selectable("Yes")) bRet = true;
+        ImGui::Selectable("No");
+        ImGui::EndMenu();
+    }
+    return bRet;
+}
+
+std::vector<ModData*> GetFilteredMods(int nModFilter) {
+    std::vector<ModData*> list;
+    list.reserve(g_Data.sortedMods.size());
+    switch (nModFilter) {
+        case 0:
+            list = g_Data.sortedMods;
+            break;
+        case 1:
+            std::copy_if(g_Data.sortedMods.begin(), g_Data.sortedMods.end(), std::back_inserter(list),
+                         [](ModData* mod) { return !mod->bModified; });
+            break;
+        case 2:
+            std::copy_if(g_Data.sortedMods.begin(), g_Data.sortedMods.end(), std::back_inserter(list),
+                         [](ModData* mod) { return mod->bModified; });
+            break;
+        case 3:
+        {
+            static bool bOnce = false;
+            if (!bOnce) {
+                bOnce = true;
+
+                for (auto& i : g_Data.modData) {
+                    if (i.second->bModified && !i.second->bHasDynamicVariants) {
+                        AnalyzeResults results;
+                        std::vector<RE::TESBoundObject*> items(i.second->items.begin(), i.second->items.end());
+                        AnalyzeArmor(items, results);
+                        i.second->bHasPotentialDVs = !results.sets[0].empty() || !results.sets[1].empty();
+                    }
+                }
+            }
+        }
+            std::copy_if(g_Data.sortedMods.begin(), g_Data.sortedMods.end(), std::back_inserter(list),
+                         [](ModData* mod) { return mod->bModified && !mod->bHasDynamicVariants && mod->bHasPotentialDVs; });
+            break;
+
+    }
+
+    return list;
 }
 
 struct ItemFilter {
@@ -96,9 +147,10 @@ struct ItemFilter {
     }
 };
 
-void RightAlign(const char* text) {
+const char* RightAlign(const char* text) {
     float w = ImGui::CalcTextSize(text).x + ImGui::GetStyle().FramePadding.x * 2.f;
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - w);
+    return text;
 }
 
 struct GivenItems {
@@ -353,7 +405,6 @@ void GetCurrentListItems(ModData* curMod, int nModSpecial, const ItemFilter& fil
     results.Clear();
     params.dvSets.clear();
 
-
     if (!params.filteredItems.empty()) {
         std::sort(params.filteredItems.begin(), params.filteredItems.end(),
                   [](RE::TESBoundObject* const a, RE::TESBoundObject* const b) {
@@ -428,7 +479,8 @@ void QuickArmorRebalance::RenderUI() {
     const bool isCtrlDown = ImGui::IsKeyDown(ImGuiKey_LeftCtrl) || ImGui::IsKeyDown(ImGuiKey_RightCtrl);
     const bool isAltDown = ImGui::IsKeyDown(ImGuiKey_LeftAlt) || ImGui::IsKeyDown(ImGuiKey_RightAlt);
 
-    static AnalyzeResults analyzeResults;
+    static ArmorChangeParams& params = g_Config.acParams;
+    static AnalyzeResults& analyzeResults = params.analyzeResults;
     static ItemFilter filter;
 
     static HighlightTrack hlConvert;
@@ -445,10 +497,39 @@ void QuickArmorRebalance::RenderUI() {
     bool popupRemapSlots = false;
     bool popupDynamicVariants = false;
 
+    bool hasModifiedItems = false;
+
     ArmorSlots remappedSrc = 0;
     ArmorSlots remappedTar = 0;
 
+    ModData* switchToMod = nullptr;
+
     static int nShowWords = AnalyzeResults::eWords_EitherVariants;
+
+    struct Local {
+        static void SwitchToMod(ModData* mod) {
+            curMod = mod;
+            givenItems.items.clear();
+            selectedItems.clear();
+            lastSelectedItem = nullptr;
+
+            if (g_Config.bResetSliders) {
+                params.armor.rating.fScale = 100.0f;
+                params.armor.weight.fScale = 100.0f;
+                params.armor.warmth.fScale = 50.0f;
+                params.weapon.damage.fScale = 100.0f;
+                params.weapon.speed.fScale = 100.0f;
+                params.weapon.weight.fScale = 100.0f;
+                params.weapon.stagger.fScale = 100.0f;
+                params.value.fScale = 100.0f;
+            }
+            if (g_Config.bResetSlotRemap) {
+                params.mapArmorSlots.clear();
+            }
+
+            g_filterRound++;
+        }
+    };
 
     for (auto i : g_Config.acParams.mapArmorSlots) {
         remappedSrc |= 1 << i.first;
@@ -461,7 +542,9 @@ void QuickArmorRebalance::RenderUI() {
     ImGui::SetNextWindowSizeConstraints({700, 250}, {1600, 1000});
     if (ImGui::Begin("Quick Armor Rebalance", &isActive, wndFlags)) {
         if (g_Config.strCriticalError.empty()) {
-            ArmorChangeParams& params = g_Config.acParams;
+            static int nModFilter = 0;
+            const char* modFilterDesc[] = {"No filter", "Unmodified", "Modified", "Has possible dynamic variants"};
+
 
             const char* strModSpecial[] = {"<Currently Worn Armor>", "<All Items>", nullptr};
             bool bModSpecialEnabled[] = {true, g_Config.bEnableAllItems};
@@ -524,7 +607,7 @@ void QuickArmorRebalance::RenderUI() {
                         ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
                         if (ImGui::BeginCombo("##Mod", curMod ? curMod->mod->fileName : strModSpecial[nModSpecial],
                                               ImGuiComboFlags_HeightLarge)) {
-                            {
+                            if (!nModFilter) {
                                 for (int i = 0; strModSpecial[i]; i++) {
                                     if (!bModSpecialEnabled[i]) continue;
                                     bool selected = !curMod && i == nModSpecial;
@@ -537,19 +620,19 @@ void QuickArmorRebalance::RenderUI() {
                                 }
                             }
 
-                            for (auto i : g_Data.sortedMods) {
+                            for (auto i : GetFilteredMods(nModFilter)) {
                                 bool selected = curMod == i;
 
                                 int pop = 0;
                                 if (g_Data.modifiedFiles.contains(i->mod)) {
-                                    if (bFilterChangedMods) continue;
+                                    //if (bFilterChangedMods) continue;
                                     if (g_Data.modifiedFilesDeleted.contains(i->mod))
                                         ImGui::PushStyleColor(ImGuiCol_Text, colorDeleted);
                                     else
                                         ImGui::PushStyleColor(ImGuiCol_Text, colorChanged);
                                     pop++;
                                 } else if (g_Data.modifiedFilesShared.contains(i->mod)) {
-                                    if (bFilterChangedMods) continue;
+                                    //if (bFilterChangedMods) continue;
                                     ImGui::PushStyleColor(ImGuiCol_Text, colorChangedShared);
                                     pop++;
                                 }
@@ -559,26 +642,7 @@ void QuickArmorRebalance::RenderUI() {
                                         showPopup = true;
                                     }
 
-                                    curMod = i;
-                                    givenItems.items.clear();
-                                    selectedItems.clear();
-                                    lastSelectedItem = nullptr;
-
-                                    if (g_Config.bResetSliders) {
-                                        params.armor.rating.fScale = 100.0f;
-                                        params.armor.weight.fScale = 100.0f;
-                                        params.armor.warmth.fScale = 50.0f;
-                                        params.weapon.damage.fScale = 100.0f;
-                                        params.weapon.speed.fScale = 100.0f;
-                                        params.weapon.weight.fScale = 100.0f;
-                                        params.weapon.stagger.fScale = 100.0f;
-                                        params.value.fScale = 100.0f;
-                                    }
-                                    if (g_Config.bResetSlotRemap) {
-                                        params.mapArmorSlots.clear();
-                                    }
-
-                                    g_filterRound++;
+                                    Local::SwitchToMod(i);
                                 }
                                 if (isCtrlDown && isAltDown && ImGui::IsItemHovered() &&
                                     ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
@@ -621,7 +685,11 @@ void QuickArmorRebalance::RenderUI() {
                         }
 
                         ImGui::TableNextColumn();
-                        ImGui::Checkbox("Hide modified", &bFilterChangedMods);
+
+                        //ImGui::Checkbox("Hide modified", &bFilterChangedMods);
+
+                        ImGui::SetNextItemWidth(200.0f);
+                        ImGui::Combo("##FilterMods", &nModFilter, modFilterDesc, IM_ARRAYSIZE(modFilterDesc));
                         ImGui::EndTable();
                     }
 
@@ -1120,7 +1188,7 @@ void QuickArmorRebalance::RenderUI() {
                     params.items.clear();
                     params.items.reserve(params.filteredItems.size());
 
-                    bool modChangesDeleted = g_Data.modifiedFilesDeleted.contains(curMod->mod);
+                    bool modChangesDeleted = curMod ? g_Data.modifiedFilesDeleted.contains(curMod->mod) : false;
 
                     ImGui::PushStyleColor(ImGuiCol_NavHighlight, IM_COL32(0, 255, 0, 255));
 
@@ -1155,6 +1223,38 @@ void QuickArmorRebalance::RenderUI() {
                                 }
                                 if (ImGui::Selectable("Disable")) {
                                     for (auto i : selectedItems) uncheckedItems.insert(i);
+                                }
+
+                                ImGui::Separator();
+                                ImGui::BeginDisabled(curMod);
+                                if (ImGui::Selectable("Select source mod")) {
+                                    switchToMod = g_Data.modData[(*selectedItems.begin())->GetFile(0)].get();
+                                }
+                                ImGui::EndDisabled();
+
+                                if (ImGui::BeginMenu("Delete changes ...")) {
+                                    if (MenuItemConfirmed("All")) {
+                                        DeleteChanges(selectedItems);
+                                    }
+                                    ImGui::Separator();
+                                    if (MenuItemConfirmed("Loot Distribution")) {
+                                        const char* fields[] = {"loot", nullptr};
+                                        DeleteChanges(selectedItems, fields);
+                                    }
+                                    if (MenuItemConfirmed("Slots")) {
+                                        const char* fields[] = {"slots", nullptr};
+                                        DeleteChanges(selectedItems, fields);
+                                    }
+                                    if (MenuItemConfirmed("Crafting")) {
+                                        const char* fields[] = {"craft", nullptr};
+                                        DeleteChanges(selectedItems, fields);
+                                    }
+                                    if (MenuItemConfirmed("Tempering")) {
+                                        const char* fields[] = {"temper", nullptr};
+                                        DeleteChanges(selectedItems, fields);
+                                    }
+
+                                    ImGui::EndMenu();
                                 }
 
                                 ImGui::EndMenu();
@@ -1203,11 +1303,14 @@ void QuickArmorRebalance::RenderUI() {
 
                         for (auto i : params.filteredItems) {
                             int popCol = 0;
+                            bool isModified = false;
                             if (g_Data.modifiedItems.contains(i)) {
-                                if (modChangesDeleted)
+                                if (modChangesDeleted || g_Data.modifiedItemsDeleted.contains(i))
                                     ImGui::PushStyleColor(ImGuiCol_Text, colorDeleted);
-                                else
+                                else {
                                     ImGui::PushStyleColor(ImGuiCol_Text, colorChanged);
+                                    isModified = true;
+                                }
                                 popCol++;
                             } else if (g_Data.modifiedItemsShared.contains(i)) {
                                 ImGui::PushStyleColor(ImGuiCol_Text, colorChangedShared);
@@ -1227,6 +1330,8 @@ void QuickArmorRebalance::RenderUI() {
 
                             bool isChecked = !uncheckedItems.contains(i);
                             ImGui::PushID(name.c_str());
+
+                            if (isChecked && isModified) hasModifiedItems = true;
 
                             if (ImGui::Checkbox("##ItemCheckbox", &isChecked)) {
                                 if (!isChecked)
@@ -1411,6 +1516,13 @@ void QuickArmorRebalance::RenderUI() {
                             ImGui::PopID();
                             ImGui::EndGroup();
 
+                            if (!curMod && ImGui::IsItemHovered(ImGuiHoveredFlags_Stationary)) {
+                                if (ImGui::BeginTooltip()) {
+                                    if (!curMod) ImGui::Text("File: %s", i->GetFile(0)->fileName);
+                                    ImGui::EndTooltip();
+                                }
+                            }
+
                             ImGui::PopStyleColor(popCol);
                             ImGui::PopStyleVar(popVar);
                         }
@@ -1541,6 +1653,42 @@ void QuickArmorRebalance::RenderUI() {
                                      ImGuiSliderFlags_AlwaysClamp);
                     MakeTooltip("A lower number generates more loot lists but more accurate distribution");
 
+                    ImGui::SeparatorText("Preferred Variants");
+                    MakeTooltip(
+                        "When two items exist, one with the word and one without,\n"
+                        "these settings will determine which will appear.\n\n"
+                        "For example: Mod contains items 'Cape' and 'Cape (SMP)'\n"
+                        "Setting SMP as preferred will cause only 'Cape (SMP)' to appear in loot.");
+
+                    const char* prefDesc[] = {"Don't care", "Prefer items with", "Prefer items without"};
+
+                    ImGui::PushItemWidth(-FLT_MIN);
+                    if (ImGui::BeginTable("Preference Variants", 2,
+                                          ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_SizingFixedFit)) {
+                        ImGui::TableSetupColumn("Word");
+                        ImGui::TableSetupColumn("Options");
+
+                        for (auto& i : g_Config.mapPrefVariants) {
+                            ImGui::TableNextColumn();
+                            // ImGui::PushID(i.first.c_str());
+                            ImGui::Text(i.first.c_str());
+
+                            ImGui::TableNextColumn();
+                            ImGui::SetNextItemWidth(200.0f);
+                            ImGui::Combo("##PrefCombo", &i.second.pref, prefDesc, IM_ARRAYSIZE(prefDesc));
+                            // ImGui::PopID();
+                        }
+
+                        ImGui::EndTable();
+                    }
+
+                    if (ImGui::Button("Rescan ALL modified items for preference words")) {
+                        RescanPreferenceVariants();
+                    }
+                    MakeTooltip(
+                        "You need only press this when new words are added to the list above.\n"
+                        "You do not need to rescan when simply changing preferences.");
+
                     ImGui::EndTabItem();
                 }
 
@@ -1626,6 +1774,19 @@ void QuickArmorRebalance::RenderUI() {
                         "WARNING: Likely to cause crashes on VR!");
                     ImGui::EndDisabled();
 
+                    ImGui::EndTabItem();
+                }
+
+                if (ImGui::BeginTabItem("Integrations")) {
+                    ImGui::SeparatorText("Dynamic Armor Variants");
+                    ImGui::Checkbox("Enable exports to DAV", &g_Config.bEnableDAVExports);
+                    ImGui::SameLine();
+                    ImGui::BeginDisabled(!g_Config.bEnableDAVExports);
+                    ImGui::Checkbox("Even if DAV not present", &g_Config.bEnableDAVExportsAlways);
+                    if (ImGui::Button("Re-export all files to DAV")) {
+                        ExportAllToDAV();
+                    }
+                    ImGui::EndDisabled();
                     ImGui::EndTabItem();
                 }
 
@@ -1827,6 +1988,17 @@ void QuickArmorRebalance::RenderUI() {
             wordsUsed.clear();
             mapDVWords.clear();
 
+            for (auto& dv : g_Config.mapDynamicVariants) {
+                if (!dv.second.autos.empty()) {
+                    for (auto w : dv.second.autos) {
+                        if (analyzeResults.mapWordItems.find(w) != analyzeResults.mapWordItems.end()) {
+                            mapDVWords[&dv.second].push_back(w);
+                            wordsUsed.insert(w);
+                        }
+                    }
+                }
+            }
+
             auto& ws = analyzeResults.sets[AnalyzeResults::eWords_StaticVariants];
             wordsStatic.insert(ws.begin(), ws.end());
 
@@ -1836,7 +2008,7 @@ void QuickArmorRebalance::RenderUI() {
             }
         }
 
-        ImGui::SetNextWindowSizeConstraints({300, 500}, {1600, 1000});
+        ImGui::SetNextWindowSizeConstraints({450, 300}, {1600, 1000});
         ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
         bPopupActive = true;
 
@@ -1844,6 +2016,19 @@ void QuickArmorRebalance::RenderUI() {
         if (ImGui::BeginPopupModal("Dynamic Variants", &bPopupActive, ImGuiWindowFlags_NoScrollbar)) {
             dvWndWasOpen = true;
             ImGui::Text("Drag the appropriate words (if any) to their associated dynamic type on the right side.");
+
+            ImGui::BeginDisabled(!hasModifiedItems);
+            if (ImGui::Button(RightAlign("Update Dynamic Variants"))) {
+                g_Config.acParams.dvSets = MapVariants(analyzeResults, mapDVWords);
+                AddDynamicVariants(g_Config.acParams);
+            }
+
+            if (!hasModifiedItems)
+                MakeTooltip(
+                    "This only updates previously modified items, but none have been detected.\n\n"
+                    "Dynamic variants will be included when clicking Apply Changes after closing this window.");
+
+            ImGui::EndDisabled();
 
             ImGui::SetNextItemWidth(-FLT_MIN);
 
@@ -1978,7 +2163,7 @@ void QuickArmorRebalance::RenderUI() {
                                                 ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_Bullet)) {
                         DragDropWords::Target(&mapDVWords[&dv.second], 0);
 
-                        auto copy = mapDVWords[&dv.second]; //Drag drop can modify 
+                        auto copy = mapDVWords[&dv.second];  // Drag drop can modify
                         for (auto it = copy.begin(); it != copy.end(); it++) {
                             // bool selected = false
                             auto w = *it;
@@ -2003,6 +2188,8 @@ void QuickArmorRebalance::RenderUI() {
                 g_Config.acParams.dvSets = MapVariants(analyzeResults, mapDVWords);
             }
         }
+
+        if (switchToMod) Local::SwitchToMod(switchToMod);
     }
 
     ImGuiIntegration::BlockInput(!ImGui::IsWindowCollapsed(), ImGui::IsItemHovered());

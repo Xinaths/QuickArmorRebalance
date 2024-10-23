@@ -45,6 +45,8 @@ namespace QuickArmorRebalance {
         LoadChangesFromFiles();
         SetupLootLists();
 
+        std::erase_if(g_Config.mapPrefVariants, [](auto& v) { return !v.second.hash; });
+
         g_Data.loot.release();
 
         if (g_Config.bEnableSkyrimWarmthHook)

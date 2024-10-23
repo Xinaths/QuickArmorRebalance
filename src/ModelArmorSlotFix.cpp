@@ -31,7 +31,7 @@ namespace {
             constexpr std::string_view strPrefix{"data\\MESHES\\"};
             if (!strncmp(a_stream.inputFilePath, strPrefix.data(), strPrefix.length())) {
                 std::string modelPath(a_stream.inputFilePath + strPrefix.length());
-                std::transform(modelPath.begin(), modelPath.end(), modelPath.begin(), ::tolower);
+                ToLower(modelPath);
 
                 auto hash = std::hash<std::string>{}(modelPath);
                 auto it = g_Data.remapFileArmorSlots.find(hash);

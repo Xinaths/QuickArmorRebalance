@@ -19,6 +19,7 @@ Loot table notes
 */
 
 using namespace rapidjson;
+using namespace QuickArmorRebalance;
 
 namespace {
     int GetJsonInt(const Value& parent, const char* id, int min = 0, int max = 0, int d = 0) {
@@ -28,6 +29,25 @@ namespace {
         }
 
         return std::max(min, d);
+    }
+
+    bool DoNotDistribute(RE::TESObjectARMO* armor) {
+        for (auto addon : armor->armorAddons) {
+            if (g_Data.loot->dynamicVariantsDAV.contains(addon)) return true;
+        }
+
+        for (const auto& pv : g_Config.mapPrefVariants) {
+            switch (pv.second.pref) {
+                case Pref_With:
+                    if (g_Data.loot->prefVartWithout[pv.second.hash].contains(armor)) return true;
+                    break;
+                case Pref_Without:
+                    if (g_Data.loot->prefVartWith[pv.second.hash].contains(armor)) return true;
+                    break;
+            }           
+        }
+
+        return false;
     }
 }
 
@@ -108,16 +128,22 @@ void QuickArmorRebalance::LoadLootChanges(RE::TESBoundObject* item, const Value&
     if (jsonLoot.HasMember("piece") && jsonLoot["piece"].GetBool()) piece = item;
 
     if (auto armor = item->As<RE::TESObjectARMO>()) {
-        if (jsonLoot.HasMember("set")) {
+        if (DoNotDistribute(armor)) {
+            piece = nullptr;
+        } else if (jsonLoot.HasMember("set")) {
             for (const auto& i : jsonLoot["set"].GetArray()) {
                 RE::FormID id = GetFullId(item->GetFile(), i.GetUint());
 
-                if (auto setitem = RE::TESForm::LookupByID<RE::TESObjectARMO>(id)) items.push_back(setitem);
+                if (auto setitem = RE::TESForm::LookupByID<RE::TESObjectARMO>(id)) {
+                    if (!DoNotDistribute(setitem))
+                        items.push_back(setitem);
+                }
             }
         }
     }
 
-    g_Data.loot->mapItemDist[item] = {profile, group, rarity, piece, std::move(items)};
+    if (piece || !items.empty())
+        g_Data.loot->mapItemDist[item] = {profile, group, rarity, piece, std::move(items)};
 }
 
 void LoadContainerList(std::map<RE::TESForm*, QuickArmorRebalance::ContainerChance>& set, const Value& jsonList) {

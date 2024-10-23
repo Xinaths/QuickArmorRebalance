@@ -1,12 +1,40 @@
 #pragma once
 
-namespace QuickArmorRebalance
-{
+namespace QuickArmorRebalance {
+    using ArmorSet = std::vector<RE::TESObjectARMO*>;
     using ArmorSlot = unsigned int;
     using ArmorSlots = unsigned int;
+    using WordSet = std::set<std::size_t>;
+
+    struct DynamicVariant {
+        std::string name;
+        WordSet hints;
+        WordSet autos;
+
+        struct {
+            bool perSlot = false;
+            std::string display;
+            std::string variant;
+        } DAV;
+    };
+
+    using VariantSetMap = std::map<std::size_t, ArmorSet>;
+    using DynamicVariantSets = std::map<const DynamicVariant*, VariantSetMap>;
 
     bool ReadJSONFile(std::filesystem::path path, rapidjson::Document& doc, bool bEditing = true);
     bool WriteJSONFile(std::filesystem::path path, rapidjson::Document& doc);
+
+    inline void ToLower(std::string& str) {
+        std::transform(str.begin(), str.end(), str.begin(),
+                       [](unsigned char c) { return std::tolower(c, std::locale()); });
+    }
+
+    inline std::string MakeLower(std::string str) {
+        ToLower(str);
+        return str;
+    }
+
+    inline std::string MakeLower(const char* str) { return MakeLower(std::string(str)); }
 
     static auto MapFindOr(const auto& map, const auto& val, const auto r) {
         auto it = map.find(val);
@@ -23,8 +51,8 @@ namespace QuickArmorRebalance
             return RE::TESForm::LookupByID(id);
         }
         if (isdigit(*str)) {
-            RE::FormID id = GetFullId(mod, (RE::FormID)strtol(str, nullptr,10));
-            return RE::TESForm::LookupByID(id);        
+            RE::FormID id = GetFullId(mod, (RE::FormID)strtol(str, nullptr, 10));
+            return RE::TESForm::LookupByID(id);
         }
 
         if (auto pos = strchr(str, ':')) {
@@ -42,8 +70,7 @@ namespace QuickArmorRebalance
     }
 
     template <class T>
-    T* FindIn(const RE::TESFile* mod, const char* str)
-    {
+    T* FindIn(const RE::TESFile* mod, const char* str) {
         if (auto r = FindIn(mod, str)) return r->As<T>();
         return nullptr;
     }
@@ -56,18 +83,18 @@ namespace QuickArmorRebalance
         return (int)slot;
     }
 
-	struct ModData
-	{
-        ModData(RE::TESFile* mod)
-            : mod(mod)
-			{}
+    struct ModData {
+        ModData(RE::TESFile* mod) : mod(mod) {}
 
         RE::TESFile* mod;
         std::set<RE::TESBoundObject*> items;
-	};
 
-    struct LootDistGroup
-    {
+        bool bModified = false;
+        bool bHasDynamicVariants = false;
+        bool bHasPotentialDVs = false;
+    };
+
+    struct LootDistGroup {
         std::string name;
         int level = -1;
         int early = 0;
@@ -82,8 +109,6 @@ namespace QuickArmorRebalance
         int chance;
     };
 
-    using ArmorSet = std::vector<RE::TESObjectARMO*>;
-
     struct LootContainerGroup {
         std::map<RE::TESForm*, ContainerChance> large;
         std::map<RE::TESForm*, ContainerChance> small;
@@ -94,13 +119,11 @@ namespace QuickArmorRebalance
         std::map<LootDistGroup*, std::vector<RE::TESBoundObject*>[3]> weapons;
     };
 
-    struct LootDistProfile
-    {
+    struct LootDistProfile {
         std::set<LootContainerGroup*> containerGroups;
     };
 
-    struct ItemDistData
-    {
+    struct ItemDistData {
         LootDistProfile* profile;
         LootDistGroup* group;
         int rarity;
@@ -109,48 +132,52 @@ namespace QuickArmorRebalance
         ArmorSet set;
     };
 
-    struct ModLootData
-    {
+    struct ModLootData {
         std::map<const ArmorSet*, RE::TESBoundObject*> setList;
 
         std::map<std::string, LootContainerGroup> containerGroups;
         std::map<std::string, LootDistProfile> distProfiles;
 
         std::map<RE::TESBoundObject*, ItemDistData> mapItemDist;
+
+        std::unordered_set<RE::TESObjectARMA*> dynamicVariantsDAV;
+        std::map<std::size_t, std::unordered_set<RE::TESObjectARMO*>> prefVartWith;
+        std::map<std::size_t, std::unordered_set<RE::TESObjectARMO*>> prefVartWithout;
     };
 
-	struct ProcessedData
-	{
-
-        std::map<RE::TESFile*, std::unique_ptr<ModData>> modData;
+    struct ProcessedData {
+        std::map<const RE::TESFile*, std::unique_ptr<ModData>> modData;
         std::vector<ModData*> sortedMods;
-        std::set<const RE::TESFile*> modifiedFiles;
-        std::set<const RE::TESFile*> modifiedFilesShared;
-        std::set<const RE::TESFile*> modifiedFilesDeleted;
+        std::unordered_set<const RE::TESFile*> modifiedFiles;
+        std::unordered_set<const RE::TESFile*> modifiedFilesShared;
+        std::unordered_set<const RE::TESFile*> modifiedFilesDeleted;
 
-		std::set<RE::TESBoundObject*> modifiedItems;
-        std::set<RE::TESBoundObject*> modifiedItemsShared;
+        std::unordered_set<RE::TESBoundObject*> modifiedItems;
+        std::unordered_set<RE::TESBoundObject*> modifiedItemsShared;
+        std::unordered_set<RE::TESBoundObject*> modifiedItemsDeleted;
         std::map<RE::TESBoundObject*, RE::BGSConstructibleObject*> temperRecipe;
         std::map<RE::TESBoundObject*, RE::BGSConstructibleObject*> craftRecipe;
         std::map<RE::TESBoundObject*, RE::BGSConstructibleObject*> smeltRecipe;
 
         std::map<RE::TESObjectARMO*, ArmorSlots> modifiedArmorSlots;
         std::map<RE::TESObjectARMO*, float> modifiedWarmth;
-        
+
+
         std::unordered_map<size_t, ArmorSlots> remapFileArmorSlots;
-        std::set<size_t> noModifyModels;        
+        std::unordered_set<size_t> noModifyModels;
 
         std::unique_ptr<ModLootData> loot;
         std::map<std::string, LootDistGroup> distGroups;
-
     };
 
     bool IsValidItem(RE::TESBoundObject* i);
 
-	void ProcessData();
+    void ProcessData();
     void LoadChangesFromFiles();
+
+    void ForChangesInFolder(const char* sub, const std::function<void(const RE::TESFile*, std::filesystem::path)> fn);
 
     void DeleteAllChanges(RE::TESFile* mod);
 
-	extern ProcessedData g_Data;
+    extern ProcessedData g_Data;
 }

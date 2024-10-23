@@ -1,4 +1,4 @@
-#include "Exporting.h"
+#include "ModIntegrations.h"
 
 #include "Config.h"
 #include "Data.h"
@@ -6,10 +6,27 @@
 #define DAV_PATH "Data/SKSE/Plugins/DynamicArmorVariants/"
 
 using namespace rapidjson;
+using namespace QuickArmorRebalance;
 
 std::string DAVFormID(const RE::TESFile* file, RE::FormID id) { return std::format("{}|{:X}", file->fileName, id); }
 
+static RE::TESForm* FindDAVFormID(const char* str) {
+    if (auto pos = strchr(str, '|')) {
+        std::string fileName(str, pos - str);
+        if (auto mod = RE::TESDataHandler::GetSingleton()->LookupModByName(fileName)) {
+            auto id = GetFullId(mod, (RE::FormID)strtol(pos + 1, nullptr, 16));
+            return RE::TESForm::LookupByID(id);
+        }
+    }
+    return nullptr;
+}
+
+
 void QuickArmorRebalance::ExportToDAV(const RE::TESFile* file, const Value& ls, bool bRebuild) {
+    if (!g_Config.bEnableDAVExports ||
+        (!g_Config.bEnableDAVExportsAlways && !GetModuleHandle(L"DynamicArmorVariants.dll")))
+        return;
+
     DynamicVariantSets sets;
 
     for (auto& i : ls.GetObj()) {
@@ -91,6 +108,7 @@ void QuickArmorRebalance::ExportToDAV(const RE::TESFile* file, const Value& ls, 
                         replace[group].emplace_back(
                             DAVFormID(addonBase->GetFile(0), addonBase->GetLocalFormID()),
                             DAVFormID(addonReplace->GetFile(0), addonReplace->GetLocalFormID()));
+                        break; //only one allowed each
                     }
                 }
             }
@@ -117,8 +135,6 @@ void QuickArmorRebalance::ExportToDAV(const RE::TESFile* file, const Value& ls, 
                          path.generic_string());
             return;
         }
-
-        if (bRebuild) doc.Clear();  // Wipe contents after verifying QAR created the file
     }
 
     if (!doc.IsObject()) {
@@ -140,6 +156,10 @@ void QuickArmorRebalance::ExportToDAV(const RE::TESFile* file, const Value& ls, 
 
     for (auto& i : jsonVariantArray.GetArray()) {
         if (!i.IsObject() || !i.HasMember("name") || !i["name"].IsString()) continue;
+
+        if (bRebuild) { //Always clear the replacements when rebuilding, but leave other data untouched
+            i.RemoveMember("replaceByForm");
+        }
 
         auto it = replace.find(i["name"].GetString());
         if (it == replace.end()) continue;
@@ -172,4 +192,68 @@ void QuickArmorRebalance::ExportToDAV(const RE::TESFile* file, const Value& ls, 
     }
 
     WriteJSONFile(path, doc);
+}
+
+void QuickArmorRebalance::ExportAllToDAV() {
+    auto ExportFile = [&](auto mod, auto path) {
+        Document doc;
+
+        if (!ReadJSONFile(path, doc, false)) return;
+
+        if (doc.HasParseError() || !doc.IsObject()) return;
+
+        ExportToDAV(mod, doc.GetObj(), true);
+    };
+
+    ForChangesInFolder("shared/", ExportFile);
+    ForChangesInFolder("local/", ExportFile);
+}
+
+namespace {
+    void ImportDAVFile(std::filesystem::path path) { 
+        Document doc;
+        if (!ReadJSONFile(path, doc)) return;
+
+        if (!doc.IsObject() || !doc.HasMember("variants")) return;
+
+        auto& variants = doc.GetObj()["variants"];
+        if (!variants.IsArray()) return;
+
+        for (auto& variant : variants.GetArray()) {
+            if (!variant.IsObject() || !variant.HasMember("replaceByForm")) continue;
+
+            auto& replacers = variant["replaceByForm"];
+            if (!replacers.IsObject()) continue;
+            for (auto& replace : replacers.GetObj()) {
+                if (!replace.value.IsString()) continue;
+
+                if (auto form = FindDAVFormID(replace.value.GetString())) {
+                    if (auto addon = form->As<RE::TESObjectARMA>()) {
+                        g_Data.loot->dynamicVariantsDAV.insert(addon);
+                    }
+                }               
+            }
+        }
+    }
+}
+
+void QuickArmorRebalance::ImportFromDAV() {
+    if (!g_Data.loot) return;
+    if (!GetModuleHandle(L"DynamicArmorVariants.dll")) return;
+
+    logger::info("Importing from DAV files");
+
+    const auto dataHandler = RE::TESDataHandler::GetSingleton();
+    if (!dataHandler) return;
+
+    for (auto& file : dataHandler->files) {
+        if (!file) continue;
+
+        auto path = std::filesystem::current_path() / DAV_PATH / file->fileName;
+        path.replace_extension(".json");
+
+        if (std::filesystem::exists(path)) {
+            ImportDAVFile(path);
+        }
+    }
 }

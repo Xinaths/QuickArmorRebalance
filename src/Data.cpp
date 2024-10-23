@@ -2,13 +2,14 @@
 
 #include "ArmorChanger.h"
 #include "Config.h"
+#include "ModIntegrations.h"
 #include "rapidjson/document.h"
 #include "rapidjson/error/en.h"
 #include "rapidjson/error/error.h"
 #include "rapidjson/filereadstream.h"
 #include "rapidjson/filewritestream.h"
-#include "rapidjson/stringbuffer.h"
 #include "rapidjson/prettywriter.h"
+#include "rapidjson/stringbuffer.h"
 
 using namespace rapidjson;
 
@@ -22,11 +23,11 @@ using namespace QuickArmorRebalance;
 ProcessedData QuickArmorRebalance::g_Data;
 
 bool QuickArmorRebalance::ReadJSONFile(std::filesystem::path path, Document& doc, bool bEditing) {
-    if (std::filesystem::exists(path.generic_string().c_str())) {
+    if (std::filesystem::exists(path)) {
         if (auto fp = std::fopen(path.generic_string().c_str(), "rb")) {
             char readBuffer[1 << 16];
             FileReadStream is(fp, readBuffer, sizeof(readBuffer));
-            doc.ParseStream(is);
+            doc.ParseStream<kParseCommentsFlag | kParseTrailingCommasFlag>(is);
             std::fclose(fp);
 
             if (doc.HasParseError()) {
@@ -69,7 +70,6 @@ bool QuickArmorRebalance::WriteJSONFile(std::filesystem::path path, rapidjson::D
         logger::error("Could not open file to write {}: {}", path.generic_string(), std::strerror(errno));
         return false;
     }
-
 }
 
 bool QuickArmorRebalance::IsValidItem(RE::TESBoundObject* i) {
@@ -213,7 +213,7 @@ void QuickArmorRebalance::ProcessData() {
             for (int i = 0; i < RE::SEXES::kTotal; i++) {
                 if (!addon->bipedModels[i].model.empty()) {
                     std::string modelPath(addon->bipedModels[i].model);
-                    std::transform(modelPath.begin(), modelPath.end(), modelPath.begin(), ::tolower);
+                    ToLower(modelPath);
 
                     auto hash = std::hash<std::string>{}(modelPath);
                     g_Data.noModifyModels.insert(hash);
@@ -255,6 +255,8 @@ void QuickArmorRebalance::LoadChangesFromFiles() {
     }
     */
 
+    ImportFromDAV();
+
     logger::info("Loading changes from files");
     LoadChangesFromFolder("shared/", QuickArmorRebalance::g_Config.permShared);
     logger::info("{} items affected from shared changes", g_Data.modifiedItemsShared.size());
@@ -262,7 +264,8 @@ void QuickArmorRebalance::LoadChangesFromFiles() {
     logger::info("{} items affected from local changes", g_Data.modifiedItems.size());
 }
 
-void QuickArmorRebalance::LoadChangesFromFolder(const char* sub, const Permissions& perm) {
+void QuickArmorRebalance::ForChangesInFolder(const char* sub,
+                                             const std::function<void(const RE::TESFile*, std::filesystem::path)> fn) {
     auto dataHandler = RE::TESDataHandler::GetSingleton();
 
     auto path = std::filesystem::current_path() / PATH_ROOT PATH_CHANGES;
@@ -284,10 +287,16 @@ void QuickArmorRebalance::LoadChangesFromFolder(const char* sub, const Permissio
 
         if (auto mod = dataHandler->LookupModByName(modName)) {
             logger::trace("Loading change file {}", entry.path().filename().generic_string());
-            if (!LoadFileChanges(mod, entry.path(), perm))
-                logger::warn("Failed to load change file {}", entry.path().filename().generic_string());
+            fn(mod, entry.path());
         }
     }
+}
+
+void QuickArmorRebalance::LoadChangesFromFolder(const char* sub, const Permissions& perm) {
+    ForChangesInFolder(sub, [&](auto mod, auto path) {
+        if (!LoadFileChanges(mod, path, perm))
+            logger::warn("Failed to load change file {}", path.filename().generic_string());
+    });
 }
 
 bool QuickArmorRebalance::LoadFileChanges(const RE::TESFile* mod, std::filesystem::path path, const Permissions& perm) {

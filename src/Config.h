@@ -1,30 +1,20 @@
 #pragma once
 
 #include "Data.h"
+#include "ArmorSetBuilder.h"
 
 #define PATH_ROOT "Data/SKSE/Plugins/" PLUGIN_NAME "/"
 #define PATH_CONFIGS "config/"
 #define PATH_CHANGES "changes/"
 
-namespace QuickArmorRebalance {
+namespace QuickArmorRebalance {  
 
-    using WordSet = std::set<std::size_t>;
-
-    struct DynamicVariant {
-        std::string name;
-        WordSet hints;
-        WordSet autos;
-
-        struct {
-            bool perSlot = false;
-            std::string display;
-            std::string variant;
-        } DAV;
+    enum Preference {
+        Pref_Ignore,
+        Pref_With,
+        Pref_Without
     };
-
-    using VariantSetMap = std::map<std::size_t, ArmorSet>;
-    using DynamicVariantSets = std::map<const DynamicVariant*, VariantSetMap>;
-
+   
     struct LootDistGroup;
 
     const unsigned int kCosmeticSlotMask = 0;
@@ -115,6 +105,7 @@ namespace QuickArmorRebalance {
         std::map<int, int> mapArmorSlots;
 
         DynamicVariantSets dvSets;
+        AnalyzeResults analyzeResults;
 
         mutable bool bMixedSetDone = false;
     };
@@ -179,6 +170,13 @@ namespace QuickArmorRebalance {
 
         std::map<std::string, DynamicVariant> mapDynamicVariants;
 
+        struct PreferenceVariants {
+            std::size_t hash;
+            int pref = Pref_Ignore;
+        };
+
+        std::map<std::string, PreferenceVariants> mapPrefVariants;
+
         unsigned int usedSlotsMask = 0;
         ArmorChangeParams acParams;
 
@@ -202,6 +200,10 @@ namespace QuickArmorRebalance {
         bool bShowFrostfallCoverage = false;
         bool bEnableProtectedSlotRemapping = false;
         bool bEnableArmorSlotModelFixHook = true;
+
+        bool bEnableDAVExports = true;
+        bool bEnableDAVExportsAlways = false;
+
 
         bool isFrostfallInstalled = false;
 

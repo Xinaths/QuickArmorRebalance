@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Config.h"
+#include "Data.h"
 
 namespace QuickArmorRebalance {
     ArmorSet BuildSetFrom(RE::TESBoundObject* baseItem,
@@ -31,9 +31,10 @@ namespace QuickArmorRebalance {
         void Clear();
     };
 
+    std::size_t HashWordSet(const WordSet& set, ArmorSlots slots, std::size_t skip = 0);
+
     void AnalyzeArmor(const std::vector<RE::TESBoundObject*>& items, AnalyzeResults& results);
     void AnalyzeAllArmor();
-
 
     DynamicVariantSets MapVariants(AnalyzeResults& results,
                      const std::map<const DynamicVariant*, std::vector<std::size_t>>& mapDVWords);

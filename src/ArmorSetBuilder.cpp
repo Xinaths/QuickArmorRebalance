@@ -68,7 +68,7 @@ namespace {
 
         // Might be a bad idea to transform to lower, as SomeModsMightNameThingsWithoutSpaces which could be handled, if
         // encountered
-        std::transform(text.begin(), text.end(), text.begin(), ::tolower);
+        ToLower(text);
 
         auto delimeters = " ()[]<>.,-_:;\\/{}~&";
         WordSet words;
@@ -677,7 +677,7 @@ void QuickArmorRebalance::AnalyzeAllArmor() {
     logger::info("Finished all armor analysis");
 }
 
-std::size_t HashWordSet(const WordSet& set, ArmorSlots slots, std::size_t skip = 0) {
+std::size_t QuickArmorRebalance::HashWordSet(const WordSet& set, ArmorSlots slots, std::size_t skip) {
     std::size_t hash = slots;
     for (auto w : set)
         if (w != skip) hash ^= w + 0x9e3779b9 + (hash << 6) + (hash >> 2);

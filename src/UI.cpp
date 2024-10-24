@@ -64,8 +64,7 @@ std::vector<ModData*> GetFilteredMods(int nModFilter) {
             std::copy_if(g_Data.sortedMods.begin(), g_Data.sortedMods.end(), std::back_inserter(list),
                          [](ModData* mod) { return mod->bModified; });
             break;
-        case 3:
-        {
+        case 3: {
             static bool bOnce = false;
             if (!bOnce) {
                 bOnce = true;
@@ -80,10 +79,10 @@ std::vector<ModData*> GetFilteredMods(int nModFilter) {
                 }
             }
         }
-            std::copy_if(g_Data.sortedMods.begin(), g_Data.sortedMods.end(), std::back_inserter(list),
-                         [](ModData* mod) { return mod->bModified && !mod->bHasDynamicVariants && mod->bHasPotentialDVs; });
+            std::copy_if(
+                g_Data.sortedMods.begin(), g_Data.sortedMods.end(), std::back_inserter(list),
+                [](ModData* mod) { return mod->bModified && !mod->bHasDynamicVariants && mod->bHasPotentialDVs; });
             break;
-
     }
 
     return list;
@@ -545,7 +544,6 @@ void QuickArmorRebalance::RenderUI() {
             static int nModFilter = 0;
             const char* modFilterDesc[] = {"No filter", "Unmodified", "Modified", "Has possible dynamic variants"};
 
-
             const char* strModSpecial[] = {"<Currently Worn Armor>", "<All Items>", nullptr};
             bool bModSpecialEnabled[] = {true, g_Config.bEnableAllItems};
             static int nModSpecial = 0;
@@ -625,14 +623,14 @@ void QuickArmorRebalance::RenderUI() {
 
                                 int pop = 0;
                                 if (g_Data.modifiedFiles.contains(i->mod)) {
-                                    //if (bFilterChangedMods) continue;
+                                    // if (bFilterChangedMods) continue;
                                     if (g_Data.modifiedFilesDeleted.contains(i->mod))
                                         ImGui::PushStyleColor(ImGuiCol_Text, colorDeleted);
                                     else
                                         ImGui::PushStyleColor(ImGuiCol_Text, colorChanged);
                                     pop++;
                                 } else if (g_Data.modifiedFilesShared.contains(i->mod)) {
-                                    //if (bFilterChangedMods) continue;
+                                    // if (bFilterChangedMods) continue;
                                     ImGui::PushStyleColor(ImGuiCol_Text, colorChangedShared);
                                     pop++;
                                 }
@@ -686,7 +684,7 @@ void QuickArmorRebalance::RenderUI() {
 
                         ImGui::TableNextColumn();
 
-                        //ImGui::Checkbox("Hide modified", &bFilterChangedMods);
+                        // ImGui::Checkbox("Hide modified", &bFilterChangedMods);
 
                         ImGui::SetNextItemWidth(200.0f);
                         ImGui::Combo("##FilterMods", &nModFilter, modFilterDesc, IM_ARRAYSIZE(modFilterDesc));
@@ -1653,6 +1651,9 @@ void QuickArmorRebalance::RenderUI() {
                                      ImGuiSliderFlags_AlwaysClamp);
                     MakeTooltip("A lower number generates more loot lists but more accurate distribution");
 
+                    ImGui::Checkbox("Prevent distribution of dynamic variants",
+                                    &g_Config.bPreventDistributionOfDynamicVariants);
+
                     ImGui::SeparatorText("Preferred Variants");
                     MakeTooltip(
                         "When two items exist, one with the word and one without,\n"
@@ -2185,6 +2186,7 @@ void QuickArmorRebalance::RenderUI() {
             ImGui::EndPopup();
         } else {
             if (dvWndWasOpen) {
+                dvWndWasOpen = false;
                 g_Config.acParams.dvSets = MapVariants(analyzeResults, mapDVWords);
             }
         }

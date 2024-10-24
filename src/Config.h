@@ -200,6 +200,7 @@ namespace QuickArmorRebalance {
         bool bShowFrostfallCoverage = false;
         bool bEnableProtectedSlotRemapping = false;
         bool bEnableArmorSlotModelFixHook = true;
+        bool bPreventDistributionOfDynamicVariants = true;
 
         bool bEnableDAVExports = true;
         bool bEnableDAVExportsAlways = false;

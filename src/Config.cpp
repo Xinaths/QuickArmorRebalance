@@ -200,6 +200,7 @@ bool QuickArmorRebalance::Config::Load() {
             g_Config.bShowFrostfallCoverage = config["settings"]["showffcoverage"].value_or(false);
             g_Config.bEnableProtectedSlotRemapping = config["settings"]["enableprotectedslotremapping"].value_or(false);
             g_Config.bEnableArmorSlotModelFixHook = config["settings"]["enablearmorslotmodelfixhook"].value_or(true);
+            g_Config.bPreventDistributionOfDynamicVariants = config["settings"]["nodistdynamicvariants"].value_or(true);
 
             g_Config.bEnableDAVExports = config["integrations"]["enableDAVexports"].value_or(true);
             g_Config.bEnableDAVExportsAlways = config["integrations"]["enableDAVexportsalways"].value_or(false);
@@ -208,8 +209,9 @@ bool QuickArmorRebalance::Config::Load() {
             LoadPermissions(g_Config.permShared, config["sharedPermissions"]);
 
             if (auto tbl = config["preferenceVariants"].as_table())
-                tbl->for_each(
-                    [this](const toml::key& key, auto&& val) { mapPrefVariants[std::string(key.str())].pref = (Preference)val.value_or(0); });
+                tbl->for_each([this](const toml::key& key, auto&& val) {
+                    mapPrefVariants[std::string(key.str())].pref = (Preference)val.value_or(0);
+                });
 
             spdlog::set_level((spdlog::level::level_enum)g_Config.verbosity);
         }
@@ -685,6 +687,7 @@ void QuickArmorRebalance::Config::Save() {
              {"showffcoverage", g_Config.bShowFrostfallCoverage},
              {"enableprotectedslotremapping", g_Config.bEnableProtectedSlotRemapping},
              {"enablearmorslotmodelfixhook", g_Config.bEnableArmorSlotModelFixHook},
+             {"nodistdynamicvariants", g_Config.bPreventDistributionOfDynamicVariants},
          }},
         {"integrations",
          toml::table{

@@ -32,8 +32,10 @@ namespace {
     }
 
     bool DoNotDistribute(RE::TESObjectARMO* armor) {
-        for (auto addon : armor->armorAddons) {
-            if (g_Data.loot->dynamicVariantsDAV.contains(addon)) return true;
+        if (g_Config.bPreventDistributionOfDynamicVariants) {
+            for (auto addon : armor->armorAddons) {
+                if (g_Data.loot->dynamicVariantsDAV.contains(addon)) return true;
+            }
         }
 
         for (const auto& pv : g_Config.mapPrefVariants) {

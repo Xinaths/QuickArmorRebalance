@@ -239,15 +239,6 @@ void QuickArmorRebalance::AnalyzeArmor(const std::vector<RE::TESBoundObject*>& i
                 slotData[slot].words.insert(word);
 
                 ws.otherWords.insert(words.begin(), words.end());
-
-                /*
-                auto it = mapWordLinks.find(word);
-                if (it == mapWordLinks.end()) {
-                    (mapWordLinks[word] = words).erase(word);
-                } else {
-                    std::erase_if(it->second, [&](size_t word) { return !words.contains(word); });
-                }
-                */
             }
 
             std::size_t prevWord = 0;
@@ -271,12 +262,12 @@ void QuickArmorRebalance::AnalyzeArmor(const std::vector<RE::TESBoundObject*>& i
 
                     it = mapWordLinksPrev.find(word);
                     if (it == mapWordLinksPrev.end()) {
-                        if (mapWordLinksPrev.contains(prevWord))
-                            mapWordLinksPrev[word] = 0;  // First word has already been seen seperately
-                        else
-                            mapWordLinksPrev[word] = prevWord;
+                        mapWordLinksPrev[word] = prevWord;
                     } else {
-                        if (it->second != prevWord) mapWordLinks[prevWord] = 0;
+                        if (it->second != prevWord) {
+                            mapWordLinks[prevWord] = 0;    // Break current chain
+                            mapWordLinks[it->second] = 0;  // Break existing chain
+                        }
                         // Not necessary to 0 out the back looking table, as its not used for anything else but breaking
                         // the previous link
                     }
@@ -519,6 +510,19 @@ void QuickArmorRebalance::AnalyzeArmor(const std::vector<RE::TESBoundObject*>& i
         if (pSet) pSet->insert(g.second.begin(), g.second.end());
     }
 
+    // Combine linked words
+    for (auto& i : mapWordLinks) {
+        auto next = i.second;
+        while (next) {
+            mapWordLookup[i.first] = mapWordLookup[i.first] + " " + mapWordLookup[next];
+            auto it = mapWordLinks.find(next);
+            if (it == mapWordLinks.end()) break;
+            next = it->second;
+        }
+        i.second = 0;  // break up chains or else 3 part sequences can look like "1 2 3 2 3" etc., and we don't use this
+                       // data anymore
+    }
+
     /*
     logger::info("Word links:");
     for (const auto& i : mapWordLinks) {
@@ -680,7 +684,9 @@ void QuickArmorRebalance::AnalyzeAllArmor() {
 std::size_t QuickArmorRebalance::HashWordSet(const WordSet& set, ArmorSlots slots, std::size_t skip) {
     std::size_t hash = slots;
     for (auto w : set)
-        if (w != skip) hash ^= w + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+        if (w != skip) {
+            hash ^= w + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+        }
 
     return hash;
 }
@@ -692,8 +698,12 @@ DynamicVariantSets QuickArmorRebalance::MapVariants(
     for (auto& dv : mapDVWords) {
         if (dv.second.empty()) continue;
 
+        // logger::trace("Dynamic Variant: {}", dv.first->name);
+
         VariantSetMap mapVariants;
         for (auto i : results.mapArmorWords) {
+            // logger::trace("Hashing {}:", i.first->GetName());
+            // logger::trace("Slots {}:", (ArmorSlots)i.first->GetSlotMask());
             mapVariants[HashWordSet(i.second, (ArmorSlots)i.first->GetSlotMask())].push_back(i.first);
         }
 
@@ -701,8 +711,11 @@ DynamicVariantSets QuickArmorRebalance::MapVariants(
             const auto& items = results.mapWordItems[w].items;
 
             for (auto item : items) {
-                mapVariants[HashWordSet(results.mapArmorWords[item], (ArmorSlots)item->GetSlotMask(), w)].push_back(
-                    item);
+                // logger::trace("Hashing {} (skip {}):", item->GetName(), results.mapWordStrings[w]);
+                // logger::trace("Slots {}:", (ArmorSlots)item->GetSlotMask());
+                auto hash = HashWordSet(results.mapArmorWords[item], (ArmorSlots)item->GetSlotMask(), w);
+                mapVariants[hash].push_back(item);
+                // logger::trace("Set size: {}", mapVariants[hash].size());
             }
         }
 

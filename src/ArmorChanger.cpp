@@ -443,7 +443,7 @@ void ::AddDynamicVariants(const RE::TESFile* file, const ArmorChangeParams& para
 
     for (auto& dv : params.dvSets) {
         for (auto& set : dv.second) {
-            if (dv.second.size() < 2) continue;
+            if (set.second.size() < 2) continue;
 
             auto base = set.second[0];
             for (int i = 1; i < set.second.size(); i++) {
@@ -529,7 +529,7 @@ void WritePrefrenceVariantValue(RE::TESObjectARMO* item, rapidjson::Value& ls, c
     } else {
         it->value.RemoveMember(var);
         it->value.AddMember(Value(var, al), Value(val), al);
-    } 
+    }
 }
 
 bool ::AddPreferenceVariants(const RE::TESFile* file, const ArmorChangeParams& params, rapidjson::Value& ls,
@@ -554,7 +554,7 @@ bool ::AddPreferenceVariants(const RE::TESFile* file, const ArmorChangeParams& p
     for (auto& pw : g_Config.mapPrefVariants) {
         auto it = params.analyzeResults.mapWordItems.find(pw.second.hash);
         if (it != params.analyzeResults.mapWordItems.end()) {
-            if (mapHashed.empty()) { //Build hash map for words to armor
+            if (mapHashed.empty()) {  // Build hash map for words to armor
                 for (auto item : params.items) {
                     if (item->GetFile(0) != file) continue;
                     if (auto armor = item->As<RE::TESObjectARMO>()) {
@@ -574,7 +574,7 @@ bool ::AddPreferenceVariants(const RE::TESFile* file, const ArmorChangeParams& p
                 auto itArmor = params.analyzeResults.mapArmorWords.find(item);
                 if (itArmor != params.analyzeResults.mapArmorWords.end()) {
                     auto hash = HashWordSet(itArmor->second, (ArmorSlots)item->GetSlotMask(), pw.second.hash);
-                   
+
                     auto itMatch = mapHashed.find(hash);
                     if (itMatch != mapHashed.end()) {
                         bAny = true;
@@ -865,9 +865,9 @@ bool QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, RE::FormID id, c
                 });
             }
         }
-        
+
         if (changes.HasMember("dynamicVariants")) {
-            //Don't need to use the data currently, just mark it
+            // Don't need to use the data currently, just mark it
             g_Data.modData[armor->GetFile(0)]->bHasDynamicVariants = true;
         }
 
@@ -881,11 +881,9 @@ bool QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, RE::FormID id, c
                         g_Data.loot->prefVartWith[pv.second.hash].insert(armor);
                     } else
                         g_Data.loot->prefVartWithout[pv.second.hash].insert(armor);
-
                 }
             }
         }
-
 
     } else if (auto weap = item->As<RE::TESObjectWEAP>()) {
         auto src = objSrc->As<RE::TESObjectWEAP>();
@@ -1221,8 +1219,7 @@ void ::ReplaceRecipe(RE::BGSConstructibleObject* tar, const RE::BGSConstructible
 void QuickArmorRebalance::DeleteChanges(std::set<RE::TESBoundObject*> items, const char** fields) {
     std::map<RE::TESFile*, std::vector<RE::TESBoundObject*>> mapFileItems;
     for (auto i : items) {
-        if (g_Data.modifiedItems.contains(i))
-            mapFileItems[i->GetFile(0)].push_back(i);
+        if (g_Data.modifiedItems.contains(i)) mapFileItems[i->GetFile(0)].push_back(i);
     }
 
     for (auto& i : mapFileItems) {
@@ -1244,8 +1241,7 @@ void QuickArmorRebalance::DeleteChanges(std::set<RE::TESBoundObject*> items, con
                 auto& vals = it->value;
                 if (!vals.IsObject()) continue;  // Somethings broken
 
-                for (auto field = fields; *field; field++)
-                    vals.RemoveMember(*field);
+                for (auto field = fields; *field; field++) vals.RemoveMember(*field);
             }
         } else {
             for (auto item : i.second) {
@@ -1254,6 +1250,6 @@ void QuickArmorRebalance::DeleteChanges(std::set<RE::TESBoundObject*> items, con
             }
         }
 
-        WriteJSONFile(path, doc);           
+        WriteJSONFile(path, doc);
     }
 }

@@ -148,10 +148,10 @@ namespace {
         if (pair.bModify) changes.AddMember(StringRef(field), Value(0.01f * pair.fScale), al);
     }
 
-    void AddDynamicVariants(const RE::TESFile* file, const ArmorChangeParams& params, rapidjson::Value& ls,
+    int AddDynamicVariants(const RE::TESFile* file, const ArmorChangeParams& params, rapidjson::Value& ls,
                             MemoryPoolAllocator<>& al);
     bool AddPreferenceVariants(const RE::TESFile* file, const ArmorChangeParams& params, rapidjson::Value& ls,
-                               MemoryPoolAllocator<>& al);
+                               MemoryPoolAllocator<>& al, int& r);
 
 }
 
@@ -170,8 +170,10 @@ ArmorSlots QuickArmorRebalance::GetConvertableArmorSlots(const ArmorChangeParams
     return coveredSlots;
 }
 
-void QuickArmorRebalance::MakeArmorChanges(const ArmorChangeParams& params) {
-    if (params.items.empty()) return;
+int QuickArmorRebalance::MakeArmorChanges(const ArmorChangeParams& params) {
+    int nChanges = 0;
+
+    if (params.items.empty()) return 0;
     params.bMixedSetDone = false;
 
     params.remapMask = 0;
@@ -347,12 +349,13 @@ void QuickArmorRebalance::MakeArmorChanges(const ArmorChangeParams& params) {
     }
 
     for (auto& i : mapFileChanges) {
-        ::AddPreferenceVariants(i.first, params, i.second, al);
+        int r = 0;
+        ::AddPreferenceVariants(i.first, params, i.second, al, r);
         ::AddDynamicVariants(i.first, params, i.second, al);
     }
 
     for (auto& i : mapFileChanges) {
-        ApplyChanges(i.first, i.second, g_Config.permLocal);
+        nChanges+=ApplyChanges(i.first, i.second, g_Config.permLocal);
 
         ExportToDAV(i.first, i.second);
 
@@ -397,9 +400,12 @@ void QuickArmorRebalance::MakeArmorChanges(const ArmorChangeParams& params) {
                 path.filename().generic_string(), path.generic_string(), std::strerror(errno));
         }
     }
+
+    return nChanges;
 }
 
-void QuickArmorRebalance::AddDynamicVariants(const ArmorChangeParams& params) {
+int QuickArmorRebalance::AddDynamicVariants(const ArmorChangeParams& params) {
+    int r = 0;
     std::set<RE::TESFile*> files;
 
     for (auto i : params.items) {
@@ -419,14 +425,18 @@ void QuickArmorRebalance::AddDynamicVariants(const ArmorChangeParams& params) {
         if (!ReadJSONFile(path, doc)) continue;
         if (!doc.IsObject()) continue;
 
-        ::AddDynamicVariants(mod, params, doc.GetObj(), al);
+        r+=::AddDynamicVariants(mod, params, doc.GetObj(), al);
         ExportToDAV(mod, doc.GetObj(), true);
         WriteJSONFile(path, doc);
     }
+
+    return r;
 }
 
-void ::AddDynamicVariants(const RE::TESFile* file, const ArmorChangeParams& params, rapidjson::Value& ls,
+int ::AddDynamicVariants(const RE::TESFile* file, const ArmorChangeParams& params, rapidjson::Value& ls,
                           MemoryPoolAllocator<>& al) {
+    int r = 0;
+
     // First pass to clear out existing DV entries (or reset them if they will no longer apply)
     for (auto item : params.items) {
         if (item->GetFile(0) != file) continue;
@@ -476,14 +486,18 @@ void ::AddDynamicVariants(const RE::TESFile* file, const ArmorChangeParams& para
                     it->value.RemoveMember(dv.first->name.c_str());
                     it->value.AddMember(Value(dv.first->name.c_str(), al), dvVal, al);
                 }
+                r++;
 
                 g_Data.modData[item->GetFile(0)]->bHasDynamicVariants = true;
             }
         }
     }
+
+    return r;
 }
 
-void QuickArmorRebalance::RescanPreferenceVariants() {
+int QuickArmorRebalance::RescanPreferenceVariants() {
+    int r = 0;
     auto Rescan = [&](auto mod, auto path) {
         Document doc;
 
@@ -503,13 +517,15 @@ void QuickArmorRebalance::RescanPreferenceVariants() {
         if (params.items.empty()) return;
 
         AnalyzeArmor(params.items, params.analyzeResults);
-        if (::AddPreferenceVariants(mod, params, doc.GetObj(), doc.GetAllocator())) {
+        if (::AddPreferenceVariants(mod, params, doc.GetObj(), doc.GetAllocator(), r)) {
             logger::trace("Updating {}", path.generic_string().c_str());
             WriteJSONFile(path, doc);
         }
     };
 
     ForChangesInFolder("local/", Rescan);
+
+    return r;
 }
 
 void WritePrefrenceVariantValue(RE::TESObjectARMO* item, rapidjson::Value& ls, const char* var, bool val,
@@ -533,7 +549,7 @@ void WritePrefrenceVariantValue(RE::TESObjectARMO* item, rapidjson::Value& ls, c
 }
 
 bool ::AddPreferenceVariants(const RE::TESFile* file, const ArmorChangeParams& params, rapidjson::Value& ls,
-                             MemoryPoolAllocator<>& al) {
+                             MemoryPoolAllocator<>& al, int& count) {
     bool bAny = false;
 
     for (auto item : params.items) {
@@ -560,7 +576,7 @@ bool ::AddPreferenceVariants(const RE::TESFile* file, const ArmorChangeParams& p
                     if (auto armor = item->As<RE::TESObjectARMO>()) {
                         auto itArmor = params.analyzeResults.mapArmorWords.find(armor);
                         if (itArmor != params.analyzeResults.mapArmorWords.end())
-                            mapHashed[HashWordSet(itArmor->second, (ArmorSlots)armor->GetSlotMask())] = armor;
+                            mapHashed[HashWordSet(itArmor->second, armor)] = armor;
                     }
                 }
             }
@@ -573,13 +589,15 @@ bool ::AddPreferenceVariants(const RE::TESFile* file, const ArmorChangeParams& p
 
                 auto itArmor = params.analyzeResults.mapArmorWords.find(item);
                 if (itArmor != params.analyzeResults.mapArmorWords.end()) {
-                    auto hash = HashWordSet(itArmor->second, (ArmorSlots)item->GetSlotMask(), pw.second.hash);
+                    auto hash = HashWordSet(itArmor->second, item, pw.second.hash);
 
                     auto itMatch = mapHashed.find(hash);
                     if (itMatch != mapHashed.end()) {
                         bAny = true;
                         WritePrefrenceVariantValue(itMatch->second, ls, pw.first.c_str(), false, al);
                         WritePrefrenceVariantValue(item, ls, pw.first.c_str(), true, al);
+
+                        count++;
                     }
                 }
             }
@@ -589,8 +607,8 @@ bool ::AddPreferenceVariants(const RE::TESFile* file, const ArmorChangeParams& p
     return bAny;
 }
 
-void QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, const rapidjson::Value& ls, const Permissions& perm) {
-    if (!ls.IsObject()) return;
+int QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, const rapidjson::Value& ls, const Permissions& perm) {
+    if (!ls.IsObject()) return 0;
 
     int nChanges = 0;
 
@@ -618,6 +636,8 @@ void QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, const rapidjson:
             g_Data.modifiedFilesDeleted.erase(file);
         }
     }
+
+    return nChanges;
 }
 
 template <class T, typename V>

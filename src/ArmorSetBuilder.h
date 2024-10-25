@@ -31,7 +31,8 @@ namespace QuickArmorRebalance {
         void Clear();
     };
 
-    std::size_t HashWordSet(const WordSet& set, ArmorSlots slots, std::size_t skip = 0);
+    std::size_t HashWordSet(const WordSet& set, RE::TESObjectARMO* armor,
+                            std::size_t skip = 0);
 
     void AnalyzeArmor(const std::vector<RE::TESBoundObject*>& items, AnalyzeResults& results);
     void AnalyzeAllArmor();

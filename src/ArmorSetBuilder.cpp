@@ -681,11 +681,17 @@ void QuickArmorRebalance::AnalyzeAllArmor() {
     logger::info("Finished all armor analysis");
 }
 
-std::size_t QuickArmorRebalance::HashWordSet(const WordSet& set, ArmorSlots slots, std::size_t skip) {
-    std::size_t hash = slots;
+inline std::size_t HashStep(std::size_t& hash, std::size_t n) {
+    return hash ^= (n + 0x9e3779b9 + (hash << 6) + (hash >> 2));
+}
+
+std::size_t QuickArmorRebalance::HashWordSet(const WordSet& set, RE::TESObjectARMO* armor, std::size_t skip) {
+    std::size_t hash = 0;
+    HashStep(hash, (int)armor->bipedModelData.armorType.get());
+    HashStep(hash, (ArmorSlots)armor->GetSlotMask());
     for (auto w : set)
         if (w != skip) {
-            hash ^= w + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+            HashStep(hash, w);
         }
 
     return hash;
@@ -704,7 +710,9 @@ DynamicVariantSets QuickArmorRebalance::MapVariants(
         for (auto i : results.mapArmorWords) {
             // logger::trace("Hashing {}:", i.first->GetName());
             // logger::trace("Slots {}:", (ArmorSlots)i.first->GetSlotMask());
-            mapVariants[HashWordSet(i.second, (ArmorSlots)i.first->GetSlotMask())].push_back(i.first);
+            auto hash = HashWordSet(i.second, i.first);
+            mapVariants[hash].clear(); //prevent duplicates
+            mapVariants[hash].push_back(i.first);
         }
 
         for (auto w : dv.second) {
@@ -713,7 +721,7 @@ DynamicVariantSets QuickArmorRebalance::MapVariants(
             for (auto item : items) {
                 // logger::trace("Hashing {} (skip {}):", item->GetName(), results.mapWordStrings[w]);
                 // logger::trace("Slots {}:", (ArmorSlots)item->GetSlotMask());
-                auto hash = HashWordSet(results.mapArmorWords[item], (ArmorSlots)item->GetSlotMask(), w);
+                auto hash = HashWordSet(results.mapArmorWords[item], item, w);
                 mapVariants[hash].push_back(item);
                 // logger::trace("Set size: {}", mapVariants[hash].size());
             }

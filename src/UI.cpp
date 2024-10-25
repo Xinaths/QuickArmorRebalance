@@ -457,6 +457,25 @@ struct HighlightTrack {
     }
 };
 
+struct TimedTooltip {
+    std::string text;
+    double until = 0;
+
+    void Enable(std::string s) {
+        text = s;
+        until = ImGui::GetTime() + 10.0;
+    }
+
+    bool Show() {
+        if (ImGui::GetTime() >= until) return false;
+
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+            ImGui::SetTooltip(text.c_str());
+        }
+        return true;
+    }
+};
+
 void QuickArmorRebalance::RenderUI() {
     const auto colorChanged = IM_COL32(0, 255, 0, 255);
     const auto colorChangedShared = IM_COL32(255, 255, 0, 255);
@@ -820,6 +839,7 @@ void QuickArmorRebalance::RenderUI() {
 
                         ImGui::BeginDisabled(params.filteredItems.size() >= kItemListLimit);
 
+                        static TimedTooltip respApply;
                         bool bApply = false;
                         if (ImGui::Button("Apply changes")) {
                             g_Config.Save();
@@ -829,6 +849,7 @@ void QuickArmorRebalance::RenderUI() {
                             } else
                                 ImGui::OpenPopup("###ApplyWarn");
                         }
+                        respApply.Show();
                         ImGui::EndDisabled();
                         hlApply.Pop();
 
@@ -850,7 +871,8 @@ void QuickArmorRebalance::RenderUI() {
                         ImGui::EndTable();
 
                         if (bApply) {
-                            MakeArmorChanges(params);
+                            auto r = MakeArmorChanges(params);
+                            respApply.Enable(std::format("{} changes made", r));
 
                             if (g_Config.bAutoDeleteGiven) givenItems.Remove();
 
@@ -1683,12 +1705,15 @@ void QuickArmorRebalance::RenderUI() {
                         ImGui::EndTable();
                     }
 
+                    static TimedTooltip resp;
                     if (ImGui::Button("Rescan ALL modified items for preference words")) {
-                        RescanPreferenceVariants();
+                        auto r = RescanPreferenceVariants();
+                        resp.Enable(std::format("{} matching items found", r));
                     }
-                    MakeTooltip(
-                        "You need only press this when new words are added to the list above.\n"
-                        "You do not need to rescan when simply changing preferences.");
+                    if (!resp.Show())
+                        MakeTooltip(
+                            "You need only press this when new words are added to the list above.\n"
+                            "You do not need to rescan when simply changing preferences.");
 
                     ImGui::EndTabItem();
                 }
@@ -1981,31 +2006,40 @@ void QuickArmorRebalance::RenderUI() {
         static WordSet wordsStatic;
         static std::map<const DynamicVariant*, std::vector<std::size_t>> mapDVWords;
 
+        static bool bDVChanged = false;
+
         if (popupDynamicVariants) {
             ImGui::OpenPopup("Dynamic Variants");
 
-            nShowWords = AnalyzeResults::eWords_StaticVariants;
-            wordsStatic.clear();
-            wordsUsed.clear();
-            mapDVWords.clear();
+            static short nDVFilterRound = -1;
+            if (nDVFilterRound != g_filterRound) {
+                nDVFilterRound = g_filterRound;
 
-            for (auto& dv : g_Config.mapDynamicVariants) {
-                if (!dv.second.autos.empty()) {
-                    for (auto w : dv.second.autos) {
-                        if (analyzeResults.mapWordItems.find(w) != analyzeResults.mapWordItems.end()) {
-                            mapDVWords[&dv.second].push_back(w);
-                            wordsUsed.insert(w);
+                nShowWords = AnalyzeResults::eWords_StaticVariants;
+                wordsStatic.clear();
+                wordsUsed.clear();
+                mapDVWords.clear();
+
+                for (auto& dv : g_Config.mapDynamicVariants) {
+                    if (!dv.second.autos.empty()) {
+                        for (auto w : dv.second.autos) {
+                            if (analyzeResults.mapWordItems.find(w) != analyzeResults.mapWordItems.end()) {
+                                mapDVWords[&dv.second].push_back(w);
+                                wordsUsed.insert(w);
+                            }
                         }
                     }
                 }
-            }
 
-            auto& ws = analyzeResults.sets[AnalyzeResults::eWords_StaticVariants];
-            wordsStatic.insert(ws.begin(), ws.end());
+                auto& ws = analyzeResults.sets[AnalyzeResults::eWords_StaticVariants];
+                wordsStatic.insert(ws.begin(), ws.end());
 
-            wordsUsed.insert(wordsStatic.begin(), wordsStatic.end());
-            for (auto& i : mapDVWords) {
-                wordsUsed.insert(i.second.begin(), i.second.end());
+                wordsUsed.insert(wordsStatic.begin(), wordsStatic.end());
+                for (auto& i : mapDVWords) {
+                    wordsUsed.insert(i.second.begin(), i.second.end());
+                }
+
+                bDVChanged = true;
             }
         }
 
@@ -2014,20 +2048,26 @@ void QuickArmorRebalance::RenderUI() {
         bPopupActive = true;
 
         static bool dvWndWasOpen = false;
+
         if (ImGui::BeginPopupModal("Dynamic Variants", &bPopupActive, ImGuiWindowFlags_NoScrollbar)) {
             dvWndWasOpen = true;
             ImGui::Text("Drag the appropriate words (if any) to their associated dynamic type on the right side.");
 
+            static TimedTooltip resp;
             ImGui::BeginDisabled(!hasModifiedItems);
             if (ImGui::Button(RightAlign("Update Dynamic Variants"))) {
                 g_Config.acParams.dvSets = MapVariants(analyzeResults, mapDVWords);
-                AddDynamicVariants(g_Config.acParams);
+                auto r = AddDynamicVariants(g_Config.acParams);
+
+                resp.Enable(std::format("{} dynamic variants added", r));
             }
 
-            if (!hasModifiedItems)
-                MakeTooltip(
-                    "This only updates previously modified items, but none have been detected.\n\n"
-                    "Dynamic variants will be included when clicking Apply Changes after closing this window.");
+            if (!resp.Show()) {
+                if (!hasModifiedItems)
+                    MakeTooltip(
+                        "This only updates previously modified items, but none have been detected.\n\n"
+                        "Dynamic variants will be included when clicking Apply Changes after closing this window.");
+            }
 
             ImGui::EndDisabled();
 
@@ -2062,6 +2102,8 @@ void QuickArmorRebalance::RenderUI() {
 
                                 fnInsert(w);
                             }
+
+                            bDVChanged = true;
                         }
                         ImGui::EndDragDropTarget();
                     }
@@ -2086,12 +2128,14 @@ void QuickArmorRebalance::RenderUI() {
                 }
             };
 
-            if (ImGui::BeginTable(
-                    "WindowTable", 3,
-                    ImGuiTableFlags_Resizable | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingStretchSame)) {
+            if (ImGui::BeginTable("WindowTable", 4,
+                                  ImGuiTableFlags_Resizable | ImGuiTableFlags_BordersInnerV |
+                                      ImGuiTableFlags_SizingFixedSame | ImGuiTableFlags_ScrollY,
+                                  ImGui::GetContentRegionAvail())) {
                 ImGui::TableSetupColumn("Static Variants");
                 ImGui::TableSetupColumn("Unassigned");
                 ImGui::TableSetupColumn("Dynamic Variants");
+                ImGui::TableSetupColumn("Output Variant Sets", ImGuiTableColumnFlags_WidthStretch);
 
                 ImGui::TableNextRow(ImGuiTableRowFlags_Headers);
                 ImGui::TableNextColumn();
@@ -2111,6 +2155,9 @@ void QuickArmorRebalance::RenderUI() {
                     "Place associated words under the associated variant type.\n"
                     "If there are multiple, they should be ordered that the most default is at the top and the most "
                     "changed at the bottom.");
+
+                ImGui::TableNextColumn();
+                ImGui::TableHeader("Output Variant Sets");
 
                 ImGui::TableNextRow();
                 ImGui::TableNextColumn();
@@ -2180,6 +2227,31 @@ void QuickArmorRebalance::RenderUI() {
                     }
                 }
 
+                if (bDVChanged) g_Config.acParams.dvSets = MapVariants(analyzeResults, mapDVWords);
+
+                ImGui::TableNextColumn();
+
+                ImGui::BeginChild("OutputTree", ImGui::GetContentRegionAvail());
+
+                for (const auto& set : g_Config.acParams.dvSets) {
+                    if (set.second.empty()) continue;
+
+                    if (ImGui::TreeNodeEx(set.first->name.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
+                        for (const auto& i : set.second) {
+                            if (ImGui::TreeNodeEx(i.second[0]->GetName(), ImGuiTreeNodeFlags_DefaultOpen)) {
+                                for (int j = 1; j < i.second.size(); j++)
+                                    if (ImGui::TreeNodeEx(i.second[j]->GetName(), ImGuiTreeNodeFlags_Leaf)) {
+                                        ImGui::TreePop();
+                                    }
+                                ImGui::TreePop();
+                            }
+                        }
+                        ImGui::TreePop();
+                    }
+                }
+
+                ImGui::EndChild();
+
                 ImGui::EndTable();
             }
 
@@ -2187,7 +2259,7 @@ void QuickArmorRebalance::RenderUI() {
         } else {
             if (dvWndWasOpen) {
                 dvWndWasOpen = false;
-                g_Config.acParams.dvSets = MapVariants(analyzeResults, mapDVWords);
+                // g_Config.acParams.dvSets = MapVariants(analyzeResults, mapDVWords);
             }
         }
 

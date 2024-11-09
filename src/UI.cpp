@@ -12,17 +12,12 @@ using namespace QuickArmorRebalance;
 constexpr int kItemListLimit = 2000;
 constexpr int kItemApplyWarningThreshhold = 100;
 
-const char* strSlotDesc[] = {"Slot 30 - Head",       "Slot 31 - Hair",       "Slot 32 - Body",
-                             "Slot 33 - Hands",      "Slot 34 - Forearms",   "Slot 35 - Amulet",
-                             "Slot 36 - Ring",       "Slot 37 - Feet",       "Slot 38 - Calves",
-                             "Slot 39 - Shield",     "Slot 40 - Tail",       "Slot 41 - Long Hair",
-                             "Slot 42 - Circlet",    "Slot 43 - Ears",       "Slot 44 - Face",
-                             "Slot 45 - Neck",       "Slot 46 - Chest",      "Slot 47 - Back",
-                             "Slot 48 - ???",        "Slot 49 - Pelvis",     "Slot 50 - Decapitated Head",
-                             "Slot 51 - Decapitate", "Slot 52 - Lower body", "Slot 53 - Leg (right)",
-                             "Slot 54 - Leg (left)", "Slot 55 - Face2",      "Slot 56 - Chest2",
-                             "Slot 57 - Shoulder",   "Slot 58 - Arm (left)", "Slot 59 - Arm (right)",
-                             "Slot 60 - ???",        "Slot 61 - ???",        "<REMOVE SLOT>"};
+const char* strSlotDesc[] = {
+    "Slot 30 - Head",       "Slot 31 - Hair",        "Slot 32 - Body",        "Slot 33 - Hands",      "Slot 34 - Forearms",  "Slot 35 - Amulet",  "Slot 36 - Ring",
+    "Slot 37 - Feet",       "Slot 38 - Calves",      "Slot 39 - Shield",      "Slot 40 - Tail",       "Slot 41 - Long Hair", "Slot 42 - Circlet", "Slot 43 - Ears",
+    "Slot 44 - Face",       "Slot 45 - Neck",        "Slot 46 - Chest",       "Slot 47 - Back",       "Slot 48 - ???",       "Slot 49 - Pelvis",  "Slot 50 - Decapitated Head",
+    "Slot 51 - Decapitate", "Slot 52 - Lower body",  "Slot 53 - Leg (right)", "Slot 54 - Leg (left)", "Slot 55 - Face2",     "Slot 56 - Chest2",  "Slot 57 - Shoulder",
+    "Slot 58 - Arm (left)", "Slot 59 - Arm (right)", "Slot 60 - ???",         "Slot 61 - ???",        "<REMOVE SLOT>"};
 
 static ImVec2 operator+(const ImVec2& a, const ImVec2& b) { return {a.x + b.x, a.y + b.y}; }
 static ImVec2 operator/(const ImVec2& a, int b) { return {a.x / b, a.y / b}; }
@@ -35,8 +30,7 @@ bool StringContainsI(const char* s1, const char* s2) {
 }
 
 void MakeTooltip(const char* str, bool delay = false) {
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | (delay ? ImGuiHoveredFlags_DelayNormal : 0)))
-        ImGui::SetTooltip(str);
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | (delay ? ImGuiHoveredFlags_DelayNormal : 0))) ImGui::SetTooltip(str);
 }
 
 bool MenuItemConfirmed(const char* str) {
@@ -57,12 +51,10 @@ std::vector<ModData*> GetFilteredMods(int nModFilter) {
             list = g_Data.sortedMods;
             break;
         case 1:
-            std::copy_if(g_Data.sortedMods.begin(), g_Data.sortedMods.end(), std::back_inserter(list),
-                         [](ModData* mod) { return !mod->bModified; });
+            std::copy_if(g_Data.sortedMods.begin(), g_Data.sortedMods.end(), std::back_inserter(list), [](ModData* mod) { return !mod->bModified; });
             break;
         case 2:
-            std::copy_if(g_Data.sortedMods.begin(), g_Data.sortedMods.end(), std::back_inserter(list),
-                         [](ModData* mod) { return mod->bModified; });
+            std::copy_if(g_Data.sortedMods.begin(), g_Data.sortedMods.end(), std::back_inserter(list), [](ModData* mod) { return mod->bModified; });
             break;
         case 3: {
             static bool bOnce = false;
@@ -79,9 +71,8 @@ std::vector<ModData*> GetFilteredMods(int nModFilter) {
                 }
             }
         }
-            std::copy_if(
-                g_Data.sortedMods.begin(), g_Data.sortedMods.end(), std::back_inserter(list),
-                [](ModData* mod) { return mod->bModified && !mod->bHasDynamicVariants && mod->bHasPotentialDVs; });
+            std::copy_if(g_Data.sortedMods.begin(), g_Data.sortedMods.end(), std::back_inserter(list),
+                         [](ModData* mod) { return mod->bModified && !mod->bHasDynamicVariants && mod->bHasPotentialDVs; });
             break;
     }
 
@@ -139,8 +130,7 @@ struct ItemFilter {
                 return false;
         }
 
-        if (bUnmodified && (g_Data.modifiedItems.contains(obj) || g_Data.modifiedItemsShared.contains(obj)))
-            return false;
+        if (bUnmodified && (g_Data.modifiedItems.contains(obj) || g_Data.modifiedItemsShared.contains(obj))) return false;
 
         return true;
     }
@@ -154,17 +144,17 @@ const char* RightAlign(const char* text) {
 
 struct GivenItems {
     void UnequipCurrent() {
+        stored.clear();
         if (auto player = RE::PlayerCharacter::GetSingleton()) {
             for (auto& item : player->GetInventory()) {
                 if (item.second.second->IsWorn() && item.first->IsArmor()) {
                     if (auto i = item.first->As<RE::TESObjectARMO>()) {
-                        if (((unsigned int)i->GetSlotMask() & g_Config.usedSlotsMask) ==
-                            0) {  // Not a slot we interact with - probably physics or such
-                            continue;
-                        }
+                        // if (((unsigned int)i->GetSlotMask() & g_Config.usedSlotsMask) == 0) {  // Not a slot we interact with - probably physics or such
+                        //     continue;
+                        // }
 
-                        RE::ActorEquipManager::GetSingleton()->UnequipObject(player, i, nullptr, 1, i->GetEquipSlot(),
-                                                                             false, false, false);
+                        stored.insert(i);
+                        RE::ActorEquipManager::GetSingleton()->UnequipObject(player, i, nullptr, 1, i->GetEquipSlot(), false, false, false);
                     }
                 }
             }
@@ -206,15 +196,30 @@ struct GivenItems {
                 recentEquipSlots |= slots;
 
                 // Not using AddTask will result in it not un-equipping current items
-                SKSE::GetTaskInterface()->AddTask([=]() {
-                    RE::ActorEquipManager::GetSingleton()->EquipObject(player, item, nullptr, 1, armor->GetEquipSlot(),
-                                                                       false, false, false);
-                });
+                SKSE::GetTaskInterface()->AddTask(
+                    [=]() { RE::ActorEquipManager::GetSingleton()->EquipObject(player, item, nullptr, 1, armor->GetEquipSlot(), false, false, false); });
             }
         } else {
-            SKSE::GetTaskInterface()->AddTask(
-                [=]() { RE::ActorEquipManager::GetSingleton()->EquipObject(player, item); });
+            SKSE::GetTaskInterface()->AddTask([=]() { RE::ActorEquipManager::GetSingleton()->EquipObject(player, item); });
         }
+    }
+
+    void Restore() {
+        if (stored.empty()) return;
+
+        SKSE::GetTaskInterface()->AddTask([=]() {
+            auto manager = RE::ActorEquipManager::GetSingleton();
+            auto player = RE::PlayerCharacter::GetSingleton();
+            if (!player) return;
+
+            for (auto i : stored) {
+                RE::BGSEquipSlot* equipSlot = nullptr;
+                if (auto e = i->As<RE::BGSEquipType>()) equipSlot = e->GetEquipSlot();
+
+                manager->EquipObject(player, i, nullptr, 1, equipSlot, false, false, false);
+            }
+            stored.clear();
+        });
     }
 
     void Give(RE::TESBoundObject* item, bool equip = false, bool reuse = false) {
@@ -284,7 +289,7 @@ struct GivenItems {
         items.clear();
     }
 
-    void Pop() {
+    void Pop(bool unequip = false) {
         if (RE::UI::GetSingleton()->IsItemMenuOpen()) return;  // Can cause crashes
 
         if (items.empty()) return;
@@ -294,13 +299,21 @@ struct GivenItems {
         auto t = items.back().first;
 
         while (!items.empty() && items.back().first == t) {
-            player->RemoveItem(items.back().second, 1, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr);
+            auto item = items.back().second;
+            if (unequip) {
+                if (auto armor = item->As<RE::TESObjectARMO>()) recentEquipSlots &= ~(ArmorSlots)armor->GetSlotMask();
+                RE::ActorEquipManager::GetSingleton()->UnequipObject(player, item);
+            }
+
+            //AddTask isn't strictly needed, but other mods were crashing if an unequip was called first and the item was deleted
+            SKSE::GetTaskInterface()->AddTask([player, item = items.back().second]() { player->RemoveItem(item, 1, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr); });
             items.pop_back();
         }
     }
 
     unsigned int recentEquipSlots = 0;
     std::vector<std::pair<int, RE::TESBoundObject*>> items;
+    std::set<RE::TESBoundObject*> stored;
 };
 
 bool SliderTable() {
@@ -313,8 +326,7 @@ bool SliderTable() {
     return false;
 }
 
-void SliderRow(const char* field, ArmorChangeParams::SliderPair& pair, float min = 0.0f, float max = 300.0f,
-               float def = 100.0f) {
+void SliderRow(const char* field, ArmorChangeParams::SliderPair& pair, float min = 0.0f, float max = 300.0f, float def = 100.0f) {
     ImGui::TableNextRow();
     ImGui::TableNextColumn();
     ImGui::PushID(field);
@@ -333,6 +345,7 @@ void PermissionsChecklist(const char* id, Permissions& p) {
     ImGui::PushID(id);
     ImGui::Checkbox("Distribute loot", &p.bDistributeLoot);
     ImGui::Checkbox("Modify keywords", &p.bModifyKeywords);
+    ImGui::Checkbox("Modify custom keywords", &p.bModifyCustomKeywords);
     ImGui::Checkbox("Modify armor slots", &p.bModifySlots);
     ImGui::Checkbox("Modify armor rating", &p.bModifyArmorRating);
     ImGui::Checkbox("Modify armor weight", &p.bModifyWeight);
@@ -406,9 +419,7 @@ void GetCurrentListItems(ModData* curMod, int nModSpecial, const ItemFilter& fil
 
     if (!params.filteredItems.empty()) {
         std::sort(params.filteredItems.begin(), params.filteredItems.end(),
-                  [](RE::TESBoundObject* const a, RE::TESBoundObject* const b) {
-                      return _stricmp(a->GetName(), b->GetName()) < 0;
-                  });
+                  [](RE::TESBoundObject* const a, RE::TESBoundObject* const b) { return _stricmp(a->GetName(), b->GetName()) < 0; });
 
         if (curMod) AnalyzeArmor(params.filteredItems, results);
     }
@@ -514,6 +525,7 @@ void QuickArmorRebalance::RenderUI() {
     bool popupSettings = false;
     bool popupRemapSlots = false;
     bool popupDynamicVariants = false;
+    bool popupCustomKeywords = false;
 
     bool hasModifiedItems = false;
 
@@ -530,6 +542,7 @@ void QuickArmorRebalance::RenderUI() {
             givenItems.items.clear();
             selectedItems.clear();
             lastSelectedItem = nullptr;
+            params.mapKeywordChanges.clear();
 
             if (g_Config.bResetSliders) {
                 params.armor.rating.fScale = 100.0f;
@@ -586,8 +599,7 @@ void QuickArmorRebalance::RenderUI() {
 
                     // The menu bar doesn't return the right values (but somehow has the right size?), so instead we
                     // work off the last menu item added
-                    bMenuHovered |=
-                        ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenOverlapped);  // Doesn't actually work
+                    bMenuHovered |= ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenOverlapped);  // Doesn't actually work
                     bMenuHovered |= ImGui::IsMouseHoveringRect(ImGui::GetWindowPos(), ImGui::GetItemRectMax(), false);
 
                     ImGui::SetCursorPosY(ImGui::GetCursorPosY() - menuSize.y);
@@ -600,8 +612,7 @@ void QuickArmorRebalance::RenderUI() {
 
             if (ImGui::BeginTable("WindowTable", 2, ImGuiTableFlags_Resizable | ImGuiTableFlags_BordersInnerV)) {
                 ImGui::TableSetupColumn("LeftCol", ImGuiTableColumnFlags_WidthStretch);
-                ImGui::TableSetupColumn("RightCol", ImGuiTableColumnFlags_WidthFixed,
-                                        0.25f * ImGui::GetContentRegionAvail().x);
+                ImGui::TableSetupColumn("RightCol", ImGuiTableColumnFlags_WidthFixed, 0.25f * ImGui::GetContentRegionAvail().x);
 
                 bool showPopup = false;
 
@@ -622,8 +633,7 @@ void QuickArmorRebalance::RenderUI() {
                         RE::TESFile* blacklist = nullptr;
 
                         ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
-                        if (ImGui::BeginCombo("##Mod", curMod ? curMod->mod->fileName : strModSpecial[nModSpecial],
-                                              ImGuiComboFlags_HeightLarge)) {
+                        if (ImGui::BeginCombo("##Mod", curMod ? curMod->mod->fileName : strModSpecial[nModSpecial], ImGuiComboFlags_HeightLarge)) {
                             if (!nModFilter) {
                                 for (int i = 0; strModSpecial[i]; i++) {
                                     if (!bModSpecialEnabled[i]) continue;
@@ -661,8 +671,7 @@ void QuickArmorRebalance::RenderUI() {
 
                                     Local::SwitchToMod(i);
                                 }
-                                if (isCtrlDown && isAltDown && ImGui::IsItemHovered() &&
-                                    ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+                                if (isCtrlDown && isAltDown && ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
                                     blacklist = i->mod;
                                 }
 
@@ -681,8 +690,7 @@ void QuickArmorRebalance::RenderUI() {
                             const char* popupTitle = "Delete Changes?";
                             if (showPopup) ImGui::OpenPopup(popupTitle);
 
-                            ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing,
-                                                    ImVec2(0.5f, 0.5f));
+                            ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
 
                             if (ImGui::BeginPopupModal(popupTitle, NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
                                 ImGui::Text("Delete all changes to %s?", curMod->mod->fileName);
@@ -715,9 +723,7 @@ void QuickArmorRebalance::RenderUI() {
                     ImGui::Text("Filter");
                     ImGui::SameLine();
                     ImGui::SetNextItemWidth(200);
-                    if (ImGui::InputTextWithHint("##ItemFilter", "by Name", filter.nameFilter,
-                                                 sizeof(filter.nameFilter) - 1))
-                        g_filterRound++;
+                    if (ImGui::InputTextWithHint("##ItemFilter", "by Name", filter.nameFilter, sizeof(filter.nameFilter) - 1, ImGuiInputTextFlags_AutoSelectAll)) g_filterRound++;
 
                     ImGui::SameLine();
                     ImGui::SetNextItemWidth(80);
@@ -752,8 +758,7 @@ void QuickArmorRebalance::RenderUI() {
                         popCol++;
                     }
 
-                    if (ImGui::BeginCombo("##Slotfilter", filter.slots ? "Filtering by Slot" : "by Slot",
-                                          ImGuiComboFlags_HeightLargest)) {
+                    if (ImGui::BeginCombo("##Slotfilter", filter.slots ? "Filtering by Slot" : "by Slot", ImGuiComboFlags_HeightLargest)) {
                         ImGui::PopStyleColor(popCol);
                         popCol = 0;
 
@@ -761,12 +766,9 @@ void QuickArmorRebalance::RenderUI() {
                             filter.slots = 0;
                             g_filterRound++;
                         }
-                        if (ImGui::RadioButton("Any of", &filter.slotMode, ItemFilter::SlotFilterMode::SlotsAny))
-                            g_filterRound++;
-                        if (ImGui::RadioButton("All of", &filter.slotMode, ItemFilter::SlotFilterMode::SlotsAll))
-                            g_filterRound++;
-                        if (ImGui::RadioButton("Not", &filter.slotMode, ItemFilter::SlotFilterMode::SlotsNot))
-                            g_filterRound++;
+                        if (ImGui::RadioButton("Any of", &filter.slotMode, ItemFilter::SlotFilterMode::SlotsAny)) g_filterRound++;
+                        if (ImGui::RadioButton("All of", &filter.slotMode, ItemFilter::SlotFilterMode::SlotsAll)) g_filterRound++;
+                        if (ImGui::RadioButton("Not", &filter.slotMode, ItemFilter::SlotFilterMode::SlotsNot)) g_filterRound++;
 
                         constexpr auto slotCols = 4;
                         if (ImGui::BeginTable("##SlotFilterTable", slotCols)) {
@@ -810,8 +812,7 @@ void QuickArmorRebalance::RenderUI() {
 
                         int nArmorSet = 0;
                         hlConvert.Push();
-                        if (ImGui::BeginCombo("##ConvertTo", params.armorSet->name.c_str(),
-                                              ImGuiComboFlags_PopupAlignLeft | ImGuiComboFlags_HeightLarge)) {
+                        if (ImGui::BeginCombo("##ConvertTo", params.armorSet->name.c_str(), ImGuiComboFlags_PopupAlignLeft | ImGuiComboFlags_HeightLarge)) {
                             for (auto& i : g_Config.armorSets) {
                                 bool selected = params.armorSet == &i;
                                 ImGui::PushID(nArmorSet++);
@@ -908,8 +909,7 @@ void QuickArmorRebalance::RenderUI() {
 
                     // Need to create a dummy table to negate stretching the combo boxes
                     ImGui::Checkbox("Distribute as ", &params.bDistribute);
-                    MakeTooltip(
-                        "Additions or changes to loot distribution will not take effect until you restart Skyrim");
+                    MakeTooltip("Additions or changes to loot distribution will not take effect until you restart Skyrim");
                     ImGui::BeginDisabled(!params.bDistribute);
 
                     ImGui::SameLine();
@@ -917,8 +917,7 @@ void QuickArmorRebalance::RenderUI() {
 
                     hlDistributeAs.Push(params.bDistribute);
 
-                    if (ImGui::BeginCombo("##DistributeAs", params.distProfile,
-                                          ImGuiComboFlags_PopupAlignLeft | ImGuiComboFlags_HeightLarge)) {
+                    if (ImGui::BeginCombo("##DistributeAs", params.distProfile, ImGuiComboFlags_PopupAlignLeft | ImGuiComboFlags_HeightLarge)) {
                         for (auto& i : g_Config.lootProfiles) {
                             bool selected = params.distProfile == i;
                             if (ImGui::Selectable(i.c_str(), selected)) params.distProfile = i.c_str();
@@ -981,8 +980,7 @@ void QuickArmorRebalance::RenderUI() {
                             int iTab = 0;
                             int iTabSelected = iTabOpen;
 
-                            bool bTabEnabled[] = {hasEnabledArmor && !params.armorSet->items.empty(),
-                                                  hasEnabledWeap && !params.armorSet->weaps.empty()};
+                            bool bTabEnabled[] = {hasEnabledArmor && !params.armorSet->items.empty(), hasEnabledWeap && !params.armorSet->weaps.empty()};
                             const int nTabCount = 2;
 
                             bool bForceSelect = false;
@@ -1001,9 +999,7 @@ void QuickArmorRebalance::RenderUI() {
 
                             // Amor tab
                             ImGui::BeginDisabled(!bTabEnabled[iTab]);
-                            if (ImGui::BeginTabItem(
-                                    tabLabels[iTab], nullptr,
-                                    bForceSelect && iTabOpen == iTab ? ImGuiTabItemFlags_SetSelected : 0)) {
+                            if (ImGui::BeginTabItem(tabLabels[iTab], nullptr, bForceSelect && iTabOpen == iTab ? ImGuiTabItemFlags_SetSelected : 0)) {
                                 iTabSelected = iTab;
                                 if (SliderTable()) {
                                     SliderRow("Armor Rating", params.armor.rating);
@@ -1039,8 +1035,7 @@ void QuickArmorRebalance::RenderUI() {
                                             "Maximum",      //=1.0
                                         };
 
-                                        bool showCoverage =
-                                            g_Config.isFrostfallInstalled || g_Config.bShowFrostfallCoverage;
+                                        bool showCoverage = g_Config.isFrostfallInstalled || g_Config.bShowFrostfallCoverage;
 
                                         auto& pair = params.armor.warmth;
                                         ImGui::TableNextRow();
@@ -1053,17 +1048,14 @@ void QuickArmorRebalance::RenderUI() {
                                         ImGui::BeginDisabled(!pair.bModify);
                                         ImGui::TableNextColumn();
 
-                                        ImGui::SetNextItemWidth((showCoverage ? 0.5f : 1.0f) *
-                                                                ImGui::GetContentRegionAvail().x);
-                                        ImGui::SliderFloat("##WarmthSlider", &pair.fScale, 0.f, 100.f, "%.0f%% Warmth",
-                                                           ImGuiSliderFlags_AlwaysClamp);
+                                        ImGui::SetNextItemWidth((showCoverage ? 0.5f : 1.0f) * ImGui::GetContentRegionAvail().x);
+                                        ImGui::SliderFloat("##WarmthSlider", &pair.fScale, 0.f, 100.f, "%.0f%% Warmth", ImGuiSliderFlags_AlwaysClamp);
                                         MakeTooltip(warmthDesc[(int)(0.1f * pair.fScale)]);
 
                                         if (showCoverage) {
                                             ImGui::SameLine();
                                             ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
-                                            ImGui::SliderFloat("##CoverageSlider", &params.armor.coverage, 0.f, 100.f,
-                                                               "%.0f%% Coverage", ImGuiSliderFlags_AlwaysClamp);
+                                            ImGui::SliderFloat("##CoverageSlider", &params.armor.coverage, 0.f, 100.f, "%.0f%% Coverage", ImGuiSliderFlags_AlwaysClamp);
                                             MakeTooltip(coverageDesc[(int)(0.1f * params.armor.coverage)]);
                                         }
 
@@ -1085,8 +1077,7 @@ void QuickArmorRebalance::RenderUI() {
                                 static auto* curCurve = &g_Config.curves[0];
 
                                 ImGui::SetNextItemWidth(220);
-                                if (ImGui::BeginCombo("##Curve", curCurve->first.c_str(),
-                                                      ImGuiComboFlags_PopupAlignLeft | ImGuiComboFlags_HeightLarge)) {
+                                if (ImGui::BeginCombo("##Curve", curCurve->first.c_str(), ImGuiComboFlags_PopupAlignLeft | ImGuiComboFlags_HeightLarge)) {
                                     for (auto& i : g_Config.curves) {
                                         bool selected = curCurve == &i;
                                         ImGui::PushID(i.first.c_str());
@@ -1113,9 +1104,7 @@ void QuickArmorRebalance::RenderUI() {
 
                             // Weapon tab
                             ImGui::BeginDisabled(!bTabEnabled[iTab]);
-                            if (ImGui::BeginTabItem(
-                                    tabLabels[iTab], nullptr,
-                                    bForceSelect && iTabOpen == iTab ? ImGuiTabItemFlags_SetSelected : 0)) {
+                            if (ImGui::BeginTabItem(tabLabels[iTab], nullptr, bForceSelect && iTabOpen == iTab ? ImGuiTabItemFlags_SetSelected : 0)) {
                                 iTabSelected = iTab;
                                 if (SliderTable()) {
                                     SliderRow("Damage", params.weapon.damage);
@@ -1143,6 +1132,16 @@ void QuickArmorRebalance::RenderUI() {
                     }
 
                     ImGui::Checkbox("Modify Keywords", &params.bModifyKeywords);
+                    MakeTooltip("Changes basic keywords to match those on the base item.");
+
+                    ImGui::SameLine();
+                    if (ImGui::Button(RightAlign("Custom Keywords"))) {
+                        popupCustomKeywords = true;
+                    }
+                    MakeTooltip(
+                        "Allows you to add or remove any keywords.\n"
+                        "Note: Adding and removing basic Skyrim keywords is already included \n"
+                        "as part of armor conversion.");
 
                     if (ImGui::BeginTable("Crafting Table", 3, ImGuiTableFlags_SizingFixedFit)) {
                         ImGui::TableSetupColumn("CraftCol1");
@@ -1159,8 +1158,7 @@ void QuickArmorRebalance::RenderUI() {
                             "If an item being modified lacks an existing temper recipe to modify, checking\n"
                             "this will create one automatically");
                         ImGui::TableNextColumn();
-                        ImGui::Checkbox(g_Config.fTemperGoldCostRatio > 0 ? "Cost gold if no recipe to copy##Temper"
-                                                                          : "Make free if no recipe to copy##Temper",
+                        ImGui::Checkbox(g_Config.fTemperGoldCostRatio > 0 ? "Cost gold if no recipe to copy##Temper" : "Make free if no recipe to copy##Temper",
                                         &params.temper.bFree);
                         MakeTooltip(
                             "If the item being copied lacks a tempering recipe, checking will remove all\n"
@@ -1178,9 +1176,7 @@ void QuickArmorRebalance::RenderUI() {
                                 "If an item being modified lacks an existing crafting recipe to modify,\n"
                                 "checking this will create one automatically");
                         ImGui::TableNextColumn();
-                        ImGui::Checkbox(g_Config.fCraftGoldCostRatio > 0 ? "Cost gold if no recipe to copy##Craft"
-                                                                         : "Make free if no recipe to copy##Craft",
-                                        &params.craft.bFree);
+                        ImGui::Checkbox(g_Config.fCraftGoldCostRatio > 0 ? "Cost gold if no recipe to copy##Craft" : "Make free if no recipe to copy##Craft", &params.craft.bFree);
                         if (ImGui::IsItemHovered())
                             ImGui::SetTooltip(
                                 "If the item being copied lacks a crafting recipe, checking will remove all\n"
@@ -1434,9 +1430,8 @@ void QuickArmorRebalance::RenderUI() {
                             }
 
                             if (ImGui::IsItemFocused()) {
-                                ImGui::SetScrollFromPosX(
-                                    xPos - ImGui::GetCursorPosX(),
-                                    1.0f);  // don't know why this is 1.0 instead of 0, but it works
+                                ImGui::SetScrollFromPosX(xPos - ImGui::GetCursorPosX(),
+                                                         1.0f);  // don't know why this is 1.0 instead of 0, but it works
 
                                 auto draw = ImGui::GetWindowDrawList();
                                 draw->AddRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(), colorChanged);
@@ -1475,8 +1470,7 @@ void QuickArmorRebalance::RenderUI() {
                                         }
                                     }
                                 } else if (!keyboardNav &&  // or else it scrolls to bottom
-                                           (ImGui::IsKeyPressed(ImGuiKey_DownArrow) ||
-                                            ImGui::IsKeyPressed(ImGuiKey_Keypad2))) {
+                                           (ImGui::IsKeyPressed(ImGuiKey_DownArrow) || ImGui::IsKeyPressed(ImGuiKey_Keypad2))) {
                                     auto it = std::find(params.filteredItems.begin(), params.filteredItems.end(), i);
                                     if (it != params.filteredItems.end() && it != params.filteredItems.end() - 1) {
                                         keyboardNav = *(it + 1);
@@ -1593,8 +1587,7 @@ void QuickArmorRebalance::RenderUI() {
                     bSlotWarning = false;
                     for (auto i : params.items) {
                         if (auto armor = i->As<RE::TESObjectARMO>()) {
-                            auto itemSlots =
-                                MapFindOr(g_Data.modifiedArmorSlots, armor, (ArmorSlots)armor->GetSlotMask());
+                            auto itemSlots = MapFindOr(g_Data.modifiedArmorSlots, armor, (ArmorSlots)armor->GetSlotMask());
                             if ((~g_Config.usedSlotsMask) & (~remappedSrc) & itemSlots) {
                                 bSlotWarning = true;
                                 break;
@@ -1623,8 +1616,7 @@ void QuickArmorRebalance::RenderUI() {
 
                     ImGui::Text("Log verbsity");
                     ImGui::SameLine();
-                    if (ImGui::BeginCombo("##Verbosity", logLevels[g_Config.verbosity],
-                                          ImGuiComboFlags_PopupAlignLeft)) {
+                    if (ImGui::BeginCombo("##Verbosity", logLevels[g_Config.verbosity], ImGuiComboFlags_PopupAlignLeft)) {
                         for (int i = 0; i < spdlog::level::n_levels; i++) {
                             bool selected = g_Config.verbosity == i;
                             if (ImGui::Selectable(logLevels[i], selected)) {
@@ -1643,14 +1635,12 @@ void QuickArmorRebalance::RenderUI() {
                     ImGui::Checkbox("Reset sliders after changing mods", &g_Config.bResetSliders);
                     ImGui::Checkbox("Reset slot remapping after changing mods", &g_Config.bResetSlotRemap);
                     ImGui::Checkbox("Allow remapping armor slots to unhandled slots", &g_Config.bAllowInvalidRemap);
-                    ImGui::Checkbox("Allow remapping of protected armor slots (Not recommended)",
-                                    &g_Config.bEnableProtectedSlotRemapping);
+                    ImGui::Checkbox("Allow remapping of protected armor slots (Not recommended)", &g_Config.bEnableProtectedSlotRemapping);
                     MakeTooltip(
                         "Body, hands, feet, and head slots tend to break in various ways if you move them to other "
                         "slots.");
                     ImGui::Checkbox("Highlight things you may want to look at", &g_Config.bHighlights);
-                    ImGui::Checkbox("Show Frostfall coverage slider even if not installed",
-                                    &g_Config.bShowFrostfallCoverage);
+                    ImGui::Checkbox("Show Frostfall coverage slider even if not installed", &g_Config.bShowFrostfallCoverage);
                     ImGui::Checkbox("USE AT YOUR OWN RISK: Enable <All Items> in item list", &g_Config.bEnableAllItems);
                     MakeTooltip(
                         "This can result in performance issues, and making a mess by changing too many items at once.\n"
@@ -1667,14 +1657,11 @@ void QuickArmorRebalance::RenderUI() {
                         "ENABLED: You will have a 5%% chance at the item, and 95%% chance of nothing");
 
                     ImGui::Checkbox("Normalize drop rates between mods", &g_Config.bNormalizeModDrops);
-                    ImGui::SliderFloat("Adjust drop rates", &g_Config.fDropRates, 0.0f, 300.0f, "%.0f%%",
-                                       ImGuiSliderFlags_AlwaysClamp);
-                    ImGui::SliderInt("Drop curve level granularity", &g_Config.levelGranularity, 1, 5, "%d",
-                                     ImGuiSliderFlags_AlwaysClamp);
+                    ImGui::SliderFloat("Adjust drop rates", &g_Config.fDropRates, 0.0f, 300.0f, "%.0f%%", ImGuiSliderFlags_AlwaysClamp);
+                    ImGui::SliderInt("Drop curve level granularity", &g_Config.levelGranularity, 1, 5, "%d", ImGuiSliderFlags_AlwaysClamp);
                     MakeTooltip("A lower number generates more loot lists but more accurate distribution");
 
-                    ImGui::Checkbox("Prevent distribution of dynamic variants",
-                                    &g_Config.bPreventDistributionOfDynamicVariants);
+                    ImGui::Checkbox("Prevent distribution of dynamic variants", &g_Config.bPreventDistributionOfDynamicVariants);
 
                     ImGui::SeparatorText("Preferred Variants");
                     MakeTooltip(
@@ -1686,8 +1673,7 @@ void QuickArmorRebalance::RenderUI() {
                     const char* prefDesc[] = {"Don't care", "Prefer items with", "Prefer items without"};
 
                     ImGui::PushItemWidth(-FLT_MIN);
-                    if (ImGui::BeginTable("Preference Variants", 2,
-                                          ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_SizingFixedFit)) {
+                    if (ImGui::BeginTable("Preference Variants", 2, ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_SizingFixedFit)) {
                         ImGui::TableSetupColumn("Word");
                         ImGui::TableSetupColumn("Options");
 
@@ -1722,8 +1708,7 @@ void QuickArmorRebalance::RenderUI() {
                     ImGui::Text("Only generate crafting recipes for");
                     ImGui::SameLine();
 
-                    if (ImGui::BeginCombo("##Rarity", rarity[g_Config.craftingRarityMax],
-                                          ImGuiComboFlags_PopupAlignLeft)) {
+                    if (ImGui::BeginCombo("##Rarity", rarity[g_Config.craftingRarityMax], ImGuiComboFlags_PopupAlignLeft)) {
                         for (int i = 0; rarity[i]; i++) {
                             bool selected = i == g_Config.craftingRarityMax;
                             if (ImGui::Selectable(rarity[i], selected)) g_Config.craftingRarityMax = i;
@@ -1737,14 +1722,12 @@ void QuickArmorRebalance::RenderUI() {
                     ImGui::Text("rarity and below");
 
                     ImGui::Indent();
-                    ImGui::Checkbox("Disable existing crafting recipies above that rarity",
-                                    &g_Config.bDisableCraftingRecipesOnRarity);
+                    ImGui::Checkbox("Disable existing crafting recipies above that rarity", &g_Config.bDisableCraftingRecipesOnRarity);
                     ImGui::Unindent();
 
                     ImGui::Checkbox("Keep crafting books as requirement", &g_Config.bKeepCraftingBooks);
 
-                    ImGui::Checkbox("Use recipes from as similar item if primary item is lacking",
-                                    &g_Config.bUseSecondaryRecipes);
+                    ImGui::Checkbox("Use recipes from as similar item if primary item is lacking", &g_Config.bUseSecondaryRecipes);
 
                     ImGui::Checkbox("Enable smelting recipes", &g_Config.bEnableSmeltingRecipes);
 
@@ -1753,14 +1736,12 @@ void QuickArmorRebalance::RenderUI() {
                     ImGui::Text("Temper recipes");
                     ImGui::SameLine();
                     ImGui::SetNextItemWidth(-FLT_MIN);
-                    ImGui::SliderFloat("##TemperRatio", &g_Config.fTemperGoldCostRatio, 0.0f, 200.0f, "%.0f%%",
-                                       ImGuiSliderFlags_AlwaysClamp);
+                    ImGui::SliderFloat("##TemperRatio", &g_Config.fTemperGoldCostRatio, 0.0f, 200.0f, "%.0f%%", ImGuiSliderFlags_AlwaysClamp);
                     MakeTooltip("Set to 0%% to keep free");
                     ImGui::Text("Craft recipes");
                     ImGui::SameLine();
                     ImGui::SetNextItemWidth(-FLT_MIN);
-                    ImGui::SliderFloat("##CraftRatio", &g_Config.fCraftGoldCostRatio, 0.0f, 200.0f, "%.0f%%",
-                                       ImGuiSliderFlags_AlwaysClamp);
+                    ImGui::SliderFloat("##CraftRatio", &g_Config.fCraftGoldCostRatio, 0.0f, 200.0f, "%.0f%%", ImGuiSliderFlags_AlwaysClamp);
                     MakeTooltip("Set to 0%% to keep free");
                     ImGui::Unindent();
 
@@ -1768,9 +1749,7 @@ void QuickArmorRebalance::RenderUI() {
                 }
 
                 if (ImGui::BeginTabItem("Permissions")) {
-                    if (ImGui::BeginTable("Permissions", 2,
-                                          ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_SizingFixedFit |
-                                              ImGuiTableColumnFlags_NoReorder)) {
+                    if (ImGui::BeginTable("Permissions", 2, ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_SizingFixedFit | ImGuiTableColumnFlags_NoReorder)) {
                         ImGui::TableSetupColumn("Local Changes Permissions");
                         ImGui::TableSetupColumn("Shared Changes Permissions");
 
@@ -1852,10 +1831,9 @@ void QuickArmorRebalance::RenderUI() {
             ImGui::Text("Click and drag from the original slot on the left to the new replacement slot on the right");
             ImGui::PushItemWidth(-FLT_MIN);
 
-            if (ImGui::BeginTable("Slot Mapping", 3,
-                                  ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingFixedFit |
-                                      ImGuiTableFlags_PadOuterX | ImGuiTableFlags_PreciseWidths |
-                                      ImGuiTableFlags_ScrollY)) {
+            if (ImGui::BeginTable(
+                    "Slot Mapping", 3,
+                    ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_PadOuterX | ImGuiTableFlags_PreciseWidths | ImGuiTableFlags_ScrollY)) {
                 ImGui::TableSetupColumn("Original");
                 ImGui::TableSetupColumn("Items", ImGuiTableColumnFlags_WidthStretch);
                 ImGui::TableSetupColumn("Remapped");
@@ -1881,8 +1859,7 @@ void QuickArmorRebalance::RenderUI() {
                             popCol++;
                         } else if ((((uint64_t)1 << i) & slotsUsed & ~(uint64_t)g_Config.usedSlotsMask)) {
                             ImGui::PushStyleColor(ImGuiCol_Text, colorDeleted);
-                            strWarn =
-                                "Warning: Items in this slot will not be changed unless remapped to another slot.";
+                            strWarn = "Warning: Items in this slot will not be changed unless remapped to another slot.";
                             popCol++;
                         } else if ((1ull << i) & slotsUsed & (remappedTar & ~remappedSrc)) {
                             ImGui::PushStyleColor(ImGuiCol_Text, colorDeleted);
@@ -1909,10 +1886,8 @@ void QuickArmorRebalance::RenderUI() {
                         ImGui::SameLine();
 
                         float w = ImGui::GetFontSize() * 1 + ImGui::GetStyle().FramePadding.x * 2;
-                        ImGui::SetCursorPosX(ImGui::GetCursorPosX() +
-                                             std::max(0.0f, ImGui::GetContentRegionAvail().x - w));
-                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() -
-                                             4.0f);  // Radio circles are weirdly offset down slightly?
+                        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::max(0.0f, ImGui::GetContentRegionAvail().x - w));
+                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 4.0f);  // Radio circles are weirdly offset down slightly?
 
                         ImGui::PushID("Source");
                         ImGui::PushID(i);
@@ -1971,8 +1946,7 @@ void QuickArmorRebalance::RenderUI() {
                     if (ImGui::RadioButton(strSlotDesc[i], &bCheckbox)) {
                     }
                     tarCenter[i] = (ImGui::GetItemRectMin() + ImGui::GetItemRectMax()) / 2;
-                    tarCenter[i].x = ImGui::GetItemRectMin().x + ImGui::GetItemRectMax().y -
-                                     tarCenter[i].y;  // Want center of the circle
+                    tarCenter[i].x = ImGui::GetItemRectMin().x + ImGui::GetItemRectMax().y - tarCenter[i].y;  // Want center of the circle
                     ImGui::PopID();
                     ImGui::PopID();
 
@@ -2128,9 +2102,7 @@ void QuickArmorRebalance::RenderUI() {
                 }
             };
 
-            if (ImGui::BeginTable("WindowTable", 4,
-                                  ImGuiTableFlags_Resizable | ImGuiTableFlags_BordersInnerV |
-                                      ImGuiTableFlags_SizingFixedSame | ImGuiTableFlags_ScrollY,
+            if (ImGui::BeginTable("WindowTable", 4, ImGuiTableFlags_Resizable | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingFixedSame | ImGuiTableFlags_ScrollY,
                                   ImGui::GetContentRegionAvail())) {
                 ImGui::TableSetupColumn("Static Variants");
                 ImGui::TableSetupColumn("Unassigned");
@@ -2207,8 +2179,7 @@ void QuickArmorRebalance::RenderUI() {
 
                 ImGui::TableNextColumn();
                 for (const auto& dv : g_Config.mapDynamicVariants) {
-                    if (ImGui::CollapsingHeader(dv.first.c_str(),
-                                                ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_Bullet)) {
+                    if (ImGui::CollapsingHeader(dv.first.c_str(), ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_Bullet)) {
                         DragDropWords::Target(&mapDVWords[&dv.second], 0);
 
                         auto copy = mapDVWords[&dv.second];  // Drag drop can modify
@@ -2263,6 +2234,640 @@ void QuickArmorRebalance::RenderUI() {
             }
         }
 
+        using ItemGroup = std::map<std::string, std::vector<RE::TESBoundObject*>>;
+        static std::vector<std::pair<std::string, ItemGroup>> itemCats;
+        static std::unordered_set<RE::TESBoundObject*> selected;
+
+        static RE::TESBoundObject* itemClickedLast = nullptr;
+        static GivenItems itemsCustomTemp;
+
+        static char filenameKIDExport[200] = "";
+        static char filenameSkypatcherExport[200] = "";
+
+        static std::size_t nMaxCatRows = 0;
+
+        enum { eCatArmor0 = 0, eCatWeapons = eCatArmor0 + 32, eCatAmmo, eCatCount };
+        if (popupCustomKeywords) {
+            static bool bInit = false;
+            if (!bInit) {
+                bInit = true;
+
+                std::map<RE::TESFile*, std::map<RE::BGSKeyword*, uint64_t>> mapKeywordDist;
+
+                auto dataHandler = RE::TESDataHandler::GetSingleton();
+
+                for (auto i : dataHandler->GetFormArray<RE::TESObjectARMO>()) {
+                    for (unsigned int kw = 0; kw < i->numKeywords; kw++) {
+                        mapKeywordDist[i->GetFile(0)][i->keywords[kw]] |= (ArmorSlots)i->GetSlotMask();
+                    }
+                }
+
+                for (auto i : dataHandler->GetFormArray<RE::TESObjectWEAP>()) {
+                    for (unsigned int kw = 0; kw < i->numKeywords; kw++) {
+                        mapKeywordDist[i->GetFile(0)][i->keywords[kw]] |= (1ull << eCatWeapons);
+                    }
+                }
+
+                for (auto ammo : dataHandler->GetFormArray<RE::TESAmmo>()) {
+                    auto i = ammo->AsKeywordForm();
+                    for (unsigned int kw = 0; kw < i->numKeywords; kw++) {
+                        mapKeywordDist[ammo->GetFile(0)][i->keywords[kw]] |= (1ull << eCatAmmo);
+                    }
+                }
+
+                struct KWData {
+                    int count = 0;
+                    int appearance[eCatCount] = {0};
+                };
+
+                std::map<RE::BGSKeyword*, KWData> kwTotals;
+
+                for (auto& i : mapKeywordDist) {
+                    for (auto& kw : i.second) {
+                        auto& data = kwTotals[kw.first];
+                        data.count++;
+
+                        auto slots = kw.second;
+                        while (slots) {
+                            unsigned long slot;
+                            _BitScanForward64(&slot, slots);
+                            slots &= slots - 1;
+                            data.appearance[slot]++;
+                        }
+                    }
+                }
+
+                for (auto& i : kwTotals) {
+                    if (!i.second.count) continue;
+
+                    auto it = g_Config.mapCustomKWs.find(i.first);
+                    if (it != g_Config.mapCustomKWs.end()) {
+                        auto& ckw = it->second;
+                        auto min = std::max(5, i.second.count / 10);
+                        for (int slot = 0; slot < eCatCount; slot++) {
+                            if (i.second.appearance[slot] >= min) ckw.commonSlots |= (1ull << slot);
+                        }
+                    }
+                }
+            }
+
+            ImGui::OpenPopup("Custom Keywords");
+
+            itemClickedLast = nullptr;
+
+            itemCats.clear();
+            itemCats.resize(eCatCount);
+
+            for (int i = 0; i < 32; i++) {
+                itemCats[eCatArmor0 + i].first = strSlotDesc[i];
+            }
+            itemCats[eCatWeapons].first = "Weapons";
+            itemCats[eCatAmmo].first = "Ammo";
+
+            auto itemGroups = GroupItems(params.items, params.analyzeResults);
+            for (auto& i : itemGroups) {
+                auto item = i.second[0];
+                ItemGroup* pGroup = nullptr;
+                if (auto armor = item->As<RE::TESObjectARMO>()) {
+                    pGroup = &itemCats[eCatArmor0 + GetSlotIndex((ArmorSlots)armor->GetSlotMask())].second;
+                } else if (auto weapon = item->As<RE::TESObjectWEAP>()) {
+                    pGroup = &itemCats[eCatWeapons].second;
+                } else if (auto ammo = item->As<RE::TESAmmo>()) {
+                    pGroup = &itemCats[eCatAmmo].second;
+                }
+
+                if (pGroup) pGroup->emplace(std::move(i.first), std::move(i.second));
+            }
+
+            nMaxCatRows = 0;
+            for (auto& i : itemCats) nMaxCatRows = std::max(nMaxCatRows, i.second.size());
+
+            selected.clear();
+
+            if (params.mapKeywordChanges.empty()) params.mapKeywordChanges = LoadKeywordChanges(params);
+
+            filenameKIDExport[0] = '\0';
+            if (!params.filteredItems.empty()) {
+                strncpy(filenameKIDExport, std::format("{} QAR_Export", params.filteredItems[0]->GetFile(0)->fileName).c_str(), sizeof(filenameKIDExport) - 1);
+                filenameKIDExport[sizeof(filenameKIDExport) - 1] = '\0';
+
+                strncpy(filenameSkypatcherExport, std::format("QAR Keyword Export\\{}", params.filteredItems[0]->GetFile(0)->fileName).c_str(),
+                        sizeof(filenameSkypatcherExport) - 1);
+                filenameSkypatcherExport[sizeof(filenameSkypatcherExport) - 1] = '\0';
+            }
+        }
+
+        ImGui::SetNextWindowSizeConstraints({450, 300}, {1600, 1000});
+        // ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+        bPopupActive = true;
+
+        static bool bPopupKeywordsWasOpen = false;
+
+        if (ImGui::BeginPopupModal("Custom Keywords", &bPopupActive, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_MenuBar)) {
+            bPopupKeywordsWasOpen = true;
+            itemsCustomTemp.recentEquipSlots = 0;
+
+            static float fMaxKWSize = 0;
+
+            if (ImGui::BeginMenuBar()) {
+                if (ImGui::BeginMenu("Import Keywords")) {
+                    static RE::TESFile* curKWFile = nullptr;
+                    static std::map<RE::TESFile*, std::vector<RE::BGSKeyword*>> mapFileKeywords;
+                    static std::vector<RE::TESFile*> lsSortedFiles;
+                    static std::unordered_map<RE::BGSKeyword*, bool> mapEnabledKWs;
+
+                    if (mapFileKeywords.empty()) {
+                        auto dataHandler = RE::TESDataHandler::GetSingleton();
+                        for (auto kw : dataHandler->GetFormArray<RE::BGSKeyword>()) {
+                            mapFileKeywords[kw->GetFile(0)].push_back(kw);
+                        }
+
+                        mapFileKeywords.erase(nullptr);  // Discard dynamic keywords
+
+                        for (auto& ls : mapFileKeywords) {
+                            std::sort(ls.second.begin(), ls.second.end(),
+                                      [](RE::BGSKeyword* const a, RE::BGSKeyword* const b) { return _stricmp(a->formEditorID.c_str(), b->formEditorID.c_str()) < 0; });
+
+                            lsSortedFiles.push_back(ls.first);
+                        }
+
+                        std::sort(lsSortedFiles.begin(), lsSortedFiles.end(), [](RE::TESFile* const a, RE::TESFile* const b) { return _stricmp(a->fileName, b->fileName) < 0; });
+
+                        for (auto& i : g_Config.mapCustomKWs) {
+                            mapEnabledKWs[i.first] = true;
+                        }
+                    }
+
+                    ImGui::SetNextItemWidth(300.0f);
+                    if (ImGui::BeginCombo("##Mod", curKWFile ? curKWFile->fileName : "Select a mod", ImGuiComboFlags_HeightLarge)) {
+                        for (auto file : lsSortedFiles) {
+                            if (ImGui::Selectable(file->fileName, file == curKWFile)) {
+                                curKWFile = file;
+                            }
+                        }
+
+                        ImGui::EndCombo();
+                    }
+
+                    ImGui::Text("Tab (optional)");
+                    ImGui::SameLine();
+                    static char strTab[64] = "";
+                    ImGui::SetNextItemWidth(150.0f);
+                    ImGui::InputText("##TabName", strTab, sizeof(strTab) - 1);
+
+                    if (ImGui::BeginListBox("##KeywordList", ImVec2(300.0f, 500.0f))) {
+                        if (ImGui::BeginPopupContextWindow()) {
+                            if (ImGui::Selectable("Enable all")) {
+                                for (auto kw : mapFileKeywords[curKWFile]) mapEnabledKWs[kw] = true;
+                            }
+                            if (ImGui::Selectable("Disable all")) {
+                                for (auto kw : mapFileKeywords[curKWFile]) mapEnabledKWs[kw] = false;
+                            }
+                            ImGui::EndPopup();
+                        }
+
+                        for (auto kw : mapFileKeywords[curKWFile]) {
+                            if (ImGui::Checkbox(kw->formEditorID.c_str(), &mapEnabledKWs[kw])) {
+                            }
+                        }
+
+                        ImGui::EndListBox();
+                    }
+
+                    static TimedTooltip resp;
+                    if (ImGui::Button(RightAlign("Import"))) {
+                        std::set<RE::BGSKeyword*> kws;
+
+                        // auto& tab = mapKWTabs[strTab];
+                        for (auto kw : mapFileKeywords[curKWFile]) {
+                            if (mapEnabledKWs[kw]) {
+                                kws.insert(kw);
+                                fMaxKWSize = std::max(fMaxKWSize, 25.0f + ImGui::CalcTextSize(kw->formEditorID.c_str()).x);
+                            }
+                        }
+
+                        ImportKeywords(curKWFile, strTab, kws);
+                        resp.Enable("Keywords imported.");
+                    }
+                    if (!resp.Show())
+                        MakeTooltip(
+                            "Creates a basic config file for the selected keywords.\n"
+                            "Advanced configuration is available by editing the generated file directly.");
+
+                    ImGui::EndMenu();
+                }
+
+                if (ImGui::BeginMenu("Export Changes")) {
+                    if (ImGui::BeginMenu("to Keyword Item Distributor (KID)")) {
+                        ImGui::Text("This will export all keyword additions for currently displayed items to KID.");
+                        ImGui::Text("Note: KID only supports the addition of keywords, not any removals.");
+
+                        ImGui::Text("File name:");
+                        ImGui::SameLine();
+                        ImGui::SetNextItemWidth(340.0f);
+                        ImGui::InputText("##Filename", filenameKIDExport, sizeof(filenameKIDExport));
+                        ImGui::SameLine();
+                        ImGui::Text("_KID.ini");
+
+                        std::string filename(std::format("{}_KID.ini", filenameKIDExport));
+                        std::filesystem::path path = std::filesystem::current_path() / "Data" / filename;
+
+                        if (std::filesystem::exists(path)) {
+                            ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 0, 255));
+                            ImGui::Text("Warning: File exists, contents will be overwritten.");
+                            ImGui::Spacing();
+                            ImGui::PopStyleColor();
+                        }
+
+                        ImGui::BeginDisabled(!*filenameKIDExport);
+                        static TimedTooltip resp;
+                        if (ImGui::Button(RightAlign("Export Changes##Button"))) {
+                            if (ExportToKID(params.filteredItems, params.mapKeywordChanges, path))
+                                resp.Enable("Exported succesfully");
+                            else
+                                resp.Enable(std::format("Could not open file to write {}:\n\n{}", path.generic_string(), std::strerror(errno)));
+                        }
+                        resp.Show();
+                        ImGui::EndDisabled();
+
+                        ImGui::EndMenu();
+                    }
+                    if (ImGui::BeginMenu("to Skypatcher")) {
+                        ImGui::Text("This will create multiple file(s) for SkyPatcher to use.");
+                        ImGui::Text("It is recommended to export to a subdirectory.");
+                        ImGui::Text("File name(s):");
+                        ImGui::SameLine();
+                        ImGui::SetNextItemWidth(420.0f);
+                        ImGui::InputText("##Filename", filenameSkypatcherExport, sizeof(filenameSkypatcherExport));
+                        ImGui::SameLine();
+                        ImGui::Text(".ini");
+
+                        std::filesystem::path filename(std::format("{}.ini", filenameSkypatcherExport));
+                        std::filesystem::path pathBase = std::filesystem::current_path() / "Data/SKSE/Plugins/SkyPatcher/";
+
+                        if (std::filesystem::exists(pathBase / "armor" / filename)) {
+                            ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 0, 255));
+                            ImGui::Text("Warning: Armor file exists, contents may be overwritten.");
+                            ImGui::Spacing();
+                            ImGui::PopStyleColor();
+                        }
+                        if (std::filesystem::exists(pathBase / "weapon" / filename)) {
+                            ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 0, 255));
+                            ImGui::Text("Warning: Weapon file exists, contents may be overwritten.");
+                            ImGui::Spacing();
+                            ImGui::PopStyleColor();
+                        }
+                        if (std::filesystem::exists(pathBase / "ammo" / filename)) {
+                            ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 0, 255));
+                            ImGui::Text("Warning: Ammo file exists, contents may be overwritten.");
+                            ImGui::Spacing();
+                            ImGui::PopStyleColor();
+                        }
+
+                        ImGui::BeginDisabled(!*filenameSkypatcherExport);
+                        static TimedTooltip resp;
+                        if (ImGui::Button(RightAlign("Export Changes##Button"))) {
+                            if (ExportToSkypatcher(params.filteredItems, params.mapKeywordChanges, filename))
+                                resp.Enable("Exported succesfully");
+                            else
+                                resp.Enable("Unable to export to Skypatcher, see logs for details");
+                        }
+                        resp.Show();
+                        ImGui::EndDisabled();
+
+                        ImGui::EndMenu();
+                    }
+
+                    ImGui::EndMenu();
+                }
+
+                if (ImGui::BeginMenu("Options")) {
+                    ImGui::MenuItem("Show Types and Slots", nullptr, &g_Config.bShowKeywordSlots);
+                    ImGui::MenuItem("Reorder keywords based on relevance", nullptr, &g_Config.bReorderKeywordsForRelevance);
+                    if (ImGui::MenuItem("Equip example items", nullptr, &g_Config.bEquipPreviewForKeywords)) {
+                        if (!g_Config.bEquipPreviewForKeywords) {
+                            itemsCustomTemp.Pop(true);
+                            itemsCustomTemp.Restore();
+                        }
+                    }
+
+                    ImGui::EndMenu();
+                }
+
+                ImGui::EndMenuBar();
+            }
+
+            static TimedTooltip resp;
+            if (ImGui::Button(RightAlign("Save changes"))) {
+                MakeKeywordChanges(params, true);
+                resp.Enable("Changes saved");
+            }
+            if (!resp.Show()) MakeTooltip("Keyword changes are also saved with the Apply Changes button.");
+
+            if (ImGui::BeginTable("WindowTable", 2, ImGuiTableFlags_Resizable | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingStretchProp,
+                                  ImGui::GetContentRegionAvail())) {
+                ImGui::TableSetupColumn("Items", 0, 100.0f);
+                ImGui::TableSetupColumn("Keywords", ImGuiTableColumnFlags_WidthStretch, 300.0f);
+
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+
+                if (ImGui::BeginChild("ItemTree")) {
+                    static bool bSkipHeaders;
+                    bSkipHeaders = !g_Config.bShowKeywordSlots || nMaxCatRows < 2;
+                    struct ItemTree {
+                        bool IsAllSelected(const ItemGroup::value_type& group) {
+                            for (auto i : group.second) {
+                                if (!selected.contains(i)) {
+                                    return false;
+                                }
+                            }
+
+                            return true;
+                        }
+
+                        void ItemLeaf(RE::TESBoundObject* item) {
+                            auto bOpen = ImGui::TreeNodeEx(item->GetName(), (selected.contains(item) ? ImGuiTreeNodeFlags_Selected : 0) | ImGuiTreeNodeFlags_Leaf);
+
+                            if (ImGui::IsItemClicked()) {
+                                itemClicked = item;
+                            }
+
+                            if (bOpen) {
+                                ImGui::TreePop();
+                            }
+                        }
+
+                        void ItemGroup(const ItemGroup::value_type& group) {
+                            auto bOpen = ImGui::TreeNodeEx(group.first.c_str(), (IsAllSelected(group) ? ImGuiTreeNodeFlags_Selected : 0) | ImGuiTreeNodeFlags_OpenOnArrow);
+
+                            if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
+                                groupClicked = &group;
+                            }
+
+                            if (bOpen) {
+                                for (auto i : group.second) {
+                                    ItemLeaf(i);
+                                }
+                                ImGui::TreePop();
+                            }
+                        }
+
+                        void Build() {
+                            for (auto& cat : itemCats) {
+                                if (cat.second.empty()) continue;
+
+                                if (bSkipHeaders || ImGui::CollapsingHeader(cat.first.c_str(), ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_DefaultOpen)) {
+                                    for (auto& i : cat.second) {
+                                        if (i.second.size() > 1) {
+                                            ItemGroup(i);
+                                        } else {
+                                            ItemLeaf(i.second[0]);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        bool HandleSelection() {
+                            if (!itemClicked && !groupClicked) return false;
+
+                            const bool isShiftDown = ImGui::IsKeyDown(ImGuiKey_LeftShift) || ImGui::IsKeyDown(ImGuiKey_RightShift);
+                            const bool isCtrlDown = ImGui::IsKeyDown(ImGuiKey_LeftCtrl) || ImGui::IsKeyDown(ImGuiKey_RightCtrl);
+                            // const bool isAltDown = ImGui::IsKeyDown(ImGuiKey_LeftAlt) || ImGui::IsKeyDown(ImGuiKey_RightAlt);
+
+                            if (!isCtrlDown) selected.clear();
+
+                            if (!isShiftDown) {
+                                if (itemClicked) {
+                                    if (!selected.contains(itemClicked)) {
+                                        selected.insert(itemClicked);
+                                        itemClickedLast = itemClicked;
+                                    } else
+                                        selected.erase(itemClicked);
+                                } else if (groupClicked) {
+                                    if (!IsAllSelected(*groupClicked)) {
+                                        for (auto i : groupClicked->second) selected.insert(i);
+
+                                        itemClickedLast = groupClicked->second[0];
+                                    } else {
+                                        for (auto i : groupClicked->second) selected.erase(i);
+                                    }
+                                }
+                            } else {
+                                if (groupClicked) itemClicked = groupClicked->second[0];
+
+                                bool bSelecting = false;
+                                bool bDone = false;
+                                for (auto& cat : itemCats) {
+                                    for (auto& i : cat.second) {
+                                        for (auto item : i.second) {
+                                            if (item == itemClicked || item == itemClickedLast) {
+                                                if (!bSelecting) {
+                                                    bSelecting = true;
+                                                } else {
+                                                    bDone = true;
+                                                    if (!groupClicked) {  // Need to distinguish between clicking on the group and clicking on the first item
+                                                        selected.insert(item);
+                                                        break;
+                                                    }
+                                                }
+                                            }
+
+                                            if (bSelecting) selected.insert(item);
+                                        }
+                                        if (bDone) break;
+                                    }
+                                    if (bDone) break;
+                                }
+                            }
+
+                            return true;
+                        }
+
+                        RE::TESBoundObject* itemClicked = nullptr;
+                        const ItemGroup::value_type* groupClicked = nullptr;
+                    };
+
+                    ItemTree itemTree;
+                    itemTree.Build();
+                    if (itemTree.HandleSelection()) {
+                        if (g_Config.bEquipPreviewForKeywords) {
+                            if (itemsCustomTemp.stored.empty()) itemsCustomTemp.UnequipCurrent();
+
+                            itemsCustomTemp.Pop(true);
+                            for (auto i : selected) {
+                                if (auto armor = i->As<RE::TESObjectARMO>()) {
+                                    if ((itemsCustomTemp.recentEquipSlots & (ArmorSlots)armor->GetSlotMask()) == 0) itemsCustomTemp.Give(armor, true);
+                                }
+                            }
+                        }
+                    }
+                }
+                ImGui::EndChild();
+
+                ImGui::TableNextColumn();
+
+                if (g_Config.mapCustomKWTabs.empty())
+                    ImGui::Text("No keywords, import some to begin.");
+                else {
+                    if (fMaxKWSize == 0) {
+                        for (auto& tab : g_Config.mapCustomKWTabs) {
+                            for (auto i : tab.second) {
+                                fMaxKWSize = std::max(fMaxKWSize, 25.0f + ImGui::CalcTextSize(g_Config.mapCustomKWs[i].name.c_str()).x);
+                            }
+                        }
+                    }
+
+                    uint64_t slotsUsed = 0;
+                    for (auto i : selected) {
+                        if (auto armor = i->As<RE::TESObjectARMO>())
+                            slotsUsed |= (ArmorSlots)armor->GetSlotMask();
+                        else if (auto weapon = i->As<RE::TESObjectWEAP>())
+                            slotsUsed |= (1ull << eCatWeapons);
+                        else if (auto ammo = i->As<RE::TESAmmo>())
+                            slotsUsed |= (1ull << eCatAmmo);
+                    }
+
+                    if (ImGui::BeginTabBar("##KWTabs")) {
+                        for (auto& tab : g_Config.mapCustomKWTabs) {
+                            if (ImGui::BeginTabItem(tab.first.empty() ? "General" : tab.first.c_str())) {
+                                int nCols = std::clamp((int)(ImGui::GetContentRegionAvail().x / fMaxKWSize), 1, 8);
+
+                                if (ImGui::BeginTable("Keywords Table", nCols, ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingStretchSame | ImGuiTableFlags_ScrollY,
+                                                      ImGui::GetContentRegionAvail())) {
+                                    ImGui::TableNextRow();
+
+                                    ImGui::BeginDisabled(selected.empty());
+
+                                    for (int priority = g_Config.bReorderKeywordsForRelevance ? 1 : 0; priority >= 0; priority--) {
+                                        bool bUsed = false;
+                                        KeywordChangeMap& mapChanges = params.mapKeywordChanges;
+                                        for (int i = 0; i < tab.second.size(); i++) {
+                                            auto& ckw = g_Config.mapCustomKWs[tab.second[i]];
+                                            if (g_Config.bReorderKeywordsForRelevance ? (!!priority == !!(ckw.commonSlots & slotsUsed)) : !priority) {
+                                                bUsed = true;
+                                                ImGui::TableNextColumn();
+
+                                                auto& changes = mapChanges[ckw.kw];
+
+                                                int nChanges = 0;
+                                                int nState = (1 << 1);
+                                                if (selected.empty())
+                                                    nState = 0;
+                                                else {
+                                                    for (auto item : selected) {
+                                                        if (auto form = item->As<RE::BGSKeywordForm>()) {
+                                                            if (changes.add.contains(item)) {
+                                                                nState |= (1 << 0);
+                                                                nChanges |= (1 << 0);
+                                                            } else if (changes.remove.contains(item)) {
+                                                                nState &= ~(1 << 1);
+                                                                nChanges |= (1 << 1);
+                                                            } else if (form->HasKeyword(ckw.kw)) {
+                                                                nState |= (1 << 0);
+                                                            } else
+                                                                nState &= ~(1 << 1);
+                                                            if (nState == (1 << 0)) break;
+                                                        }
+                                                    }
+                                                }
+
+                                                int nPopColor = 0;
+
+                                                constexpr ImU32 colChange[] = {IM_COL32(255, 255, 255, 255), IM_COL32(0, 255, 0, 255), IM_COL32(255, 0, 0, 255),
+                                                                               IM_COL32(255, 255, 0, 255)};
+                                                if (nChanges) {
+                                                    nPopColor++;
+                                                    ImGui::PushStyleColor(ImGuiCol_Text, colChange[nChanges]);
+                                                }
+
+                                                if (ImGui::CheckboxFlags(ckw.name.c_str(), &nState, 3)) {
+                                                    static void (*RemoveKW)(RE::TESBoundObject*, const CustomKeyword&, std::set<RE::BGSKeyword*>&) =
+                                                        [](RE::TESBoundObject* item, const CustomKeyword& ckw, std::set<RE::BGSKeyword*>& touched) -> void {
+                                                        if (touched.contains(ckw.kw)) return;
+                                                        touched.insert(ckw.kw);
+
+                                                        auto& changes = g_Config.acParams.mapKeywordChanges[ckw.kw];
+                                                        if (changes.add.contains(item))
+                                                            changes.add.erase(item);
+                                                        else {
+                                                            if (item->As<RE::BGSKeywordForm>()->HasKeyword(ckw.kw)) changes.remove.insert(item);
+                                                        }
+                                                    };
+
+                                                    static void (*AddKW)(RE::TESBoundObject*, const CustomKeyword&, std::set<RE::BGSKeyword*>&) =
+                                                        [](RE::TESBoundObject* item, const CustomKeyword& ckw, std::set<RE::BGSKeyword*>& touched) -> void {
+                                                        if (touched.contains(ckw.kw)) return;
+                                                        touched.insert(ckw.kw);
+
+                                                        auto& changes = g_Config.acParams.mapKeywordChanges[ckw.kw];
+                                                        if (changes.remove.contains(item))
+                                                            changes.remove.erase(item);
+                                                        else
+                                                            changes.add.insert(item);
+
+                                                        for (auto i : ckw.imply) {
+                                                            auto it = g_Config.mapCustomKWs.find(i);
+                                                            if (it != g_Config.mapCustomKWs.end()) AddKW(item, it->second, touched);
+                                                        }
+
+                                                        for (auto i : ckw.exclude) {
+                                                            auto it = g_Config.mapCustomKWs.find(i);
+                                                            if (it != g_Config.mapCustomKWs.end()) RemoveKW(item, it->second, touched);
+                                                        }
+                                                    };
+
+                                                    for (auto item : selected) {
+                                                        std::set<RE::BGSKeyword*> touched;
+                                                        if (auto form = item->As<RE::BGSKeywordForm>()) {
+                                                            if (nState) {
+                                                                AddKW(item, ckw, touched);
+                                                            } else {
+                                                                RemoveKW(item, ckw, touched);
+                                                            }
+                                                        }
+                                                    }
+                                                }
+
+                                                if (!ckw.tooltip.empty()) MakeTooltip(ckw.tooltip.c_str());
+
+                                                ImGui::PopStyleColor(nPopColor);
+                                            }
+                                        }
+
+                                        if (bUsed && priority) {
+                                            ImGui::TableNextRow();
+                                            for (int n = 0; n < nCols; n++) {
+                                                ImGui::TableNextColumn();
+                                                ImGui::Separator();
+                                            }
+                                            ImGui::TableNextRow();
+                                        }
+                                    }
+
+                                    ImGui::EndDisabled();
+
+                                    ImGui::EndTable();
+                                }
+
+                                ImGui::EndTabItem();
+                            }
+                        }
+
+                        ImGui::EndTabBar();
+                    }
+                }
+
+                ImGui::EndTable();
+            }
+
+            ImGui::EndPopup();
+        } else if (bPopupKeywordsWasOpen) {
+            bPopupKeywordsWasOpen = false;
+            itemsCustomTemp.Pop(true);
+            itemsCustomTemp.Restore();
+        }
         if (switchToMod) Local::SwitchToMod(switchToMod);
     }
 

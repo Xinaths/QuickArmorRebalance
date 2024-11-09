@@ -195,6 +195,13 @@ struct SlotStats {
     bool foundPieceWords = false;
 };
 
+void QuickArmorRebalance::AnalyzeResults::Clear() {
+    for (auto& i : sets) i.clear();
+    mapWordStrings.clear();
+    mapWordItems.clear();
+    mapArmorWords.clear();
+}
+
 void QuickArmorRebalance::AnalyzeArmor(const std::vector<RE::TESBoundObject*>& items, AnalyzeResults& results) {
     int nArmors = 0;
 
@@ -301,7 +308,12 @@ void QuickArmorRebalance::AnalyzeArmor(const std::vector<RE::TESBoundObject*>& i
     for (auto& i : mapWordLinks) {
         if (i.second) {
             if (!g_Config.wordsAllVariants.contains(i.second))  // Break links of known variants
+            {
+                for (auto item : mapWords[i.second].items) {
+                    mapArmorWords[item].erase(i.second);
+                }
                 remainingWords.erase(i.second);
+            }
             else
                 i.second = 0;
         }
@@ -491,11 +503,11 @@ void QuickArmorRebalance::AnalyzeArmor(const std::vector<RE::TESBoundObject*>& i
         WordSet* pSet = nullptr;
         if (ContainsAny(g_Config.wordsDynamicVariants, g.second))
             pSet = &setVariantsDynamic;
-        else if (ContainsAny(g_Config.wordsStaticVariants, g.second))
+        else if (ContainsAny(g_Config.wordsStaticVariants, g.second)) {
             pSet = &setVariantsStatic;
-        else if (ContainsAny(g_Config.wordsEitherVariants, g.second))
+        } else if (ContainsAny(g_Config.wordsEitherVariants, g.second)) {
             pSet = &setVariantsEither;
-        else if (ContainsAny(g_Config.wordsPieces, g.second))
+        } else if (ContainsAny(g_Config.wordsPieces, g.second))
             pSet = &setPieces;
         else if (ContainsAny(g_Config.wordsDescriptive, g.second))
             pSet = &setNonVariant;
@@ -685,10 +697,13 @@ inline std::size_t HashStep(std::size_t& hash, std::size_t n) {
     return hash ^= (n + 0x9e3779b9 + (hash << 6) + (hash >> 2));
 }
 
-std::size_t QuickArmorRebalance::HashWordSet(const WordSet& set, RE::TESObjectARMO* armor, std::size_t skip) {
+std::size_t QuickArmorRebalance::HashWordSet(const WordSet& set, RE::TESObjectARMO* armor, std::size_t skip,
+                                             bool includeTypeAndSlot) {
     std::size_t hash = 0;
-    HashStep(hash, (int)armor->bipedModelData.armorType.get());
-    HashStep(hash, (ArmorSlots)armor->GetSlotMask());
+    if (includeTypeAndSlot) {
+        HashStep(hash, (int)armor->bipedModelData.armorType.get());
+        HashStep(hash, (ArmorSlots)armor->GetSlotMask());
+    }
     for (auto w : set)
         if (w != skip) {
             HashStep(hash, w);
@@ -711,7 +726,7 @@ DynamicVariantSets QuickArmorRebalance::MapVariants(
             // logger::trace("Hashing {}:", i.first->GetName());
             // logger::trace("Slots {}:", (ArmorSlots)i.first->GetSlotMask());
             auto hash = HashWordSet(i.second, i.first);
-            mapVariants[hash].clear(); //prevent duplicates
+            mapVariants[hash].clear();  // prevent duplicates
             mapVariants[hash].push_back(i.first);
         }
 
@@ -745,9 +760,143 @@ DynamicVariantSets QuickArmorRebalance::MapVariants(
     return ret;
 }
 
-void QuickArmorRebalance::AnalyzeResults::Clear() {
-    for (auto& i : sets) i.clear();
-    mapWordStrings.clear();
-    mapWordItems.clear();
-    mapArmorWords.clear();
+std::map<std::string, std::vector<RE::TESBoundObject*>> QuickArmorRebalance::GroupItems(
+    const std::vector<RE::TESBoundObject*>& items, AnalyzeResults& results) {
+
+    if (results.mapArmorWords.empty()) { //No data to work with - probably not a singular mod, so just return everything solo
+        std::map<std::string, std::vector<RE::TESBoundObject*>> ret;
+        for (auto item : items) {
+            ret.emplace(item->GetName(), std::vector{item});
+        }
+
+        return ret;   
+    }
+
+    std::map<std::size_t, ArmorSet> sets;
+
+    /*
+    for (auto item : items) {
+        auto armor = item->As<RE::TESObjectARMO>();
+        if (!armor) continue;
+
+        auto it = results.mapArmorWords.find(armor);
+        if (it == results.mapArmorWords.end()) continue;
+
+        {
+            auto hash = HashWordSet(it->second, armor, 0, false);
+            auto& set = sets[hash];
+            set.insert(set.begin(), armor);
+        }
+
+        for (auto w : it->second) {
+            auto hash = HashWordSet(it->second, armor, w, false);
+            sets[hash].push_back(armor);
+        }
+    }
+    */
+
+    std::unordered_set<RE::TESObjectARMO*> usedArmor;
+    std::unordered_set<RE::TESObjectARMO*> inGroup;
+    std::unordered_map<std::size_t, std::string> mapNames;
+
+    for (auto item : items) {
+        auto armor = item->As<RE::TESObjectARMO>();
+        if (!armor) continue;
+
+        usedArmor.insert(armor);
+        auto it = results.mapArmorWords.find(armor);
+        if (it == results.mapArmorWords.end()) continue;
+
+        {
+            auto hash = HashWordSet(it->second, armor);
+            auto& set = sets[hash];
+            set.insert(set.begin(), armor);
+        }
+    }
+
+    for (int eType = AnalyzeResults::eWords_StaticVariants; eType > AnalyzeResults::eWords_DynamicVariants; eType--) {
+        for (auto w : results.sets[eType]) {
+            auto& witems = results.mapWordItems[w].items;
+
+            // Only group if items aren't already accounted for
+            // This will hopefully minimize redundant entries when multiple variants might be stacked (color + variant
+            // usually)
+            bool bMissing = false;
+            for (auto armor : witems) {
+                if (!usedArmor.contains(armor)) continue;
+                if (!inGroup.contains(armor)) {
+                    bMissing = true;
+                    break;
+                }
+            }
+
+            if (!bMissing) continue;
+
+            for (auto armor : witems) {
+                if (!usedArmor.contains(armor)) continue;
+
+                auto hash = HashWordSet(results.mapArmorWords[armor], armor, w);
+                auto& set = sets[hash];
+                switch (set.size()) {
+                    case 0: {  // First entry, so make name with *'d word
+                        std::string lower = MakeLower(armor->fullName.c_str());
+                        auto& strWord = results.mapWordStrings[w];
+                        auto pos = lower.find(strWord);
+                        if (pos != std::string::npos) {  // Shouldn't ever happen
+                            mapNames[hash] = std::string(armor->fullName.c_str()).replace(pos, strWord.size(), "*");
+                        }
+
+                    } break;
+                    case 1:  // Second entry, add the first as an assigned
+                        inGroup.insert(*set.begin());
+                        [[fallthrough]];
+                    default:  // Fallthrough for all others, just add current as assigned
+                        inGroup.insert(armor);
+                        break;
+                }
+                set.push_back(armor);
+            }
+        }
+    }
+
+    std::erase_if(sets, [](auto& i) {
+        if (i.second.size() < 2) return true;
+
+        auto type = i.second[0]->bipedModelData.armorType.get();
+        auto slots = i.second[0]->GetSlotMask();
+
+        for (auto j : i.second) {
+            if (type != j->bipedModelData.armorType.get() || slots != j->GetSlotMask()) return true;
+        }
+
+        return false;
+    });
+
+    std::map<std::string, std::vector<RE::TESBoundObject*>> ret;
+    for (auto& i : sets) {
+        auto it = mapNames.find(i.first);
+        std::string name;
+        if (it == mapNames.end())
+            name = i.second[0]->fullName;
+        else
+            name = it->second;
+
+        std::sort(i.second.begin(), i.second.end(),
+                  [](auto& a, auto& b) { return _stricmp(a->fullName.c_str(), b->fullName.c_str()) < 0; });
+
+        ret.emplace(std::move(name), std::vector<RE::TESBoundObject*>(i.second.begin(), i.second.end()));
+    }
+
+    // Add in all items that are solo
+    for (auto item : items) {
+        auto armor = item->As<RE::TESObjectARMO>();
+        if (armor && inGroup.contains(armor)) continue;
+
+        ret.emplace(item->GetName(), std::vector{item});
+    }
+
+    // std::sort(ret.begin(), ret.end(), [](auto& a, auto& b) { return _stricmp(a[0]->GetName(), b[0]->GetName()) < 0;
+    // });
+
+    return ret;
 }

@@ -66,8 +66,7 @@ namespace {
         ArmorSlots slotsRemapped = slots;
         if (slots & params.remapMask) {
             for (auto s : params.mapArmorSlots) {
-                if (slots &
-                    (1 << s.first))  // Test on different data then the changes, so that changes aren't chained together
+                if (slots & (1 << s.first))  // Test on different data then the changes, so that changes aren't chained together
                     slotsRemapped = (slotsRemapped & ~(1 << s.first)) | (s.second < 32 ? (1 << s.second) : 0);
             }
             slots = slotsRemapped;
@@ -79,13 +78,11 @@ namespace {
         slots &= ~kCosmeticSlotMask;
 
         // Promote to head slot if needed
-        if (slots & coveredHeadSlots)
-            slots = (slots & ~coveredHeadSlots) | (ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kHead;
+        if (slots & coveredHeadSlots) slots = (slots & ~coveredHeadSlots) | (ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kHead;
         return slots;
     }
 
-    std::pair<ArmorSlots, ArmorSlots> CalcCoveredSlots(const auto& items, const ArmorChangeParams& params,
-                                                       bool remap = false) {
+    std::pair<ArmorSlots, ArmorSlots> CalcCoveredSlots(const auto& items, const ArmorChangeParams& params, bool remap = false) {
         ArmorSlots coveredSlots = 0;
         // Build list of slots that will be used for scaling
         for (auto i : items) {
@@ -143,15 +140,12 @@ namespace {
         return 0;
     }
 
-    void AddModification(const char* field, const ArmorChangeParams::SliderPair& pair, rapidjson::Value& changes,
-                         MemoryPoolAllocator<>& al) {
+    void AddModification(const char* field, const ArmorChangeParams::SliderPair& pair, rapidjson::Value& changes, MemoryPoolAllocator<>& al) {
         if (pair.bModify) changes.AddMember(StringRef(field), Value(0.01f * pair.fScale), al);
     }
 
-    int AddDynamicVariants(const RE::TESFile* file, const ArmorChangeParams& params, rapidjson::Value& ls,
-                            MemoryPoolAllocator<>& al);
-    bool AddPreferenceVariants(const RE::TESFile* file, const ArmorChangeParams& params, rapidjson::Value& ls,
-                               MemoryPoolAllocator<>& al, int& r);
+    int AddDynamicVariants(const RE::TESFile* file, const ArmorChangeParams& params, rapidjson::Value& ls, MemoryPoolAllocator<>& al);
+    bool AddPreferenceVariants(const RE::TESFile* file, const ArmorChangeParams& params, rapidjson::Value& ls, MemoryPoolAllocator<>& al, int& r);
 
 }
 
@@ -163,9 +157,7 @@ ArmorSlots QuickArmorRebalance::GetConvertableArmorSlots(const ArmorChangeParams
 
     coveredSlots = 0;  // weird case where an item's in the armor set but not in the curve tree
 
-    ProcessBaseArmorSet(params, coveredHeadSlots, [&](ArmorSlot slot, RE::TESObjectARMO*) {
-        coveredSlots |= GetAllCoveredSlots(*params.curve, slot);
-    });
+    ProcessBaseArmorSet(params, coveredHeadSlots, [&](ArmorSlot slot, RE::TESObjectARMO*) { coveredSlots |= GetAllCoveredSlots(*params.curve, slot); });
 
     return coveredSlots;
 }
@@ -185,12 +177,10 @@ int QuickArmorRebalance::MakeArmorChanges(const ArmorChangeParams& params) {
 
     SlotRelativeWeight slotValues[32];
 
-    ProcessBaseArmorSet(params, coveredHeadSlots,
-                        [&](ArmorSlot slot, RE::TESObjectARMO* i) { slotValues[slot].item = i; });
+    ProcessBaseArmorSet(params, coveredHeadSlots, [&](ArmorSlot slot, RE::TESObjectARMO* i) { slotValues[slot].item = i; });
 
     int totalWeight = 0;
-    for (const auto& i : *params.curve)
-        totalWeight += GetTotalWeight(&i, ~(ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kShield);
+    for (const auto& i : *params.curve) totalWeight += GetTotalWeight(&i, ~(ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kShield);
     for (const auto& i : *params.curve) PropogateBaseValues(slotValues, nullptr, &i);
     for (const auto& i : *params.curve) CalcCoveredValues(slotValues, coveredSlots, &i);
 
@@ -243,8 +233,7 @@ int QuickArmorRebalance::MakeArmorChanges(const ArmorChangeParams& params) {
                 AddModification("armor", params.armor.rating, changes, al);
                 AddModification("weight", params.armor.weight, changes, al);
                 AddModification("warmth", params.armor.warmth, changes, al);
-                if (g_Config.isFrostfallInstalled || g_Config.bShowFrostfallCoverage)
-                    changes.AddMember("coverage", Value(0.01f * params.armor.coverage), al);
+                if (g_Config.isFrostfallInstalled || g_Config.bShowFrostfallCoverage) changes.AddMember("coverage", Value(0.01f * params.armor.coverage), al);
                 AddModification("value", params.value, changes, al);
 
                 if (slotsRemapped != slotsOrig) changes.AddMember("slots", slotsRemapped, al);
@@ -355,7 +344,7 @@ int QuickArmorRebalance::MakeArmorChanges(const ArmorChangeParams& params) {
     }
 
     for (auto& i : mapFileChanges) {
-        nChanges+=ApplyChanges(i.first, i.second, g_Config.permLocal);
+        nChanges += ApplyChanges(i.first, i.second, g_Config.permLocal);
 
         ExportToDAV(i.first, i.second);
 
@@ -401,6 +390,8 @@ int QuickArmorRebalance::MakeArmorChanges(const ArmorChangeParams& params) {
         }
     }
 
+    if (!params.mapKeywordChanges.empty()) MakeKeywordChanges(params);
+
     return nChanges;
 }
 
@@ -425,7 +416,7 @@ int QuickArmorRebalance::AddDynamicVariants(const ArmorChangeParams& params) {
         if (!ReadJSONFile(path, doc)) continue;
         if (!doc.IsObject()) continue;
 
-        r+=::AddDynamicVariants(mod, params, doc.GetObj(), al);
+        r += ::AddDynamicVariants(mod, params, doc.GetObj(), al);
         ExportToDAV(mod, doc.GetObj(), true);
         WriteJSONFile(path, doc);
     }
@@ -433,8 +424,7 @@ int QuickArmorRebalance::AddDynamicVariants(const ArmorChangeParams& params) {
     return r;
 }
 
-int ::AddDynamicVariants(const RE::TESFile* file, const ArmorChangeParams& params, rapidjson::Value& ls,
-                          MemoryPoolAllocator<>& al) {
+int ::AddDynamicVariants(const RE::TESFile* file, const ArmorChangeParams& params, rapidjson::Value& ls, MemoryPoolAllocator<>& al) {
     int r = 0;
 
     // First pass to clear out existing DV entries (or reset them if they will no longer apply)
@@ -528,8 +518,7 @@ int QuickArmorRebalance::RescanPreferenceVariants() {
     return r;
 }
 
-void WritePrefrenceVariantValue(RE::TESObjectARMO* item, rapidjson::Value& ls, const char* var, bool val,
-                                MemoryPoolAllocator<>& al) {
+void WritePrefrenceVariantValue(RE::TESObjectARMO* item, rapidjson::Value& ls, const char* var, bool val, MemoryPoolAllocator<>& al) {
     auto itemId = std::to_string(GetFileId(item));
     auto it = ls.FindMember(itemId.c_str());
     if (it == ls.MemberEnd()) return;
@@ -548,8 +537,7 @@ void WritePrefrenceVariantValue(RE::TESObjectARMO* item, rapidjson::Value& ls, c
     }
 }
 
-bool ::AddPreferenceVariants(const RE::TESFile* file, const ArmorChangeParams& params, rapidjson::Value& ls,
-                             MemoryPoolAllocator<>& al, int& count) {
+bool ::AddPreferenceVariants(const RE::TESFile* file, const ArmorChangeParams& params, rapidjson::Value& ls, MemoryPoolAllocator<>& al, int& count) {
     bool bAny = false;
 
     for (auto item : params.items) {
@@ -575,17 +563,14 @@ bool ::AddPreferenceVariants(const RE::TESFile* file, const ArmorChangeParams& p
                     if (item->GetFile(0) != file) continue;
                     if (auto armor = item->As<RE::TESObjectARMO>()) {
                         auto itArmor = params.analyzeResults.mapArmorWords.find(armor);
-                        if (itArmor != params.analyzeResults.mapArmorWords.end())
-                            mapHashed[HashWordSet(itArmor->second, armor)] = armor;
+                        if (itArmor != params.analyzeResults.mapArmorWords.end()) mapHashed[HashWordSet(itArmor->second, armor)] = armor;
                     }
                 }
             }
 
             for (auto item : it->second.items) {
                 if (item->GetFile(0) != file) continue;
-                if (std::find(params.items.begin(), params.items.end(), static_cast<RE::TESBoundObject*>(item)) ==
-                    params.items.end())
-                    continue;
+                if (std::find(params.items.begin(), params.items.end(), static_cast<RE::TESBoundObject*>(item)) == params.items.end()) continue;
 
                 auto itArmor = params.analyzeResults.mapArmorWords.find(item);
                 if (itArmor != params.analyzeResults.mapArmorWords.end()) {
@@ -641,8 +626,7 @@ int QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, const rapidjson::
 }
 
 template <class T, typename V>
-bool ChangeField(bool bAllowed, const char* field, const rapidjson::Value& changes, T* src, T* item, V T::*member,
-                 const auto& fn) {
+bool ChangeField(bool bAllowed, const char* field, const rapidjson::Value& changes, T* src, T* item, V T::*member, const auto& fn) {
     if (bAllowed && changes.HasMember(field)) {
         auto& jsonScale = changes[field];
         if (!jsonScale.IsFloat()) return false;
@@ -657,8 +641,7 @@ bool ChangeField(bool bAllowed, const char* field, const rapidjson::Value& chang
     return true;
 }
 
-void GetMatchingKeywords(const std::set<RE::BGSKeyword*>& set, std::vector<RE::BGSKeyword*>& addKwds,
-                         const RE::BGSKeywordForm* src) {
+void GetMatchingKeywords(const std::set<RE::BGSKeyword*>& set, std::vector<RE::BGSKeyword*>& addKwds, const RE::BGSKeywordForm* src) {
     for (unsigned int i = 0; i < src->numKeywords; i++) {
         if (!src->keywords[i]) continue;
         if (set.contains(src->keywords[i])) addKwds.push_back(src->keywords[i]);
@@ -692,8 +675,7 @@ void MatchKeywords(RE::BGSKeywordForm* item, std::vector<RE::BGSKeyword*>& addKw
     }
 }
 
-bool QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, RE::FormID id, const rapidjson::Value& changes,
-                                       const Permissions& perm) {
+bool QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, RE::FormID id, const rapidjson::Value& changes, const Permissions& perm) {
     if (!changes.IsObject()) return false;
 
     auto dataHandler = RE::TESDataHandler::GetSingleton();
@@ -759,22 +741,18 @@ bool QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, RE::FormID id, c
         } else
             return false;
 
-        if (!ChangeField<RE::TESObjectARMO>(perm.bModifyArmorRating, "armor", changes, src, armor,
-                                            &RE::TESObjectARMO::armorRating,
+        if (!ChangeField<RE::TESObjectARMO>(perm.bModifyArmorRating, "armor", changes, src, armor, &RE::TESObjectARMO::armorRating,
                                             [=](float f) { return std::max(1, (int)(weight * f)); }))
             return false;
 
-        if (!ChangeField<RE::TESObjectARMO>(perm.bModifyWeight, "weight", changes, src, armor,
-                                            &RE::TESObjectARMO::weight, [=](float f) {
-                                                f *= weight;
-                                                if (g_Config.bRoundWeight)
-                                                    f = std::max(0.1f, 0.1f * std::round(10.0f * f));
-                                                return f;
-                                            }))
+        if (!ChangeField<RE::TESObjectARMO>(perm.bModifyWeight, "weight", changes, src, armor, &RE::TESObjectARMO::weight, [=](float f) {
+                f *= weight;
+                if (g_Config.bRoundWeight) f = std::max(0.1f, 0.1f * std::round(10.0f * f));
+                return f;
+            }))
             return false;
 
-        if (!ChangeField<RE::TESObjectARMO>(perm.bModifyValue, "value", changes, src, armor, &RE::TESObjectARMO::value,
-                                            [=](float f) { return std::max(1, (int)(weight * f)); }))
+        if (!ChangeField<RE::TESObjectARMO>(perm.bModifyValue, "value", changes, src, armor, &RE::TESObjectARMO::value, [=](float f) { return std::max(1, (int)(weight * f)); }))
             return false;
 
         if (perm.bModifySlots && changes.HasMember("slots")) {
@@ -796,8 +774,7 @@ bool QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, RE::FormID id, c
                             ToLower(modelPath);
 
                             auto hash = std::hash<std::string>{}(modelPath);
-                            if (!g_Data.noModifyModels.contains(hash))
-                                g_Data.remapFileArmorSlots[hash] = (ArmorSlots)slots;
+                            if (!g_Data.noModifyModels.contains(hash)) g_Data.remapFileArmorSlots[hash] = (ArmorSlots)slots;
 
                             if (modelPath.length() > 6) {
                                 char* pChar = modelPath.data() + modelPath.length() - 6;  //'_X.nif'
@@ -805,13 +782,11 @@ bool QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, RE::FormID id, c
                                     if (*pChar == '0') {
                                         *pChar = '1';
                                         hash = std::hash<std::string>{}(modelPath);
-                                        if (!g_Data.noModifyModels.contains(hash))
-                                            g_Data.remapFileArmorSlots[hash] = (ArmorSlots)slots;
+                                        if (!g_Data.noModifyModels.contains(hash)) g_Data.remapFileArmorSlots[hash] = (ArmorSlots)slots;
                                     } else if (*pChar == '1') {
                                         *pChar = '0';
                                         hash = std::hash<std::string>{}(modelPath);
-                                        if (!g_Data.noModifyModels.contains(hash))
-                                            g_Data.remapFileArmorSlots[hash] = (ArmorSlots)slots;
+                                        if (!g_Data.noModifyModels.contains(hash)) g_Data.remapFileArmorSlots[hash] = (ArmorSlots)slots;
                                     }
                                 }
                             }
@@ -836,10 +811,8 @@ bool QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, RE::FormID id, c
                 auto coverage = changes["coverage"].GetFloat();
                 bModifyFFKeywords = true;
 
-                constexpr auto ffSlots = (ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kBody |
-                                         (ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kHead |
-                                         (ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kFeet |
-                                         (ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kHands;
+                constexpr auto ffSlots = (ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kBody | (ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kHead |
+                                         (ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kFeet | (ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kHands;
 
                 if ((ArmorSlots)armor->GetSlotMask() & ffSlots) {
                     constexpr float warmthMin[] = {1.0f, 0.9f, 0.7f, 0.55f, 0.3f};
@@ -880,8 +853,7 @@ bool QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, RE::FormID id, c
                 }
 
                 MatchKeywords(armor, addKwds, [=](RE::BGSKeyword* kw) {
-                    return g_Config.kwSet.contains(kw) || g_Config.kwSlotSpecSet.contains(kw) ||
-                           (bModifyFFKeywords && g_Config.kwFFSet.contains(kw));
+                    return g_Config.kwSet.contains(kw) || g_Config.kwSlotSpecSet.contains(kw) || (bModifyFFKeywords && g_Config.kwFFSet.contains(kw));
                 });
             }
         }
@@ -909,39 +881,31 @@ bool QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, RE::FormID id, c
         auto src = objSrc->As<RE::TESObjectWEAP>();
         if (!src) return true;
 
-        if (!ChangeField<RE::TESObjectWEAP>(perm.bModifyWeapDamage, "damage", changes, src, weap,
-                                            &RE::TESObjectWEAP::attackDamage,
+        if (!ChangeField<RE::TESObjectWEAP>(perm.bModifyWeapDamage, "damage", changes, src, weap, &RE::TESObjectWEAP::attackDamage,
                                             [=](float f) { return (uint16_t)std::max(1, (int)f); }))
             return false;
 
-        if (!ChangeField<RE::TESObjectWEAP::CriticalData>(perm.bModifyWeapDamage, "damage", changes, &src->criticalData,
-                                                          &weap->criticalData, &RE::TESObjectWEAP::CriticalData::damage,
-                                                          [=](float f) { return (uint16_t)std::max(1, (int)f); }))
+        if (!ChangeField<RE::TESObjectWEAP::CriticalData>(perm.bModifyWeapDamage, "damage", changes, &src->criticalData, &weap->criticalData,
+                                                          &RE::TESObjectWEAP::CriticalData::damage, [=](float f) { return (uint16_t)std::max(1, (int)f); }))
             return false;
         if (perm.bModifyWeapDamage) weap->criticalData.prcntMult = src->criticalData.prcntMult;
 
-        if (!ChangeField<RE::TESObjectWEAP>(perm.bModifyWeapWeight, "weight", changes, src, weap,
-                                            &RE::TESObjectWEAP::weight, [=](float f) {
-                                                f *= weight;
-                                                if (g_Config.bRoundWeight)
-                                                    f = std::max(0.1f, 0.1f * std::round(10.0f * f));
-                                                return f;
-                                            }))
+        if (!ChangeField<RE::TESObjectWEAP>(perm.bModifyWeapWeight, "weight", changes, src, weap, &RE::TESObjectWEAP::weight, [=](float f) {
+                f *= weight;
+                if (g_Config.bRoundWeight) f = std::max(0.1f, 0.1f * std::round(10.0f * f));
+                return f;
+            }))
             return false;
 
-        if (!ChangeField<RE::TESObjectWEAP::Data>(perm.bModifyWeapSpeed, "speed", changes, &src->weaponData,
-                                                  &weap->weaponData, &RE::TESObjectWEAP::Data::speed,
+        if (!ChangeField<RE::TESObjectWEAP::Data>(perm.bModifyWeapSpeed, "speed", changes, &src->weaponData, &weap->weaponData, &RE::TESObjectWEAP::Data::speed,
                                                   [=](float f) { return f; }))
             return false;
 
-        if (!ChangeField<RE::TESObjectWEAP::Data>(perm.bModifyWeapStagger, "stagger", changes, &src->weaponData,
-                                                  &weap->weaponData, &RE::TESObjectWEAP::Data::staggerValue,
+        if (!ChangeField<RE::TESObjectWEAP::Data>(perm.bModifyWeapStagger, "stagger", changes, &src->weaponData, &weap->weaponData, &RE::TESObjectWEAP::Data::staggerValue,
                                                   [=](float f) { return f; }))
             return false;
 
-        if (!ChangeField<RE::TESObjectWEAP>(perm.bModifyValue, "value", changes, src, weap, &RE::TESObjectWEAP::value,
-                                            [=](float f) { return std::max(1, (int)f); }))
-            return false;
+        if (!ChangeField<RE::TESObjectWEAP>(perm.bModifyValue, "value", changes, src, weap, &RE::TESObjectWEAP::value, [=](float f) { return std::max(1, (int)f); })) return false;
 
         if (perm.bModifyKeywords && changes.HasMember("keywords")) {
             auto& jsonOption = changes["keywords"];
@@ -960,14 +924,11 @@ bool QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, RE::FormID id, c
         auto src = objSrc->As<RE::TESAmmo>();
         if (!src) return true;
 
-        if (!ChangeField<RE::AMMO_DATA>(perm.bModifyWeapDamage, "damage", changes, &src->GetRuntimeData().data,
-                                        &ammo->GetRuntimeData().data, &RE::AMMO_DATA::damage,
+        if (!ChangeField<RE::AMMO_DATA>(perm.bModifyWeapDamage, "damage", changes, &src->GetRuntimeData().data, &ammo->GetRuntimeData().data, &RE::AMMO_DATA::damage,
                                         [=](float f) { return std::max(1.0f, f); }))
             return false;
 
-        if (!ChangeField<RE::TESAmmo>(perm.bModifyValue, "value", changes, src, ammo, &RE::TESAmmo::value,
-                                      [=](float f) { return std::max(1, (int)f); }))
-            return false;
+        if (!ChangeField<RE::TESAmmo>(perm.bModifyValue, "value", changes, src, ammo, &RE::TESAmmo::value, [=](float f) { return std::max(1, (int)f); })) return false;
 
         if (perm.bModifyKeywords && changes.HasMember("keywords")) {
             auto& jsonOption = changes["keywords"];
@@ -979,8 +940,7 @@ bool QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, RE::FormID id, c
                 std::vector<RE::BGSKeyword*> addKwds;
 
                 GetMatchingKeywords(g_Config.kwSetWeap, addKwds, src->AsKeywordForm());
-                MatchKeywords(ammo->AsKeywordForm(), addKwds,
-                              [](RE::BGSKeyword* kw) { return g_Config.kwSetWeap.contains(kw); });
+                MatchKeywords(ammo->AsKeywordForm(), addKwds, [](RE::BGSKeyword* kw) { return g_Config.kwSetWeap.contains(kw); });
             }
         }
     }
@@ -1020,21 +980,16 @@ bool QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, RE::FormID id, c
         bFree = (bFree && perm.crafting.bFree) || recipeSrc;  // If recipe source, free doesn't matter
 
         if (!recipeItem && bNew && perm.temper.bCreate && bFree) {
-            auto newForm = static_cast<RE::BGSConstructibleObject*>(
-                RE::IFormFactory::GetFormFactoryByType(RE::FormType::ConstructibleObject)->Create());
+            auto newForm = static_cast<RE::BGSConstructibleObject*>(RE::IFormFactory::GetFormFactoryByType(RE::FormType::ConstructibleObject)->Create());
 
             if (newForm) {
-                newForm->benchKeyword =
-                    recipeSrc
-                        ? recipeSrc->benchKeyword
-                        : (item->As<RE::TESObjectARMO>()
-                               ? RE::TESForm::LookupByEditorID<RE::BGSKeyword>("CraftingSmithingArmorTable")
-                               : RE::TESForm::LookupByEditorID<RE::BGSKeyword>("CraftingSmithingSharpeningWheel"));
+                newForm->benchKeyword = recipeSrc ? recipeSrc->benchKeyword
+                                                  : (item->As<RE::TESObjectARMO>() ? RE::TESForm::LookupByEditorID<RE::BGSKeyword>("CraftingSmithingArmorTable")
+                                                                                   : RE::TESForm::LookupByEditorID<RE::BGSKeyword>("CraftingSmithingSharpeningWheel"));
                 newForm->createdItem = item;
                 newForm->data.numConstructed = 1;
 
-                dataHandler->GetFormArray<RE::BGSConstructibleObject>().push_back(
-                    newForm);  // For whatever reason, it's not added automatically and thus won't show up in game
+                dataHandler->GetFormArray<RE::BGSConstructibleObject>().push_back(newForm);  // For whatever reason, it's not added automatically and thus won't show up in game
                 g_Data.temperRecipe.insert({bo, recipeItem});
                 recipeItem = newForm;
             }
@@ -1067,18 +1022,14 @@ bool QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, RE::FormID id, c
 
         if (rarity <= g_Config.craftingRarityMax) {
             if (!recipeItem && bNew && perm.crafting.bCreate && bFree) {
-                auto newForm = static_cast<RE::BGSConstructibleObject*>(
-                    RE::IFormFactory::GetFormFactoryByType(RE::FormType::ConstructibleObject)->Create());
+                auto newForm = static_cast<RE::BGSConstructibleObject*>(RE::IFormFactory::GetFormFactoryByType(RE::FormType::ConstructibleObject)->Create());
 
                 if (newForm) {
-                    newForm->benchKeyword =
-                        recipeSrc ? recipeSrc->benchKeyword
-                                  : RE::TESForm::LookupByEditorID<RE::BGSKeyword>("CraftingSmithingForge");
+                    newForm->benchKeyword = recipeSrc ? recipeSrc->benchKeyword : RE::TESForm::LookupByEditorID<RE::BGSKeyword>("CraftingSmithingForge");
                     newForm->createdItem = item;
                     newForm->data.numConstructed = item->As<RE::TESAmmo>() ? 24 : 1;
 
-                    dataHandler->GetFormArray<RE::BGSConstructibleObject>().push_back(
-                        newForm);  // For whatever reason, it's not added automatically and thus won't show up in game
+                    dataHandler->GetFormArray<RE::BGSConstructibleObject>().push_back(newForm);  // For whatever reason, it's not added automatically and thus won't show up in game
                     g_Data.craftRecipe.insert({bo, recipeItem});
                     recipeItem = newForm;
                 }
@@ -1102,16 +1053,12 @@ bool QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, RE::FormID id, c
 
         if (recipeSrc) {
             if (!recipeItem) {
-                auto newForm = static_cast<RE::BGSConstructibleObject*>(
-                    RE::IFormFactory::GetFormFactoryByType(RE::FormType::ConstructibleObject)->Create());
+                auto newForm = static_cast<RE::BGSConstructibleObject*>(RE::IFormFactory::GetFormFactoryByType(RE::FormType::ConstructibleObject)->Create());
 
                 if (newForm) {
-                    newForm->benchKeyword = recipeSrc
-                                                ? recipeSrc->benchKeyword
-                                                : RE::TESForm::LookupByEditorID<RE::BGSKeyword>("CraftingSmelter");
+                    newForm->benchKeyword = recipeSrc ? recipeSrc->benchKeyword : RE::TESForm::LookupByEditorID<RE::BGSKeyword>("CraftingSmelter");
 
-                    dataHandler->GetFormArray<RE::BGSConstructibleObject>().push_back(
-                        newForm);  // For whatever reason, it's not added automatically and thus won't show up in game
+                    dataHandler->GetFormArray<RE::BGSConstructibleObject>().push_back(newForm);  // For whatever reason, it's not added automatically and thus won't show up in game
                     g_Data.smeltRecipe.insert({bo, recipeItem});
                     recipeItem = newForm;
                 }
@@ -1120,13 +1067,11 @@ bool QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, RE::FormID id, c
                 ::ClearRecipe(recipeItem);
 
             if (recipeItem) {
-                ::CopyConditions(recipeItem->conditions, recipeSrc->conditions,
-                                 recipeSrc->requiredItems.containerObjects[0]->obj, bo);
+                ::CopyConditions(recipeItem->conditions, recipeSrc->conditions, recipeSrc->requiredItems.containerObjects[0]->obj, bo);
 
                 auto& mats = recipeItem->requiredItems;
                 mats.containerObjects = RE::calloc<RE::ContainerObject*>(mats.numContainerObjects = 1);
-                mats.containerObjects[0] =
-                    new RE::ContainerObject(bo, recipeSrc->requiredItems.containerObjects[0]->count);
+                mats.containerObjects[0] = new RE::ContainerObject(bo, recipeSrc->requiredItems.containerObjects[0]->count);
 
                 recipeItem->data.numConstructed = (uint16_t)std::max(1, (int)(weight * recipeSrc->data.numConstructed));
                 recipeItem->createdItem = recipeSrc->createdItem;
@@ -1185,8 +1130,7 @@ void ::ClearRecipe(RE::BGSConstructibleObject* tar) {
         for (auto head = conds.head; head;) {
             auto next = head->next;
 
-            if (QuickArmorRebalance::g_Config.bKeepCraftingBooks &&
-                head->data.functionData.function == RE::FUNCTION_DATA::FunctionID::kGetItemCount) {
+            if (QuickArmorRebalance::g_Config.bKeepCraftingBooks && head->data.functionData.function == RE::FUNCTION_DATA::FunctionID::kGetItemCount) {
                 head->next = book;
                 head->data.flags.isOR = false;
                 book = head;
@@ -1214,8 +1158,7 @@ void ::ReplaceRecipe(RE::BGSConstructibleObject* tar, const RE::BGSConstructible
                 mats.numContainerObjects = srcmats.numContainerObjects;
 
                 for (unsigned int i = 0; i < srcmats.numContainerObjects; i++) {
-                    mats.containerObjects[i] = new RE::ContainerObject(
-                        srcmats.containerObjects[i]->obj, std::max(1, (int)(w * srcmats.containerObjects[i]->count)));
+                    mats.containerObjects[i] = new RE::ContainerObject(srcmats.containerObjects[i]->obj, std::max(1, (int)(w * srcmats.containerObjects[i]->count)));
                 }
             }
         }
@@ -1231,8 +1174,7 @@ void ::ReplaceRecipe(RE::BGSConstructibleObject* tar, const RE::BGSConstructible
         if (!goldObj) return;
 
         mats.containerObjects = RE::calloc<RE::ContainerObject*>(mats.numContainerObjects = 1);
-        mats.containerObjects[0] =
-            new RE::ContainerObject(goldObj, std::max(1, (int)(0.01f * fCost * tar->createdItem->GetGoldValue())));
+        mats.containerObjects[0] = new RE::ContainerObject(goldObj, std::max(1, (int)(0.01f * fCost * tar->createdItem->GetGoldValue())));
     }
 }
 
@@ -1272,4 +1214,174 @@ void QuickArmorRebalance::DeleteChanges(std::set<RE::TESBoundObject*> items, con
 
         WriteJSONFile(path, doc);
     }
+}
+
+void ApplyKeywordChanges(const KeywordChangeMap& changes) {
+    std::unordered_map<RE::TESBoundObject*, std::pair<std::vector<RE::BGSKeyword*>, std::vector<RE::BGSKeyword*>>> itemChangeKWs;
+
+    for (auto& kwChanges : changes) {
+        for (auto i : kwChanges.second.add) itemChangeKWs[i].first.push_back(kwChanges.first);
+        for (auto i : kwChanges.second.remove) itemChangeKWs[i].second.push_back(kwChanges.first);
+    }
+
+    for (auto& item : itemChangeKWs) {
+        MatchKeywords(item.first->As<RE::BGSKeywordForm>(), item.second.first,
+                      [=](RE::BGSKeyword* kw) { return std::find(item.second.second.begin(), item.second.second.end(), kw) != item.second.second.end(); });
+    }
+}
+
+void LoadKeywordChanges(const RE::TESFile* mod, const rapidjson::Value& ls, KeywordChangeMap& ret) {
+    if (ls.IsObject()) {
+        for (auto& jsonKW : ls.GetObj()) {
+            if (!jsonKW.value.IsObject()) continue;
+
+            auto kw = RE::TESForm::LookupByEditorID<RE::BGSKeyword>(jsonKW.name.GetString());
+            if (!kw) continue;
+
+            auto& ckw = ret[kw];
+
+            if (jsonKW.value.HasMember("add")) {
+                auto& itemList = jsonKW.value["add"];
+                if (!itemList.IsArray()) continue;
+
+                for (auto& id : itemList.GetArray()) {
+                    if (!id.IsUint()) continue;
+                    auto item = RE::TESForm::LookupByID<RE::TESBoundObject>(GetFullId(mod, id.GetUint()));
+                    if (item) ckw.add.insert(item);
+                }
+            }
+
+            if (jsonKW.value.HasMember("remove")) {
+                auto& itemList = jsonKW.value["remove"];
+                if (!itemList.IsArray()) continue;
+
+                for (auto& id : itemList.GetArray()) {
+                    if (!id.IsUint()) continue;
+                    auto item = RE::TESForm::LookupByID<RE::TESBoundObject>(GetFullId(mod, id.GetUint()));
+                    if (item) ckw.remove.insert(item);
+                }
+            }
+        }
+    }
+}
+
+bool QuickArmorRebalance::LoadKeywordChanges(const RE::TESFile* file, std::filesystem::path path) {
+    Document doc;
+    if (!ReadJSONFile(path, doc)) return false;
+
+    KeywordChangeMap changes;
+    ::LoadKeywordChanges(file, doc, changes);
+    ApplyKeywordChanges(changes);
+    return true;
+}
+
+KeywordChangeMap QuickArmorRebalance::LoadKeywordChanges(const ArmorChangeParams& params) {
+    std::set<RE::TESFile*> files;
+    for (auto item : params.items) {
+        files.insert(item->GetFile(0));
+    }
+
+    const std::filesystem::path path(std::filesystem::current_path() / PATH_ROOT PATH_CHANGES "local/" PATH_CUSTOMKEYWORDS);
+
+    KeywordChangeMap prevChanges;
+
+    for (auto file : files) {
+        auto filepath = path / file->fileName;
+        filepath += ".json";
+
+        Document doc;
+
+        if (!ReadJSONFile(filepath, doc)) continue;
+        ::LoadKeywordChanges(file, doc, prevChanges);
+    }
+
+    return prevChanges;
+}
+
+int QuickArmorRebalance::MakeKeywordChanges(const ArmorChangeParams& params, bool bApply) {
+    std::set<RE::TESFile*> files;
+    for (auto item : params.items) {
+        files.insert(item->GetFile(0));
+    }
+
+    const std::filesystem::path path(std::filesystem::current_path() / PATH_ROOT PATH_CHANGES "local/" PATH_CUSTOMKEYWORDS);
+    std::filesystem::create_directories(path);
+
+    for (auto file : files) {
+        auto filepath = path / file->fileName;
+        filepath += ".json";
+
+        Document doc;
+        auto& al = doc.GetAllocator();
+
+        if (!ReadJSONFile(filepath, doc)) continue;
+
+        KeywordChangeMap prevChanges;
+        ::LoadKeywordChanges(file, doc, prevChanges);
+
+        // To merge with previous changes, we basicaly have to seperate out untouched previous changes (items not enabled or keywords not present)
+        // More or less brute forcing all this, not efficient but not sure there's a better way either
+        // Often will be deleting everything one by one only to re-add it
+        //
+        // Purge any changes to existing items
+        for (auto item : params.items) {
+            if (item->GetFile(0) != file) continue;
+
+            for (auto& i : prevChanges) {
+                i.second.add.erase(item);
+                i.second.remove.erase(item);
+            }
+        }
+
+        // Merge into existing data
+        for (auto& i : params.mapKeywordChanges) {
+            auto& prev = prevChanges[i.first];
+            for (auto item : i.second.add) {
+                if (item->GetFile(0) == file) prev.add.insert(item);
+            }
+            for (auto item : i.second.remove) {
+                if (item->GetFile(0) == file) prev.remove.insert(item);
+            }
+        }
+
+        // Purge existing keyword entries
+        // This is needed if an item has previously added keywords removed from it - it just wont have an entry anymore
+        auto objKWs = doc.GetObj();
+        for (auto it = objKWs.MemberBegin(); it != objKWs.MemberEnd();) {
+            auto kw = RE::TESForm::LookupByEditorID<RE::BGSKeyword>(it->name.GetString());
+            if (!kw)
+                it++;
+            else
+                it = doc.RemoveMember(it);
+        }
+
+        for (auto& i : prevChanges) {
+            if (i.second.add.empty() && i.second.remove.empty()) continue;
+
+            Value kwPair(kObjectType);
+
+            if (!i.second.add.empty()) {
+                Value arAdd(kArrayType);
+                arAdd.Reserve((SizeType)i.second.add.size(), al);
+                for (auto j : i.second.add) arAdd.PushBack(Value(GetFileId(j)), al);
+                kwPair.AddMember("add", arAdd, al);
+            }
+
+            if (!i.second.remove.empty()) {
+                Value arAdd(kArrayType);
+                arAdd.Reserve((SizeType)i.second.add.size(), al);
+                for (auto j : i.second.remove) arAdd.PushBack(Value(GetFileId(j)), al);
+                kwPair.AddMember("remove", arAdd, al);
+            }
+
+            doc.AddMember(Value(i.first->formEditorID.c_str(), al), kwPair, al);
+        }
+
+        WriteJSONFile(filepath, doc);
+    }
+
+    if (bApply)
+        ApplyKeywordChanges(params.mapKeywordChanges);
+
+    return 0;
 }

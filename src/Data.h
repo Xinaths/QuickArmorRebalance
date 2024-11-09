@@ -25,8 +25,7 @@ namespace QuickArmorRebalance {
     bool WriteJSONFile(std::filesystem::path path, rapidjson::Document& doc);
 
     inline void ToLower(std::string& str) {
-        std::transform(str.begin(), str.end(), str.begin(),
-                       [](unsigned char c) { return std::tolower(c, std::locale()); });
+        std::transform(str.begin(), str.end(), str.begin(), [](unsigned char c) { return std::tolower(c, std::locale()); });
     }
 
     inline std::string MakeLower(std::string str) {
@@ -145,6 +144,13 @@ namespace QuickArmorRebalance {
         std::map<std::size_t, std::unordered_set<RE::TESObjectARMO*>> prefVartWithout;
     };
 
+    struct KeywordChanges {
+        std::unordered_set<RE::TESBoundObject*> add;
+        std::unordered_set<RE::TESBoundObject*> remove;
+    };
+
+    using KeywordChangeMap = std::unordered_map<RE::BGSKeyword*, KeywordChanges>;
+
     struct ProcessedData {
         std::map<const RE::TESFile*, std::unique_ptr<ModData>> modData;
         std::vector<ModData*> sortedMods;
@@ -161,7 +167,6 @@ namespace QuickArmorRebalance {
 
         std::map<RE::TESObjectARMO*, ArmorSlots> modifiedArmorSlots;
         std::map<RE::TESObjectARMO*, float> modifiedWarmth;
-
 
         std::unordered_map<size_t, ArmorSlots> remapFileArmorSlots;
         std::unordered_set<size_t> noModifyModels;

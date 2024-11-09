@@ -25,6 +25,7 @@ namespace QuickArmorRebalance {
 
     RebalanceCurveNode::Tree LoadCurveNode(const Value& node);
     bool LoadArmorSet(BaseArmorSet& s, const Value& node);
+    void LoadCustomKeywords(const Value& jsonCustomKWs);
 
     RE::TESObjectARMO* BaseArmorSet::FindMatching(RE::TESObjectARMO* w) const {
         auto slots = (ArmorSlots)w->GetSlotMask();
@@ -32,12 +33,9 @@ namespace QuickArmorRebalance {
         auto it = items.begin();
 
         if (slots & kHeadSlotMask)  // Match with any head slot
-            it = std::find_if(items.begin(), items.end(), [=](RE::TESObjectARMO* armor) {
-                return (kHeadSlotMask & (ArmorSlots)armor->GetSlotMask());
-            });
+            it = std::find_if(items.begin(), items.end(), [=](RE::TESObjectARMO* armor) { return (kHeadSlotMask & (ArmorSlots)armor->GetSlotMask()); });
         else
-            it = std::find_if(items.begin(), items.end(),
-                              [=](RE::TESObjectARMO* armor) { return (slots & (ArmorSlots)armor->GetSlotMask()); });
+            it = std::find_if(items.begin(), items.end(), [=](RE::TESObjectARMO* armor) { return (slots & (ArmorSlots)armor->GetSlotMask()); });
 
         return it != items.end() ? *it : nullptr;
     }
@@ -59,8 +57,7 @@ namespace QuickArmorRebalance {
 
     RE::TESAmmo* BaseArmorSet::FindMatching(RE::TESAmmo* w) const {
         for (auto i : ammo) {
-            if (i->GetRuntimeData().data.flags.none(RE::AMMO_DATA::Flag::kNonBolt) ==
-                w->GetRuntimeData().data.flags.none(RE::AMMO_DATA::Flag::kNonBolt)) {
+            if (i->GetRuntimeData().data.flags.none(RE::AMMO_DATA::Flag::kNonBolt) == w->GetRuntimeData().data.flags.none(RE::AMMO_DATA::Flag::kNonBolt)) {
                 return i;
             }
         }
@@ -81,6 +78,7 @@ void LoadPermissions(QuickArmorRebalance::Permissions& p, toml::node_view<toml::
     p.bModifyWeapWeight = tbl["modifyWeapWeight"].value_or(true);
     p.bModifyWeapSpeed = tbl["modifyWeapSpeed"].value_or(true);
     p.bModifyWeapStagger = tbl["modifyWeapStagger"].value_or(true);
+    p.bModifyCustomKeywords = tbl["modifyCustomKeywords"].value_or(true);
     p.crafting.bModify = tbl["modifyCrafting"].value_or(true);
     p.crafting.bCreate = tbl["createCrafting"].value_or(true);
     p.crafting.bFree = tbl["freeCrafting"].value_or(true);
@@ -115,8 +113,7 @@ bool QuickArmorRebalance::Config::Load() {
     if (!bSuccess) {
         logger::error("Failed to read any config files");
     } else {
-        if (kwSet.empty() || kwSetWeap.empty() || kwSetWeapTypes.empty() || armorSets.empty() || curves.empty() ||
-            lootProfiles.empty()) {
+        if (kwSet.empty() || kwSetWeap.empty() || kwSetWeapTypes.empty() || armorSets.empty() || curves.empty() || lootProfiles.empty()) {
             bSuccess = false;
             logger::error("Missing required data, disabling");
         }
@@ -174,8 +171,7 @@ bool QuickArmorRebalance::Config::Load() {
             g_Config.acParams.craft.bNew = config["craft"]["new"].value_or(false);
             g_Config.acParams.craft.bFree = config["craft"]["free"].value_or(false);
 
-            g_Config.verbosity = std::clamp(config["settings"]["verbosity"].value_or((int)spdlog::level::info), 0,
-                                            spdlog::level::n_levels - 1);
+            g_Config.verbosity = std::clamp(config["settings"]["verbosity"].value_or((int)spdlog::level::info), 0, spdlog::level::n_levels - 1);
             g_Config.bCloseConsole = config["settings"]["closeconsole"].value_or(true);
             g_Config.bAutoDeleteGiven = config["settings"]["autodelete"].value_or(false);
             g_Config.bRoundWeight = config["settings"]["roundweights"].value_or(false);
@@ -192,8 +188,7 @@ bool QuickArmorRebalance::Config::Load() {
             g_Config.bEnableAllItems = config["settings"]["enableallitems"].value_or(false);
             g_Config.bAllowInvalidRemap = config["settings"]["allowinvalidremap"].value_or(false);
             g_Config.bUseSecondaryRecipes = config["settings"]["usesecondaryrecipes"].value_or(true);
-            g_Config.fTemperGoldCostRatio =
-                std::clamp(config["settings"]["goldcosttemper"].value_or(20.f), 0.0f, 200.0f);
+            g_Config.fTemperGoldCostRatio = std::clamp(config["settings"]["goldcosttemper"].value_or(20.f), 0.0f, 200.0f);
             g_Config.fCraftGoldCostRatio = std::clamp(config["settings"]["goldcostcraft"].value_or(70.f), 0.0f, 200.0f);
             g_Config.bEnableSmeltingRecipes = config["settings"]["enablesmeltingrecipes"].value_or(false);
             g_Config.bEnableSkyrimWarmthHook = config["settings"]["enablewarmthhook"].value_or(!REL::Module::IsVR());
@@ -201,6 +196,9 @@ bool QuickArmorRebalance::Config::Load() {
             g_Config.bEnableProtectedSlotRemapping = config["settings"]["enableprotectedslotremapping"].value_or(false);
             g_Config.bEnableArmorSlotModelFixHook = config["settings"]["enablearmorslotmodelfixhook"].value_or(true);
             g_Config.bPreventDistributionOfDynamicVariants = config["settings"]["nodistdynamicvariants"].value_or(true);
+            g_Config.bShowKeywordSlots = config["settings"]["showkeyworditemcats"].value_or(true);
+            g_Config.bReorderKeywordsForRelevance = config["settings"]["reorderkeywords"].value_or(true);
+            g_Config.bEquipPreviewForKeywords = config["settings"]["equipkeywordpreview"].value_or(true);          
 
             g_Config.bEnableDAVExports = config["integrations"]["enableDAVexports"].value_or(true);
             g_Config.bEnableDAVExportsAlways = config["integrations"]["enableDAVexportsalways"].value_or(false);
@@ -209,9 +207,7 @@ bool QuickArmorRebalance::Config::Load() {
             LoadPermissions(g_Config.permShared, config["sharedPermissions"]);
 
             if (auto tbl = config["preferenceVariants"].as_table())
-                tbl->for_each([this](const toml::key& key, auto&& val) {
-                    mapPrefVariants[std::string(key.str())].pref = (Preference)val.value_or(0);
-                });
+                tbl->for_each([this](const toml::key& key, auto&& val) { mapPrefVariants[std::string(key.str())].pref = (Preference)val.value_or(0); });
 
             spdlog::set_level((spdlog::level::level_enum)g_Config.verbosity);
         }
@@ -228,10 +224,8 @@ bool QuickArmorRebalance::Config::Load() {
     if (dataHandler->LookupModByName("Frostfall.esp")) {
         isFrostfallInstalled = true;
 
-        const char* kws[] = {"FrostfallEnableKeywordProtection", "FrostfallIgnore", "FrostfallWarmthPoor",
-                             "FrostfallWarmthFair", "FrostfallWarmthGood", "FrostfallWarmthExcellent",
-                             "FrostfallWarmthMax", "FrostfallCoveragePoor", "FrostfallCoverageFair",
-                             "FrostfallCoverageGood", "FrostfallCoverageExcellent", "FrostfallCoverageMax",
+        const char* kws[] = {"FrostfallEnableKeywordProtection", "FrostfallIgnore", "FrostfallWarmthPoor", "FrostfallWarmthFair", "FrostfallWarmthGood", "FrostfallWarmthExcellent",
+                             "FrostfallWarmthMax", "FrostfallCoveragePoor", "FrostfallCoverageFair", "FrostfallCoverageGood", "FrostfallCoverageExcellent", "FrostfallCoverageMax",
 
                              /*
                              "FrostfallIsCloakCloth",
@@ -281,9 +275,7 @@ bool QuickArmorRebalance::Config::Load() {
 }
 
 namespace {
-    void ConfigFileWarning(std::filesystem::path path, const char* str) {
-        logger::warn("{}: {}", path.filename().generic_string(), str);
-    }
+    void ConfigFileWarning(std::filesystem::path path, const char* str) { logger::warn("{}: {}", path.filename().generic_string(), str); }
 
     bool LoadKeywords(std::filesystem::path path, const Value& d, const char* field, std::set<RE::BGSKeyword*>& set) {
         const auto& jsonKeywords = d[field];
@@ -366,8 +358,7 @@ bool QuickArmorRebalance::Config::LoadFile(std::filesystem::path path) {
         const auto& jsonRequires = d["requires"];
         if (jsonRequires.IsString()) {
             if (!dataHandler->LookupModByName(jsonRequires.GetString())) {
-                logger::debug("{}: Lacking required mod \"{}\", skipping", path.filename().generic_string(),
-                              jsonRequires.GetString());
+                logger::debug("{}: Lacking required mod \"{}\", skipping", path.filename().generic_string(), jsonRequires.GetString());
                 return true;
             }
         }
@@ -407,14 +398,12 @@ bool QuickArmorRebalance::Config::LoadFile(std::filesystem::path path) {
             for (const auto& i : jsonSets.GetObj()) {
                 BaseArmorSet s;
                 if (LoadArmorSet(s, i.value)) {
-                    if (!(s.items.empty() && s.weaps.empty() && s.ammo.empty()) &&
-                        s.loot) {  // Didn't load correctly, but not a critical failure (probably mod missing)
+                    if (!(s.items.empty() && s.weaps.empty() && s.ammo.empty()) && s.loot) {  // Didn't load correctly, but not a critical failure (probably mod missing)
                         s.name = i.name.GetString();
                         armorSets.push_back(std::move(s));
                     }
                 } else
-                    logger::warn("{}: Armor set '{}' failed to load", path.filename().generic_string(),
-                                 i.name.GetString());
+                    logger::warn("{}: Armor set '{}' failed to load", path.filename().generic_string(), i.name.GetString());
             }
         } else
             ConfigFileWarning(path, "sets expected to be an object");
@@ -469,6 +458,10 @@ bool QuickArmorRebalance::Config::LoadFile(std::filesystem::path path) {
             }
         } else
             ConfigFileWarning(path, "preferenceVariants expected to be an array");
+    }
+
+    if (d.HasMember("customKeywords")) {
+        LoadCustomKeywords(d["customKeywords"]);
     }
 
     return true;
@@ -550,8 +543,7 @@ bool QuickArmorRebalance::LoadArmorSet(BaseArmorSet& s, const Value& node) {
                                             covered |= slots;
                                             as.items.insert(armor);
                                         } else {
-                                            logger::error("Item covers armor slot that is already covered {:#010x}",
-                                                          item->formID);
+                                            logger::error("Item covers armor slot that is already covered {:#010x}", item->formID);
                                         }
                                     } else
                                         logger::error(
@@ -618,6 +610,7 @@ toml::table SavePermissions(const QuickArmorRebalance::Permissions& p) {
         {"modifyWeapWeight", p.bModifyWeapWeight},
         {"modifyWeapSpeed", p.bModifyWeapSpeed},
         {"modifyWeapStagger", p.bModifyWeapStagger},
+        {"modifyCustomKeywords", p.bModifyCustomKeywords},
         {"modifyValue", p.bModifyValue},
         {"modifyCrafting", p.crafting.bModify},
         {"createCrafting", p.crafting.bCreate},
@@ -650,45 +643,41 @@ void QuickArmorRebalance::Config::Save() {
         {"modifyValue", g_Config.acParams.value.bModify},
         {"armorset", g_Config.acParams.armorSet ? g_Config.acParams.armorSet->name : "error"},
         {"curve", iCurve->first},
-        {"temper", toml::table{{"modify", g_Config.acParams.temper.bModify},
-                               {"new", g_Config.acParams.temper.bNew},
-                               {"free", g_Config.acParams.temper.bFree}}},
-        {"craft", toml::table{{"modify", g_Config.acParams.craft.bModify},
-                              {"new", g_Config.acParams.craft.bNew},
-                              {"free", g_Config.acParams.craft.bFree}}},
+        {"temper", toml::table{{"modify", g_Config.acParams.temper.bModify}, {"new", g_Config.acParams.temper.bNew}, {"free", g_Config.acParams.temper.bFree}}},
+        {"craft", toml::table{{"modify", g_Config.acParams.craft.bModify}, {"new", g_Config.acParams.craft.bNew}, {"free", g_Config.acParams.craft.bFree}}},
         {"loot", toml::table{{"enable", g_Config.acParams.bDistribute},
                              {"pieces", g_Config.acParams.bDistAsPieces},
                              {"sets", g_Config.acParams.bDistAsSet},
                              {"matching", g_Config.acParams.bMatchSetPieces},
                              {"profile", g_Config.acParams.distProfile ? g_Config.acParams.distProfile : "error"}}},
-        {"settings",
-         toml::table{
-             {"verbosity", g_Config.verbosity},
-             {"closeconsole", g_Config.bCloseConsole},
-             {"autodelete", g_Config.bAutoDeleteGiven},
-             {"roundweights", g_Config.bRoundWeight},
-             {"resetsliders", g_Config.bResetSliders},
-             {"highlights", g_Config.bHighlights},
-             {"normalizedrops", g_Config.bNormalizeModDrops},
-             {"droprate", g_Config.fDropRates},
-             {"levelgranularity", g_Config.levelGranularity},
-             {"craftingraritymax", g_Config.craftingRarityMax},
-             {"craftingraritydisable", g_Config.bDisableCraftingRecipesOnRarity},
-             {"keepcraftingbooks", g_Config.bKeepCraftingBooks},
-             {"enforcerarity", g_Config.bEnableRarityNullLoot},
-             {"resetslotremap", g_Config.bResetSlotRemap},
-             {"enableallitems", g_Config.bEnableAllItems},
-             {"allowinvalidremap", g_Config.bAllowInvalidRemap},
-             {"usesecondaryrecipes", g_Config.bUseSecondaryRecipes},
-             {"goldcosttemper", g_Config.fTemperGoldCostRatio},
-             {"goldcostcraft", g_Config.fCraftGoldCostRatio},
-             {"enablesmeltingrecipes", g_Config.bEnableSmeltingRecipes},
-             {"enablewarmthhook", g_Config.bEnableSkyrimWarmthHook},
-             {"showffcoverage", g_Config.bShowFrostfallCoverage},
-             {"enableprotectedslotremapping", g_Config.bEnableProtectedSlotRemapping},
-             {"enablearmorslotmodelfixhook", g_Config.bEnableArmorSlotModelFixHook},
-             {"nodistdynamicvariants", g_Config.bPreventDistributionOfDynamicVariants},
-         }},
+        {"settings", toml::table{{"verbosity", g_Config.verbosity},
+                                 {"closeconsole", g_Config.bCloseConsole},
+                                 {"autodelete", g_Config.bAutoDeleteGiven},
+                                 {"roundweights", g_Config.bRoundWeight},
+                                 {"resetsliders", g_Config.bResetSliders},
+                                 {"highlights", g_Config.bHighlights},
+                                 {"normalizedrops", g_Config.bNormalizeModDrops},
+                                 {"droprate", g_Config.fDropRates},
+                                 {"levelgranularity", g_Config.levelGranularity},
+                                 {"craftingraritymax", g_Config.craftingRarityMax},
+                                 {"craftingraritydisable", g_Config.bDisableCraftingRecipesOnRarity},
+                                 {"keepcraftingbooks", g_Config.bKeepCraftingBooks},
+                                 {"enforcerarity", g_Config.bEnableRarityNullLoot},
+                                 {"resetslotremap", g_Config.bResetSlotRemap},
+                                 {"enableallitems", g_Config.bEnableAllItems},
+                                 {"allowinvalidremap", g_Config.bAllowInvalidRemap},
+                                 {"usesecondaryrecipes", g_Config.bUseSecondaryRecipes},
+                                 {"goldcosttemper", g_Config.fTemperGoldCostRatio},
+                                 {"goldcostcraft", g_Config.fCraftGoldCostRatio},
+                                 {"enablesmeltingrecipes", g_Config.bEnableSmeltingRecipes},
+                                 {"enablewarmthhook", g_Config.bEnableSkyrimWarmthHook},
+                                 {"showffcoverage", g_Config.bShowFrostfallCoverage},
+                                 {"enableprotectedslotremapping", g_Config.bEnableProtectedSlotRemapping},
+                                 {"enablearmorslotmodelfixhook", g_Config.bEnableArmorSlotModelFixHook},
+                                 {"nodistdynamicvariants", g_Config.bPreventDistributionOfDynamicVariants},
+                                 {"showkeyworditemcats", g_Config.bShowKeywordSlots},
+                                 {"reorderkeywords", g_Config.bReorderKeywordsForRelevance},
+                                 {"equipkeywordpreview", g_Config.bEquipPreviewForKeywords}}},
         {"integrations",
          toml::table{
              {"enableDAVexports", g_Config.bEnableDAVExports},
@@ -766,5 +755,142 @@ void QuickArmorRebalance::Config::AddUserBlacklist(RE::TESFile* mod) {
             g_Data.sortedMods.erase(i);
             break;
         }
+    }
+}
+
+Value& EnsureHas(Value& obj, const char* field, rapidjson::Type t, MemoryPoolAllocator<>& al) {
+    if (!obj.HasMember(field) || !obj[field].GetType() != t) {
+        obj.RemoveMember(field);
+        obj.AddMember(Value(field, al), Value(t), al);
+    }
+    return obj[field];
+}
+
+void QuickArmorRebalance::ImportKeywords(const RE::TESFile* mod, const char* tabName, const std::set<RE::BGSKeyword*>& kws) {
+    auto path = std::filesystem::current_path() / PATH_ROOT PATH_CONFIGS;
+    path /= mod->fileName;
+    path += " Keywords.json";
+
+    Document doc;
+    auto& al = doc.GetAllocator();
+
+    if (!ReadJSONFile(path, doc, false)) {
+        logger::warn("Failed to load keywords file {}, contents will be overwritten.", path.filename().generic_string());
+    }
+
+    if (!doc.IsObject()) doc.SetObject();
+    if (!doc.HasMember("requires")) doc.AddMember("requires", Value(mod->fileName, al), al);
+
+    auto& tabs = EnsureHas(doc.GetObj(), "customKeywords", kObjectType, al);
+
+    auto& insertTab = EnsureHas(tabs.GetObj(), tabName, kObjectType, al);
+
+    // Move any existing keywords to new tab
+    for (auto& tab : tabs.GetObj()) {
+        if (tab.value == insertTab) continue;
+        if (!tab.value.IsObject()) {
+            tab.value.SetObject();
+            continue;
+        }
+
+        std::vector<RE::BGSKeyword*> removeKWs;
+
+        for (auto& kwObj : tab.value.GetObj()) {
+            auto kw = RE::TESForm::LookupByEditorID<RE::BGSKeyword>(kwObj.name.GetString());
+            if (kws.contains(kw)) {
+                insertTab.RemoveMember(kw->formEditorID.c_str());
+                insertTab.AddMember(Value(kw->formEditorID.c_str(), al), tab.value, al);
+                removeKWs.push_back(kw);
+            }
+        }
+
+        for (auto kw : removeKWs) tab.value.RemoveMember(kw->formEditorID.c_str());
+    }
+
+    for (auto kw : kws) {
+        if (!insertTab.HasMember(kw->formEditorID.c_str())) {
+            Value kwObj(kObjectType);
+            kwObj.AddMember("name", Value(kw->formEditorID.c_str(), al), al);
+            kwObj.AddMember("tooltip", Value("", al), al);
+            insertTab.AddMember(Value(kw->formEditorID.c_str(), al), kwObj, al);
+        }
+    }
+
+    LoadCustomKeywords(tabs);
+
+    WriteJSONFile(path, doc);
+}
+
+void QuickArmorRebalance::LoadCustomKeywords(const Value& jsonCustomKWs) {
+    if (!jsonCustomKWs.IsObject()) return;
+
+    for (const auto& jsonTab : jsonCustomKWs.GetObj()) {
+        if (!jsonTab.value.IsObject()) continue;
+
+        auto& tab = g_Config.mapCustomKWTabs[jsonTab.name.GetString()];
+        for (const auto& jsonKW : jsonTab.value.GetObj()) {
+            if (!jsonKW.value.IsObject()) continue;
+
+            auto kw = RE::TESForm::LookupByEditorID<RE::BGSKeyword>(jsonKW.name.GetString());
+            if (!kw) continue;
+
+            auto& ckw = g_Config.mapCustomKWs[kw];
+
+            if (std::find(tab.begin(), tab.end(), kw) == tab.end()) tab.push_back(kw);
+
+            ckw.kw = kw;
+
+            if (jsonKW.value.HasMember("name"))
+                ckw.name = jsonKW.value["name"].GetString();
+            else if (ckw.name.empty())
+                ckw.name = kw->formEditorID;
+
+            if (jsonKW.value.HasMember("tooltip")) ckw.tooltip = jsonKW.value["tooltip"].GetString();
+
+            if (jsonKW.value.HasMember("imply")) {
+                auto& imply = jsonKW.value["imply"];
+                if (imply.IsString()) {
+                    if (auto kwImply = RE::TESForm::LookupByEditorID<RE::BGSKeyword>(imply.GetString())) ckw.imply.insert(kwImply);
+                } else if (imply.IsArray()) {
+                    for (auto& i : imply.GetArray()) {
+                        if (i.IsString()) {
+                            if (auto kwImply = RE::TESForm::LookupByEditorID<RE::BGSKeyword>(i.GetString())) ckw.imply.insert(kwImply);
+                        }
+                    }
+                }
+            }
+
+            if (jsonKW.value.HasMember("exclude")) {
+                auto& imply = jsonKW.value["exclude"];
+                if (imply.IsString()) {
+                    if (auto kwImply = RE::TESForm::LookupByEditorID<RE::BGSKeyword>(imply.GetString())) ckw.exclude.insert(kwImply);
+                } else if (imply.IsArray()) {
+                    for (auto& i : imply.GetArray()) {
+                        if (i.IsString()) {
+                            if (auto kwImply = RE::TESForm::LookupByEditorID<RE::BGSKeyword>(i.GetString())) ckw.exclude.insert(kwImply);
+                        }
+                    }
+                }
+            }
+
+            if (jsonKW.value.HasMember("slots")) {
+                auto& slots = jsonKW.value["slots"];
+                if (slots.IsUint()) {
+                    auto slot = slots.GetUint();
+                    if (slot >= 30 && slot < 62) ckw.commonSlots |= (1ull << (slot - 30));
+                } else if (slots.IsArray()) {
+                    for (auto& i : slots.GetArray()) {
+                        if (i.IsUint()) {
+                            auto slot = i.GetUint();
+                            if (slot >= 30 && slot < 62) ckw.commonSlots |= (1ull << (slot - 30));
+                        }
+                    }
+                }
+            }
+        }
+
+        // This sort will run too many times but probably a non-issue
+        std::sort(tab.begin(), tab.end(),
+                  [](RE::BGSKeyword* const a, RE::BGSKeyword* const b) { return _stricmp(g_Config.mapCustomKWs[a].name.c_str(), g_Config.mapCustomKWs[b].name.c_str()) < 0; });
     }
 }

@@ -297,6 +297,15 @@ void QuickArmorRebalance::LoadChangesFromFolder(const char* sub, const Permissio
         if (!LoadFileChanges(mod, path, perm))
             logger::warn("Failed to load change file {}", path.filename().generic_string());
     });
+
+    if (perm.bModifyCustomKeywords) {
+        std::filesystem::path dir(sub);
+        dir /= PATH_CUSTOMKEYWORDS;
+
+        ForChangesInFolder(dir.generic_string().c_str(), [&](auto mod, auto path) {
+            if (!LoadKeywordChanges(mod, path)) logger::warn("Failed to load custom keywords file {}", path.filename().generic_string());
+        });
+    }
 }
 
 bool QuickArmorRebalance::LoadFileChanges(const RE::TESFile* mod, std::filesystem::path path, const Permissions& perm) {

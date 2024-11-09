@@ -8,6 +8,7 @@ namespace QuickArmorRebalance
     ArmorSlots GetConvertableArmorSlots(const ArmorChangeParams& params);
     int MakeArmorChanges(const ArmorChangeParams& params);
 
+
     int AddDynamicVariants(const ArmorChangeParams& params);
     int RescanPreferenceVariants();
 
@@ -15,4 +16,8 @@ namespace QuickArmorRebalance
     bool ApplyChanges(const RE::TESFile* file, RE::FormID id, const rapidjson::Value& changes, const Permissions& perm);
 
     void DeleteChanges(std::set<RE::TESBoundObject*> items, const char** fields = nullptr);
+
+    bool LoadKeywordChanges(const RE::TESFile* file, std::filesystem::path path);
+    KeywordChangeMap LoadKeywordChanges(const ArmorChangeParams& params);
+    int MakeKeywordChanges(const ArmorChangeParams& params, bool bApply = true);
 }

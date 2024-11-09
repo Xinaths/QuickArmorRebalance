@@ -6,6 +6,7 @@
 #define PATH_ROOT "Data/SKSE/Plugins/" PLUGIN_NAME "/"
 #define PATH_CONFIGS "config/"
 #define PATH_CHANGES "changes/"
+#define PATH_CUSTOMKEYWORDS "custom keywords/"
 
 namespace QuickArmorRebalance {  
 
@@ -107,6 +108,8 @@ namespace QuickArmorRebalance {
         DynamicVariantSets dvSets;
         AnalyzeResults analyzeResults;
 
+        KeywordChangeMap mapKeywordChanges;
+
         mutable bool bMixedSetDone = false;
     };
 
@@ -128,11 +131,22 @@ namespace QuickArmorRebalance {
         bool bModifyWeapWeight = true;
         bool bModifyWeapSpeed = true;
         bool bModifyWeapStagger = true;
+        bool bModifyCustomKeywords = true;
 
         RecipePermissions crafting;
         RecipePermissions temper;
     };
 
+    struct CustomKeyword {
+        RE::BGSKeyword* kw = nullptr;
+        std::string name;
+        std::string tooltip;
+
+        std::set<RE::BGSKeyword*> imply;
+        std::set<RE::BGSKeyword*> exclude;
+
+        uint64_t commonSlots = 0;
+    };
 
     struct Config {
         bool Load();
@@ -177,6 +191,9 @@ namespace QuickArmorRebalance {
 
         std::map<std::string, PreferenceVariants> mapPrefVariants;
 
+        std::unordered_map<RE::BGSKeyword*, CustomKeyword> mapCustomKWs;
+        std::map<std::string, std::vector<RE::BGSKeyword*>> mapCustomKWTabs;
+
         unsigned int usedSlotsMask = 0;
         ArmorChangeParams acParams;
 
@@ -205,6 +222,9 @@ namespace QuickArmorRebalance {
         bool bEnableDAVExports = true;
         bool bEnableDAVExportsAlways = false;
 
+        bool bShowKeywordSlots = true;
+        bool bReorderKeywordsForRelevance = true;
+        bool bEquipPreviewForKeywords = true;
 
         bool isFrostfallInstalled = false;
 
@@ -230,4 +250,7 @@ namespace QuickArmorRebalance {
     };
 
     extern Config g_Config;
+
+    void ImportKeywords(const RE::TESFile* mod, const char* tab, const std::set<RE::BGSKeyword*>& kws);
+
 }

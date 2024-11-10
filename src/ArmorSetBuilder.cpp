@@ -397,7 +397,10 @@ void QuickArmorRebalance::AnalyzeArmor(const std::vector<RE::TESBoundObject*>& i
         bool isNonVariant = false;
 
         for (auto armor : ws.items) {
-            auto slot = GetSlotIndex((ArmorSlots)armor->GetSlotMask());
+            auto slots = (ArmorSlots)armor->GetSlotMask();
+            if (!slots) continue;
+
+            auto slot = GetSlotIndex(slots);
 
             if (slotData[slot].items.size() < 2) {  // No variants on this slot
                 // Shouldn't be a variant word, but encountered situations where there's Armor 01, but no 02, but it's

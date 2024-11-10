@@ -359,19 +359,24 @@ namespace {
         std::vector<RE::TESBoundObject*> pieces;
 
         for (auto i : *set) {
-            if (covered & (unsigned int)i->GetSlotMask()) continue;
+            auto slots = (ArmorSlots)i->GetSlotMask();
+            if (!slots) continue;
+            if (covered & slots) continue;
 
-            unsigned int slots = (unsigned int)i->GetSlotMask();
             std::vector<RE::TESObjectARMO*> conflicts;
 
             // Two passes - first find potential conflicts, then pick them out
             // This has to happen just to cover weird situations where pieces overlap inconsistently
             // Technically would require repeating until it stops changing, but you'd have to design an armor set just
             // to be obnoxious intentionally
-            for (auto j : *set)
-                if (slots & (unsigned int)j->GetSlotMask()) slots |= (unsigned int)j->GetSlotMask();
-            for (auto j : *set)
-                if (slots & (unsigned int)j->GetSlotMask()) conflicts.push_back(j);
+            for (auto j : *set) {
+                auto slots2 = (ArmorSlots)j->GetSlotMask();
+                if (slots & slots2) slots |= slots2;
+            }
+            for (auto j : *set) {
+                auto slots2 = (ArmorSlots)j->GetSlotMask();
+                if (slots & slots2) conflicts.push_back(j);
+            }
 
             if (conflicts.size() > 1)
                 pieces.push_back(BuildListFrom(conflicts, 0));

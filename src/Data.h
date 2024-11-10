@@ -77,7 +77,7 @@ namespace QuickArmorRebalance {
     inline bool IsSingleSlot(ArmorSlots slots) { return (slots & (slots - 1)) == 0; }
 
     inline int GetSlotIndex(ArmorSlots slots) {
-        unsigned long slot;
+        unsigned long slot = 0;
         _BitScanForward(&slot, slots);
         return (int)slot;
     }

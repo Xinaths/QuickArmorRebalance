@@ -78,6 +78,9 @@ void QuickArmorRebalance::ExportToDAV(const RE::TESFile* file, const Value& ls, 
             auto armorBase = RE::TESForm::LookupByID<RE::TESObjectARMO>(GetFullId(file, (RE::FormID)set.first));
             if (!armorBase) continue;
 
+            auto slots = (ArmorSlots)armorBase->GetSlotMask();
+            if (!slots) continue;
+
             std::erase(set.second, nullptr);
 
             if (set.second.size() < 1) continue;
@@ -86,12 +89,12 @@ void QuickArmorRebalance::ExportToDAV(const RE::TESFile* file, const Value& ls, 
                 std::string group;
                 if (set.second.size() == 1) {
                     group = dv.first->DAV.variant;
-                    if (dv.first->DAV.perSlot) group += std::format("_Slot{}", GetSlotIndex((ArmorSlots)armorBase->GetSlotMask()) + 30);
+                    if (dv.first->DAV.perSlot) group += std::format("_Slot{}", GetSlotIndex(slots) + 30);
 
                     displayNames[group] = dv.first->DAV.display;
                 } else {
                     group = std::format("{}_{}of{}", dv.first->DAV.variant, i + 1, set.second.size());
-                    if (dv.first->DAV.perSlot) group += std::format("_Slot{}", GetSlotIndex((ArmorSlots)armorBase->GetSlotMask()) + 30);
+                    if (dv.first->DAV.perSlot) group += std::format("_Slot{}", GetSlotIndex(slots) + 30);
 
                     displayNames[group] = std::format("{} {}", dv.first->DAV.display, i + 1);
                 }

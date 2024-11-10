@@ -2246,7 +2246,7 @@ void QuickArmorRebalance::RenderUI() {
 
         static std::size_t nMaxCatRows = 0;
 
-        enum { eCatArmor0 = 0, eCatWeapons = eCatArmor0 + 32, eCatAmmo, eCatCount };
+        enum { eCatArmor0 = 0, eCatWeapons = eCatArmor0 + 32, eCatAmmo, eCatArmorNoSlots, eCatCount };
         if (popupCustomKeywords) {
             static bool bInit = false;
             if (!bInit) {
@@ -2258,7 +2258,11 @@ void QuickArmorRebalance::RenderUI() {
 
                 for (auto i : dataHandler->GetFormArray<RE::TESObjectARMO>()) {
                     for (unsigned int kw = 0; kw < i->numKeywords; kw++) {
-                        mapKeywordDist[i->GetFile(0)][i->keywords[kw]] |= (ArmorSlots)i->GetSlotMask();
+                        auto slots = (ArmorSlots)i->GetSlotMask();
+                        if (slots)
+                            mapKeywordDist[i->GetFile(0)][i->keywords[kw]] |= slots;
+                        else
+                            mapKeywordDist[i->GetFile(0)][i->keywords[kw]] |= (1ull << eCatArmorNoSlots);
                     }
                 }
 
@@ -2321,6 +2325,7 @@ void QuickArmorRebalance::RenderUI() {
             for (int i = 0; i < 32; i++) {
                 itemCats[eCatArmor0 + i].first = strSlotDesc[i];
             }
+            itemCats[eCatArmorNoSlots].first = "Armor - Unassigned slot";
             itemCats[eCatWeapons].first = "Weapons";
             itemCats[eCatAmmo].first = "Ammo";
 
@@ -2329,7 +2334,11 @@ void QuickArmorRebalance::RenderUI() {
                 auto item = i.second[0];
                 ItemGroup* pGroup = nullptr;
                 if (auto armor = item->As<RE::TESObjectARMO>()) {
-                    pGroup = &itemCats[eCatArmor0 + GetSlotIndex((ArmorSlots)armor->GetSlotMask())].second;
+                    auto slots = (ArmorSlots)armor->GetSlotMask();
+                    if (slots)
+                        pGroup = &itemCats[eCatArmor0 + GetSlotIndex(slots)].second;
+                    else
+                        pGroup = &itemCats[eCatArmorNoSlots].second;
                 } else if (auto weapon = item->As<RE::TESObjectWEAP>()) {
                     pGroup = &itemCats[eCatWeapons].second;
                 } else if (auto ammo = item->As<RE::TESAmmo>()) {
@@ -2721,8 +2730,13 @@ void QuickArmorRebalance::RenderUI() {
 
                     uint64_t slotsUsed = 0;
                     for (auto i : selected) {
-                        if (auto armor = i->As<RE::TESObjectARMO>())
-                            slotsUsed |= (ArmorSlots)armor->GetSlotMask();
+                        if (auto armor = i->As<RE::TESObjectARMO>()) {
+                            auto slots = (ArmorSlots)armor->GetSlotMask();
+                            if (slots)
+                                slotsUsed |= slots;
+                            else
+                                slotsUsed |= (1ull << eCatArmorNoSlots);
+                        }
                         else if (auto weapon = i->As<RE::TESObjectWEAP>())
                             slotsUsed |= (1ull << eCatWeapons);
                         else if (auto ammo = i->As<RE::TESAmmo>())

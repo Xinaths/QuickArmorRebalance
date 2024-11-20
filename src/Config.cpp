@@ -198,7 +198,15 @@ bool QuickArmorRebalance::Config::Load() {
             g_Config.bPreventDistributionOfDynamicVariants = config["settings"]["nodistdynamicvariants"].value_or(true);
             g_Config.bShowKeywordSlots = config["settings"]["showkeyworditemcats"].value_or(true);
             g_Config.bReorderKeywordsForRelevance = config["settings"]["reorderkeywords"].value_or(true);
-            g_Config.bEquipPreviewForKeywords = config["settings"]["equipkeywordpreview"].value_or(true);          
+            g_Config.bEquipPreviewForKeywords = config["settings"]["equipkeywordpreview"].value_or(true);
+
+            if (auto arr = config["settings"]["autodisablewords"].as_array()) {
+                g_Config.lsDisableWords.reserve(arr->size());
+                arr->for_each([this](auto i) {
+                    if (auto str = i.as_string())
+                        if (!str->get().empty()) g_Config.lsDisableWords.push_back(str->get());
+                });
+            }
 
             g_Config.bEnableDAVExports = config["integrations"]["enableDAVexports"].value_or(true);
             g_Config.bEnableDAVExportsAlways = config["integrations"]["enableDAVexportsalways"].value_or(false);
@@ -266,6 +274,7 @@ bool QuickArmorRebalance::Config::Load() {
     wordsAllVariants.insert(wordsEitherVariants.begin(), wordsEitherVariants.end());
 
     ValidateLootConfig();
+    RebuildDisabledWords();
 
     if (bSuccess)
         strCriticalError.clear();
@@ -631,6 +640,9 @@ void QuickArmorRebalance::Config::Save() {
         tblPrefVars.insert(i.first, i.second.pref);
     }
 
+    auto tomlDisableWords = toml::array{};
+    tomlDisableWords.insert(tomlDisableWords.begin(), lsDisableWords.begin(), lsDisableWords.end());
+
     auto tbl = toml::table{
         {"merge", g_Config.acParams.bMerge},
         {"modifyKeywords", g_Config.acParams.bModifyKeywords},
@@ -677,7 +689,8 @@ void QuickArmorRebalance::Config::Save() {
                                  {"nodistdynamicvariants", g_Config.bPreventDistributionOfDynamicVariants},
                                  {"showkeyworditemcats", g_Config.bShowKeywordSlots},
                                  {"reorderkeywords", g_Config.bReorderKeywordsForRelevance},
-                                 {"equipkeywordpreview", g_Config.bEquipPreviewForKeywords}}},
+                                 {"equipkeywordpreview", g_Config.bEquipPreviewForKeywords},
+                                 {"autodisablewords", tomlDisableWords}}},
         {"integrations",
          toml::table{
              {"enableDAVexports", g_Config.bEnableDAVExports},
@@ -755,6 +768,13 @@ void QuickArmorRebalance::Config::AddUserBlacklist(RE::TESFile* mod) {
             g_Data.sortedMods.erase(i);
             break;
         }
+    }
+}
+
+void QuickArmorRebalance::Config::RebuildDisabledWords() {
+    wordsAutoDisable.clear();
+    for (auto w : lsDisableWords) {
+        wordsAutoDisable.insert(std::hash<std::string>{}(w));
     }
 }
 

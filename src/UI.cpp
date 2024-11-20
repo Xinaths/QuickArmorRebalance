@@ -378,9 +378,9 @@ void AddFormsToList(const auto& all, const ItemFilter& filter) {
 
 short g_filterRound = 0;
 
-void GetCurrentListItems(ModData* curMod, int nModSpecial, const ItemFilter& filter, AnalyzeResults& results) {
+bool GetCurrentListItems(ModData* curMod, int nModSpecial, const ItemFilter& filter, AnalyzeResults& results) {
     static short filterRound = -1;
-    if (filterRound == g_filterRound) return;
+    if (filterRound == g_filterRound) return false;
     filterRound = g_filterRound;
 
     ArmorChangeParams& params = g_Config.acParams;
@@ -423,6 +423,8 @@ void GetCurrentListItems(ModData* curMod, int nModSpecial, const ItemFilter& fil
 
         if (curMod) AnalyzeArmor(params.filteredItems, results);
     }
+
+    return true;
 }
 
 bool WillBeModified(RE::TESBoundObject* i, ArmorSlots remapped) {
@@ -489,6 +491,7 @@ struct TimedTooltip {
 
 void QuickArmorRebalance::RenderUI() {
     const auto colorChanged = IM_COL32(0, 255, 0, 255);
+    const auto colorChangedPartial = IM_COL32(0, 150, 0, 255);
     const auto colorChangedShared = IM_COL32(255, 255, 0, 255);
     const auto colorDeleted = IM_COL32(255, 0, 0, 255);
 
@@ -885,7 +888,14 @@ void QuickArmorRebalance::RenderUI() {
                         }
                     }
 
-                    GetCurrentListItems(curMod, nModSpecial, filter, analyzeResults);
+                    if (GetCurrentListItems(curMod, nModSpecial, filter, analyzeResults)) {
+                        for (auto w : g_Config.wordsAutoDisable) {
+                            const auto& it = analyzeResults.mapWordItems.find(w);
+                            if (it != analyzeResults.mapWordItems.end()) {
+                                for (auto item : it->second.items) uncheckedItems.insert(item);
+                            }
+                        }
+                    }
                     g_Config.slotsWillChange = GetConvertableArmorSlots(params);
 
                     bool hasEnabledArmor = false;
@@ -1604,7 +1614,19 @@ void QuickArmorRebalance::RenderUI() {
             ImGui::Text(g_Config.strCriticalError.c_str());
         }
 
-        if (popupSettings) ImGui::OpenPopup("Settings");
+        static char bufDisable[4096] = "";
+
+        if (popupSettings) {
+            ImGui::OpenPopup("Settings");
+
+            std::string strDisable;
+            for (auto& w : g_Config.lsDisableWords) {
+                if (!strDisable.empty()) strDisable += "\n";
+                strDisable += w;
+            }
+            strDisable.copy(bufDisable, sizeof(bufDisable));
+            bufDisable[sizeof(bufDisable) - 1] = '\0';
+        }
         ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
 
         bool bPopupActive = true;
@@ -1645,6 +1667,25 @@ void QuickArmorRebalance::RenderUI() {
                     MakeTooltip(
                         "This can result in performance issues, and making a mess by changing too many items at once.\n"
                         "Use with caution.");
+
+                    ImGui::Text("Automatically disable items with the following words (one per line):");
+                    if (ImGui::InputTextMultiline("##DisableWords", bufDisable, sizeof(bufDisable), ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 5))) {
+                        std::vector<std::string> lines;
+                        std::istringstream stream(bufDisable);
+                        std::string line;
+
+                        while (std::getline(stream, line)) {
+                            // Trim whitespace
+                            size_t start = line.find_first_not_of(" \t\n\r");
+                            if (start == std::string::npos) continue;  // String is all whitespace
+                            size_t end = line.find_last_not_of(" \t\n\r");
+                            line = line.substr(start, end - start + 1);
+                            lines.push_back(MakeLower(line));
+                        }
+
+                        g_Config.lsDisableWords = std::move(lines);     
+                        g_Config.RebuildDisabledWords();
+                    }
 
                     ImGui::EndTabItem();
                 }
@@ -2585,6 +2626,14 @@ void QuickArmorRebalance::RenderUI() {
                     static bool bSkipHeaders;
                     bSkipHeaders = !g_Config.bShowKeywordSlots || nMaxCatRows < 2;
                     struct ItemTree {
+                        bool IsItemChanged(RE::TESBoundObject* item) {
+                            KeywordChangeMap& mapChanges = params.mapKeywordChanges;
+                            for (auto& kwc : mapChanges) {
+                                if (kwc.second.add.contains(item) || kwc.second.remove.contains(item)) return true;
+                            }
+                            return false;
+                        }
+
                         bool IsAllSelected(const ItemGroup::value_type& group) {
                             for (auto i : group.second) {
                                 if (!selected.contains(i)) {
@@ -2596,11 +2645,18 @@ void QuickArmorRebalance::RenderUI() {
                         }
 
                         void ItemLeaf(RE::TESBoundObject* item) {
+                            int nPopColor = 0;
+                            if (IsItemChanged(item)) {
+                                ImGui::PushStyleColor(ImGuiCol_Text, colorChanged);
+                                nPopColor++;
+                            }
                             auto bOpen = ImGui::TreeNodeEx(item->GetName(), (selected.contains(item) ? ImGuiTreeNodeFlags_Selected : 0) | ImGuiTreeNodeFlags_Leaf);
 
                             if (ImGui::IsItemClicked()) {
                                 itemClicked = item;
                             }
+
+                            ImGui::PopStyleColor(nPopColor);
 
                             if (bOpen) {
                                 ImGui::TreePop();
@@ -2608,11 +2664,33 @@ void QuickArmorRebalance::RenderUI() {
                         }
 
                         void ItemGroup(const ItemGroup::value_type& group) {
+                            bool bAllChanged = true;
+                            bool bAnyChanged = false;
+
+                            for (auto i : group.second) {
+                                if (IsItemChanged(i)) {
+                                    bAnyChanged = true;                                    
+                                    continue;
+                                }
+                                bAllChanged = false;
+                            }
+
+                            int nPopColor = 0;
+                            if (bAllChanged) {
+                                ImGui::PushStyleColor(ImGuiCol_Text, colorChanged);
+                                nPopColor++;
+                            } else if (bAnyChanged) {
+                                ImGui::PushStyleColor(ImGuiCol_Text, colorChangedPartial);
+                                nPopColor++;                            
+                            }
+
                             auto bOpen = ImGui::TreeNodeEx(group.first.c_str(), (IsAllSelected(group) ? ImGuiTreeNodeFlags_Selected : 0) | ImGuiTreeNodeFlags_OpenOnArrow);
 
                             if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
                                 groupClicked = &group;
                             }
+
+                            ImGui::PopStyleColor(nPopColor);
 
                             if (bOpen) {
                                 for (auto i : group.second) {
@@ -2885,7 +2963,7 @@ void QuickArmorRebalance::RenderUI() {
         if (switchToMod) Local::SwitchToMod(switchToMod);
     }
 
-    ImGuiIntegration::BlockInput(!ImGui::IsWindowCollapsed(), ImGui::IsItemHovered());
+    ImGuiIntegration::BlockInput(!ImGui::IsMouseDown(ImGuiMouseButton_Middle) && !ImGui::IsWindowCollapsed(), ImGui::IsItemHovered());
     ImGui::End();
 
     if (!isActive) ImGuiIntegration::Show(false);

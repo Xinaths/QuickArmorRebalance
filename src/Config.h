@@ -194,6 +194,12 @@ namespace QuickArmorRebalance {
         std::unordered_map<RE::BGSKeyword*, CustomKeyword> mapCustomKWs;
         std::map<std::string, std::vector<RE::BGSKeyword*>> mapCustomKWTabs;
 
+        void RebuildDisabledWords();
+
+        std::vector<std::string> lsDisableWords;
+        WordSet wordsAutoDisable;
+
+
         unsigned int usedSlotsMask = 0;
         ArmorChangeParams acParams;
 

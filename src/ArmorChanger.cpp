@@ -180,7 +180,9 @@ int QuickArmorRebalance::MakeArmorChanges(const ArmorChangeParams& params) {
     ProcessBaseArmorSet(params, coveredHeadSlots, [&](ArmorSlot slot, RE::TESObjectARMO* i) { slotValues[slot].item = i; });
 
     int totalWeight = 0;
-    for (const auto& i : *params.curve) totalWeight += GetTotalWeight(&i, ~(ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kShield);
+    for (const auto& i : *params.curve)
+        totalWeight += GetTotalWeight(&i, ~((ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kShield | (ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kAmulet |
+                                            (ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kRing));
     for (const auto& i : *params.curve) PropogateBaseValues(slotValues, nullptr, &i);
     for (const auto& i : *params.curve) CalcCoveredValues(slotValues, coveredSlots, &i);
 
@@ -1380,8 +1382,7 @@ int QuickArmorRebalance::MakeKeywordChanges(const ArmorChangeParams& params, boo
         WriteJSONFile(filepath, doc);
     }
 
-    if (bApply)
-        ApplyKeywordChanges(params.mapKeywordChanges);
+    if (bApply) ApplyKeywordChanges(params.mapKeywordChanges);
 
     return 0;
 }

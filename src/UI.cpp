@@ -4,23 +4,36 @@
 #include "ArmorSetBuilder.h"
 #include "Config.h"
 #include "Data.h"
+#include "ImGui/imgui_impl_dx11.h"
 #include "ImGuiIntegration.h"
+#include "Localization.h"
 #include "ModIntegrations.h"
+// #include "ImGui/imgui_freetype.h"
+
+#include "NameParsing.h"
 
 using namespace QuickArmorRebalance;
+constexpr auto LZ = QuickArmorRebalance::Localize;
 
 constexpr int kItemListLimit = 2000;
 constexpr int kItemApplyWarningThreshhold = 100;
 
+/*
 const char* strSlotDesc[] = {
     "Slot 30 - Head",       "Slot 31 - Hair",        "Slot 32 - Body",        "Slot 33 - Hands",      "Slot 34 - Forearms",  "Slot 35 - Amulet",  "Slot 36 - Ring",
     "Slot 37 - Feet",       "Slot 38 - Calves",      "Slot 39 - Shield",      "Slot 40 - Tail",       "Slot 41 - Long Hair", "Slot 42 - Circlet", "Slot 43 - Ears",
     "Slot 44 - Face",       "Slot 45 - Neck",        "Slot 46 - Chest",       "Slot 47 - Back",       "Slot 48 - ???",       "Slot 49 - Pelvis",  "Slot 50 - Decapitated Head",
     "Slot 51 - Decapitate", "Slot 52 - Lower body",  "Slot 53 - Leg (right)", "Slot 54 - Leg (left)", "Slot 55 - Face2",     "Slot 56 - Chest2",  "Slot 57 - Shoulder",
     "Slot 58 - Arm (left)", "Slot 59 - Arm (right)", "Slot 60 - ???",         "Slot 61 - ???",        "<REMOVE SLOT>"};
+    */
 
 static ImVec2 operator+(const ImVec2& a, const ImVec2& b) { return {a.x + b.x, a.y + b.y}; }
 static ImVec2 operator/(const ImVec2& a, int b) { return {a.x / b, a.y / b}; }
+
+template <typename... Args>
+std::string LZFormat(const char* rt_fmt_str, Args&&... args) {
+    return std::vformat(LZ(rt_fmt_str), std::make_format_args(args...));
+}
 
 bool StringContainsI(const char* s1, const char* s2) {
     std::string str1(s1), str2(s2);
@@ -305,7 +318,7 @@ struct GivenItems {
                 RE::ActorEquipManager::GetSingleton()->UnequipObject(player, item);
             }
 
-            //AddTask isn't strictly needed, but other mods were crashing if an unequip was called first and the item was deleted
+            // AddTask isn't strictly needed, but other mods were crashing if an unequip was called first and the item was deleted
             SKSE::GetTaskInterface()->AddTask([player, item = items.back().second]() { player->RemoveItem(item, 1, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr); });
             items.pop_back();
         }
@@ -330,37 +343,37 @@ void SliderRow(const char* field, ArmorChangeParams::SliderPair& pair, float min
     ImGui::TableNextRow();
     ImGui::TableNextColumn();
     ImGui::PushID(field);
-    ImGui::Checkbox(std::format("Modify {}", field).c_str(), &pair.bModify);
+    ImGui::Checkbox(LZFormat("Modify {}", field).c_str(), &pair.bModify);
     ImGui::BeginDisabled(!pair.bModify);
     ImGui::TableNextColumn();
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
     ImGui::SliderFloat("##Scale", &pair.fScale, min, max, "%.0f%%", ImGuiSliderFlags_AlwaysClamp);
     ImGui::TableNextColumn();
-    if (ImGui::Button("Reset")) pair.fScale = def;
+    if (ImGui::Button(LZ("Reset"))) pair.fScale = def;
     ImGui::EndDisabled();
     ImGui::PopID();
 }
 
 void PermissionsChecklist(const char* id, Permissions& p) {
     ImGui::PushID(id);
-    ImGui::Checkbox("Distribute loot", &p.bDistributeLoot);
-    ImGui::Checkbox("Modify keywords", &p.bModifyKeywords);
-    ImGui::Checkbox("Modify custom keywords", &p.bModifyCustomKeywords);
-    ImGui::Checkbox("Modify armor slots", &p.bModifySlots);
-    ImGui::Checkbox("Modify armor rating", &p.bModifyArmorRating);
-    ImGui::Checkbox("Modify armor weight", &p.bModifyWeight);
-    ImGui::Checkbox("Modify armor warmth", &p.bModifyWarmth);
-    ImGui::Checkbox("Modify weapon damage", &p.bModifyWeapDamage);
-    ImGui::Checkbox("Modify weapon weight", &p.bModifyWeapWeight);
-    ImGui::Checkbox("Modify weapon speed", &p.bModifyWeapSpeed);
-    ImGui::Checkbox("Modify weapon stagger", &p.bModifyWeapStagger);
-    ImGui::Checkbox("Modify value", &p.bModifyValue);
-    ImGui::Checkbox("Modify crafting recipes", &p.crafting.bModify);
-    ImGui::Checkbox("Create crafting recipes", &p.crafting.bCreate);
-    ImGui::Checkbox("Free crafting recipes", &p.crafting.bFree);
-    ImGui::Checkbox("Modify temper recipes", &p.temper.bModify);
-    ImGui::Checkbox("Create temper recipes", &p.temper.bCreate);
-    ImGui::Checkbox("Free temper recipes", &p.temper.bFree);
+    ImGui::Checkbox(LZ("Distribute loot"), &p.bDistributeLoot);
+    ImGui::Checkbox(LZ("Modify keywords"), &p.bModifyKeywords);
+    ImGui::Checkbox(LZ("Modify custom keywords"), &p.bModifyCustomKeywords);
+    ImGui::Checkbox(LZ("Modify armor slots"), &p.bModifySlots);
+    ImGui::Checkbox(LZ("Modify armor rating"), &p.bModifyArmorRating);
+    ImGui::Checkbox(LZ("Modify armor weight"), &p.bModifyWeight);
+    ImGui::Checkbox(LZ("Modify armor warmth"), &p.bModifyWarmth);
+    ImGui::Checkbox(LZ("Modify weapon damage"), &p.bModifyWeapDamage);
+    ImGui::Checkbox(LZ("Modify weapon weight"), &p.bModifyWeapWeight);
+    ImGui::Checkbox(LZ("Modify weapon speed"), &p.bModifyWeapSpeed);
+    ImGui::Checkbox(LZ("Modify weapon stagger"), &p.bModifyWeapStagger);
+    ImGui::Checkbox(LZ("Modify value"), &p.bModifyValue);
+    ImGui::Checkbox(LZ("Modify crafting recipes"), &p.crafting.bModify);
+    ImGui::Checkbox(LZ("Create crafting recipes"), &p.crafting.bCreate);
+    ImGui::Checkbox(LZ("Free crafting recipes"), &p.crafting.bFree);
+    ImGui::Checkbox(LZ("Modify temper recipes"), &p.temper.bModify);
+    ImGui::Checkbox(LZ("Create temper recipes"), &p.temper.bCreate);
+    ImGui::Checkbox(LZ("Free temper recipes"), &p.temper.bFree);
     ImGui::PopID();
 }
 
@@ -489,14 +502,116 @@ struct TimedTooltip {
     }
 };
 
+void BuildFonts() {
+    auto& io = ImGui::GetIO();
+    ImFontGlyphRangesBuilder builder;
+    builder.AddRanges(io.Fonts->GetGlyphRangesDefault());
+
+    auto AddNameGlyphs = [&](auto& ls) {
+        for (auto i : ls) {
+            builder.AddText(i->fullName.c_str());
+
+            //Need to get lowercase versions of glyphs too
+            std::string name(i->fullName.c_str());
+            builder.AddText(toLowerUTF8(name).c_str());
+        }
+    };
+
+    // Item Glyphs
+    auto dh = RE::TESDataHandler::GetSingleton();
+    AddNameGlyphs(dh->GetFormArray<RE::TESObjectARMO>());
+    AddNameGlyphs(dh->GetFormArray<RE::TESObjectWEAP>());
+    AddNameGlyphs(dh->GetFormArray<RE::TESAmmo>());
+
+    // Translated text
+    if (auto trans = Localization::Get()->mapTranslated) {
+        for (auto& i : *trans) builder.AddText(i.second.c_str());
+    }
+
+    for (auto& i : g_Config.mapCustomKWTabs) builder.AddText(i.first.c_str());
+    for (auto& i : g_Config.mapCustomKWs) {
+        builder.AddText(i.second.name.c_str());
+        builder.AddText(i.second.tooltip.c_str());
+    }
+    for (auto& i : g_Config.curves) {
+        for (int s = 0; s < 32; s++) builder.AddText(i.second.slotName[s].c_str());
+    }
+
+
+    // Language glyphs - or else the switch language menu might be unusable
+    struct LocaleEnum {
+        static BOOL CALLBACK Proc(LPWSTR lpLocaleStr, DWORD, LPARAM lParam) {
+            // Convert the wide-character locale name to a narrow string
+            std::wstring ws(lpLocaleStr);
+
+            size_t underscore_pos = ws.find(L'-');
+            if (!underscore_pos) return TRUE;
+
+            if (underscore_pos != std::string::npos) {
+                ws = ws.substr(0, underscore_pos);
+            }
+
+            wchar_t languageName[256];
+            if (GetLocaleInfoEx(ws.c_str(), LOCALE_SLOCALIZEDLANGUAGENAME, languageName, 256) > 0) {
+                auto builder = reinterpret_cast<ImFontGlyphRangesBuilder*>(lParam);
+                builder->AddText(WStringToString(languageName).c_str());
+            }
+
+            // Return true to continue enumeration
+            return TRUE;
+        }
+    };
+
+    EnumSystemLocalesEx(LocaleEnum::Proc, LOCALE_ALL, reinterpret_cast<LPARAM>(&builder), nullptr);
+
+    ImVector<ImWchar> ranges;
+    builder.BuildRanges(&ranges);
+
+    io.Fonts->Clear();
+    // io.Fonts->FontBuilderIO = ImGuiFreeType::GetBuilderForFreeType();
+    //  io.Fonts->AddFontDefault();
+
+    ImFontConfig config;
+
+    const float fontSize = (float)g_Config.nFontSize;
+
+    auto path = std::filesystem::current_path() / PATH_ROOT;
+    path /= "fonts/";
+
+    if (std::filesystem::exists(path)) {
+        if (std::filesystem::is_directory(path)) {
+            for (const auto& entry : std::filesystem::directory_iterator(path)) {
+                if (!entry.is_regular_file()) continue;
+                if (_stricmp(entry.path().extension().generic_string().c_str(), ".ttf")) continue;
+
+                if (!io.Fonts->Fonts.empty()) config.MergeMode = true;
+
+                io.Fonts->AddFontFromFileTTF(entry.path().generic_string().c_str(), fontSize, &config, ranges.Data);
+            }
+        }
+    }
+
+    if (io.Fonts->Fonts.empty()) {
+        config.SizePixels = fontSize;
+        io.Fonts->AddFontDefault(&config);
+    }
+
+    // Need to force it to rebuild the font textures - suppose to be automatic, but isn't?
+
+    if (io.Fonts->Build()) {
+        ImGui_ImplDX11_InvalidateDeviceObjects();
+        ImGui_ImplDX11_CreateDeviceObjects();
+    }
+}
+
 void QuickArmorRebalance::RenderUI() {
     const auto colorChanged = IM_COL32(0, 255, 0, 255);
     const auto colorChangedPartial = IM_COL32(0, 150, 0, 255);
     const auto colorChangedShared = IM_COL32(255, 255, 0, 255);
     const auto colorDeleted = IM_COL32(255, 0, 0, 255);
 
-    const char* rarity[] = {"Common", "Uncommon", "Rare", nullptr};
-    const char* itemTypes[] = {"Any", "Armor", "Weapons", "Ammo", nullptr};
+    const char* rarity[] = {LZ("Common"), LZ("Uncommon"), LZ("Rare"), nullptr};
+    const char* itemTypes[] = {LZ("Any"), LZ("Armor"), LZ("Weapons"), LZ("Ammo"), nullptr};
 
     bool isActive = true;
     static std::set<RE::TESBoundObject*> selectedItems;
@@ -522,6 +637,8 @@ void QuickArmorRebalance::RenderUI() {
     static HighlightTrack hlSlots;
 
     auto isInventoryOpen = RE::UI::GetSingleton()->IsItemMenuOpen();
+
+    static bool bRebuildFonts = true;
 
     static bool bMenuHovered = false;
     static bool bSlotWarning = false;
@@ -570,6 +687,17 @@ void QuickArmorRebalance::RenderUI() {
         remappedTar |= i.second < 32 ? (1 << i.second) : 0;
     }
 
+    if (bRebuildFonts) {
+        bRebuildFonts = false;
+        ImGuiIntegration::LoadFont(BuildFonts);
+    }
+
+    std::string strSlotDesc[33];
+    if (g_Config.acParams.curve) {
+        for (int i = 0; i < 32; i++) strSlotDesc[i] = LZFormat("Slot {} - {}", i+30, LZ(g_Config.acParams.curve->slotName[i].c_str()));
+        strSlotDesc[32] = LZ("<REMOVE SLOT>");
+    }
+
     ImGuiWindowFlags wndFlags = ImGuiWindowFlags_NoScrollbar;
     if (bMenuHovered) wndFlags |= ImGuiWindowFlags_MenuBar;
 
@@ -577,9 +705,9 @@ void QuickArmorRebalance::RenderUI() {
     if (ImGui::Begin("Quick Armor Rebalance", &isActive, wndFlags)) {
         if (g_Config.strCriticalError.empty()) {
             static int nModFilter = 0;
-            const char* modFilterDesc[] = {"No filter", "Unmodified", "Modified", "Has possible dynamic variants"};
+            const char* modFilterDesc[] = {LZ("No filter"), LZ("Unmodified"), LZ("Modified"), LZ("Has possible dynamic variants")};
 
-            const char* strModSpecial[] = {"<Currently Worn Armor>", "<All Items>", nullptr};
+            const char* strModSpecial[] = {LZ("<Currently Worn Armor>"), LZ("<All Items>"), nullptr};
             bool bModSpecialEnabled[] = {true, g_Config.bEnableAllItems};
             static int nModSpecial = 0;
 
@@ -593,8 +721,8 @@ void QuickArmorRebalance::RenderUI() {
 
                     ImGui::SetItemAllowOverlap();
 
-                    RightAlign("Settings");
-                    if (ImGui::MenuItem("Settings")) {
+                    RightAlign(LZ("Settings"));
+                    if (ImGui::MenuItem(LZ("Settings"))) {
                         popupSettings = true;
                     }
 
@@ -630,7 +758,7 @@ void QuickArmorRebalance::RenderUI() {
                         ImGui::TableSetupColumn("ModCol3");
                         ImGui::TableNextColumn();
 
-                        ImGui::Text("Mod");
+                        ImGui::Text(LZ("Mod"));
                         ImGui::TableNextColumn();
 
                         RE::TESFile* blacklist = nullptr;
@@ -696,16 +824,16 @@ void QuickArmorRebalance::RenderUI() {
                             ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
 
                             if (ImGui::BeginPopupModal(popupTitle, NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
-                                ImGui::Text("Delete all changes to %s?", curMod->mod->fileName);
-                                ImGui::Text("Changes will not revert until after restarting Skyrim");
+                                ImGui::Text(LZ("Delete all changes to %s?"), curMod->mod->fileName);
+                                ImGui::Text(LZ("Changes will not revert until after restarting Skyrim"));
 
-                                if (ImGui::Button("Delete changes", ImVec2(120, 0))) {
+                                if (ImGui::Button(LZ("Delete changes"), ImVec2(120, 0))) {
                                     DeleteAllChanges(curMod->mod);
                                     ImGui::CloseCurrentPopup();
                                 }
                                 ImGui::SetItemDefaultFocus();
                                 ImGui::SameLine();
-                                if (ImGui::Button("Cancel", ImVec2(120, 0))) {
+                                if (ImGui::Button(LZ("Cancel"), ImVec2(120, 0))) {
                                     ImGui::CloseCurrentPopup();
                                 }
                                 ImGui::EndPopup();
@@ -723,10 +851,11 @@ void QuickArmorRebalance::RenderUI() {
 
                     ImGui::Separator();
 
-                    ImGui::Text("Filter");
+                    ImGui::Text(LZ("Filter"));
                     ImGui::SameLine();
                     ImGui::SetNextItemWidth(200);
-                    if (ImGui::InputTextWithHint("##ItemFilter", "by Name", filter.nameFilter, sizeof(filter.nameFilter) - 1, ImGuiInputTextFlags_AutoSelectAll)) g_filterRound++;
+                    if (ImGui::InputTextWithHint("##ItemFilter", LZ("by Name"), filter.nameFilter, sizeof(filter.nameFilter) - 1, ImGuiInputTextFlags_AutoSelectAll))
+                        g_filterRound++;
 
                     ImGui::SameLine();
                     ImGui::SetNextItemWidth(80);
@@ -737,7 +866,7 @@ void QuickArmorRebalance::RenderUI() {
                         popCol++;
                     }
 
-                    if (ImGui::BeginCombo("##Typefilter", filter.nType ? itemTypes[filter.nType] : "by Type")) {
+                    if (ImGui::BeginCombo("##Typefilter", filter.nType ? itemTypes[filter.nType] : LZ("by Type"))) {
                         ImGui::PopStyleColor(popCol);
                         popCol = 0;
 
@@ -761,17 +890,17 @@ void QuickArmorRebalance::RenderUI() {
                         popCol++;
                     }
 
-                    if (ImGui::BeginCombo("##Slotfilter", filter.slots ? "Filtering by Slot" : "by Slot", ImGuiComboFlags_HeightLargest)) {
+                    if (ImGui::BeginCombo("##Slotfilter", filter.slots ? LZ("Filtering by Slot") : LZ("by Slot"), ImGuiComboFlags_HeightLargest)) {
                         ImGui::PopStyleColor(popCol);
                         popCol = 0;
 
-                        if (ImGui::Selectable("Clear filter")) {
+                        if (ImGui::Selectable(LZ("Clear filter"))) {
                             filter.slots = 0;
                             g_filterRound++;
                         }
-                        if (ImGui::RadioButton("Any of", &filter.slotMode, ItemFilter::SlotFilterMode::SlotsAny)) g_filterRound++;
-                        if (ImGui::RadioButton("All of", &filter.slotMode, ItemFilter::SlotFilterMode::SlotsAll)) g_filterRound++;
-                        if (ImGui::RadioButton("Not", &filter.slotMode, ItemFilter::SlotFilterMode::SlotsNot)) g_filterRound++;
+                        if (ImGui::RadioButton(LZ("Any of"), &filter.slotMode, ItemFilter::SlotFilterMode::SlotsAny)) g_filterRound++;
+                        if (ImGui::RadioButton(LZ("All of"), &filter.slotMode, ItemFilter::SlotFilterMode::SlotsAll)) g_filterRound++;
+                        if (ImGui::RadioButton(LZ("Not"), &filter.slotMode, ItemFilter::SlotFilterMode::SlotsNot)) g_filterRound++;
 
                         constexpr auto slotCols = 4;
                         if (ImGui::BeginTable("##SlotFilterTable", slotCols)) {
@@ -780,7 +909,7 @@ void QuickArmorRebalance::RenderUI() {
                                     auto s = i + j * 32 / slotCols;
                                     bool bCheck = filter.slots & (1 << s);
                                     ImGui::TableNextColumn();
-                                    if (ImGui::Checkbox(strSlotDesc[s], &bCheck)) {
+                                    if (ImGui::Checkbox(strSlotDesc[s].c_str(), &bCheck)) {
                                         g_filterRound++;
                                         if (bCheck)
                                             filter.slots |= (1 << s);
@@ -798,7 +927,7 @@ void QuickArmorRebalance::RenderUI() {
                     popCol = 0;
 
                     ImGui::SameLine();
-                    if (ImGui::Checkbox("Unmodified", &filter.bUnmodified)) g_filterRound++;
+                    if (ImGui::Checkbox(LZ("Unmodified"), &filter.bUnmodified)) g_filterRound++;
 
                     if (ImGui::BeginTable("Convert Table", 3, ImGuiTableFlags_SizingFixedFit)) {
                         ImGui::TableSetupColumn("ConvertCol1");
@@ -806,7 +935,7 @@ void QuickArmorRebalance::RenderUI() {
                         ImGui::TableSetupColumn("ConvertCol3");
                         ImGui::TableNextColumn();
 
-                        ImGui::Text("Convert to");
+                        ImGui::Text(LZ("Convert to"));
                         ImGui::TableNextColumn();
 
                         if (!params.armorSet) params.armorSet = &g_Config.armorSets[0];
@@ -831,11 +960,11 @@ void QuickArmorRebalance::RenderUI() {
 
                         ImGui::TableNextColumn();
 
-                        ImGui::Checkbox("Merge", &g_Config.acParams.bMerge);
+                        ImGui::Checkbox(LZ("Merge"), &g_Config.acParams.bMerge);
                         MakeTooltip(
-                            "When enabled, merge will keep any previous changes not currently being modified.\n"
-                            "Enable only the fields you want to be changing.\n"
-                            "Disable this to clear all previous changes.");
+                            LZ("When enabled, merge will keep any previous changes not currently being modified.\n"
+                               "Enable only the fields you want to be changing.\n"
+                               "Disable this to clear all previous changes."));
                         ImGui::SameLine();
 
                         static HighlightTrack hlApply;
@@ -845,7 +974,7 @@ void QuickArmorRebalance::RenderUI() {
 
                         static TimedTooltip respApply;
                         bool bApply = false;
-                        if (ImGui::Button("Apply changes")) {
+                        if (ImGui::Button(LZ("Apply changes"))) {
                             g_Config.Save();
 
                             if (params.items.size() < kItemApplyWarningThreshhold) {
@@ -858,15 +987,15 @@ void QuickArmorRebalance::RenderUI() {
                         hlApply.Pop();
 
                         if (ImGui::BeginPopupModal("Warning###ApplyWarn", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
-                            ImGui::Text("This will change %d items, are you sure?", params.items.size());
+                            ImGui::Text(LZ("This will change %d items, are you sure?"), params.items.size());
 
-                            if (ImGui::Button("Yes, apply changes")) {
+                            if (ImGui::Button(LZ("Yes, apply changes"))) {
                                 bApply = true;
                                 ImGui::CloseCurrentPopup();
                             }
                             ImGui::SetItemDefaultFocus();
                             ImGui::SameLine();
-                            if (ImGui::Button("Cancel")) {
+                            if (ImGui::Button(LZ("Cancel"))) {
                                 ImGui::CloseCurrentPopup();
                             }
                             ImGui::EndPopup();
@@ -876,7 +1005,7 @@ void QuickArmorRebalance::RenderUI() {
 
                         if (bApply) {
                             auto r = MakeArmorChanges(params);
-                            respApply.Enable(std::format("{} changes made", r));
+                            respApply.Enable(LZFormat("{} changes made", r));
 
                             if (g_Config.bAutoDeleteGiven) givenItems.Remove();
 
@@ -918,8 +1047,8 @@ void QuickArmorRebalance::RenderUI() {
                     ImGui::BeginDisabled(!curMod);
 
                     // Need to create a dummy table to negate stretching the combo boxes
-                    ImGui::Checkbox("Distribute as ", &params.bDistribute);
-                    MakeTooltip("Additions or changes to loot distribution will not take effect until you restart Skyrim");
+                    ImGui::Checkbox(LZ("Distribute as "), &params.bDistribute);
+                    MakeTooltip(LZ("Additions or changes to loot distribution will not take effect until you restart Skyrim"));
                     ImGui::BeginDisabled(!params.bDistribute);
 
                     ImGui::SameLine();
@@ -957,23 +1086,23 @@ void QuickArmorRebalance::RenderUI() {
                     hlRarity.Pop();
 
                     ImGui::Indent(60);
-                    ImGui::Checkbox("As pieces", &params.bDistAsPieces);
+                    ImGui::Checkbox(LZ("As pieces"), &params.bDistAsPieces);
                     ImGui::SameLine();
-                    ImGui::Checkbox("As whole set", &params.bDistAsSet);
-                    MakeTooltip("You will find entire sets (all slots) together");
+                    ImGui::Checkbox(LZ("As whole set"), &params.bDistAsSet);
+                    MakeTooltip(LZ("You will find entire sets (all slots) together"));
                     ImGui::SameLine();
                     ImGui::BeginDisabled(!params.bDistAsSet);
-                    ImGui::Checkbox("Matching sets", &params.bMatchSetPieces);
+                    ImGui::Checkbox(LZ("Matching sets"), &params.bMatchSetPieces);
                     MakeTooltip(
-                        "Attempts to match sets together - for example, if there are green and blue variants, it will\n"
-                        "try to distribute only green or only blue parts as a single set");
+                        LZ("Attempts to match sets together - for example, if there are green and blue variants, it will\n"
+                           "try to distribute only green or only blue parts as a single set"));
                     ImGui::EndDisabled();
 
                     hlDynamicVariants.Push(!analyzeResults.sets[AnalyzeResults::eWords_DynamicVariants].empty() ||
                                            !analyzeResults.sets[AnalyzeResults::eWords_EitherVariants].empty());
 
                     ImGui::SameLine();
-                    if (ImGui::Button("Dynamic Variants")) {
+                    if (ImGui::Button(LZ("Dynamic Variants"))) {
                         popupDynamicVariants = true;
                     }
                     hlDynamicVariants.Pop();
@@ -984,7 +1113,8 @@ void QuickArmorRebalance::RenderUI() {
                     ImGui::EndDisabled();
 
                     // Modifications
-                    if (ImGui::BeginChild("ItemTypeFrame", {ImGui::GetContentRegionAvail().x, 120}, false)) {
+                    const float tabBoxHeight = 5 * (ImGui::GetFontSize() + 12);
+                    if (ImGui::BeginChild("ItemTypeFrame", {ImGui::GetContentRegionAvail().x, tabBoxHeight}, false)) {
                         if (ImGui::BeginTabBar("ItemTypeBar")) {
                             static int iTabOpen = 0;
                             int iTab = 0;
@@ -1002,7 +1132,7 @@ void QuickArmorRebalance::RenderUI() {
                                 bForceSelect = true;
                             }
 
-                            const char* tabLabels[] = {"Armor", "Weapons"};
+                            const char* tabLabels[] = {LZ("Armor"), LZ("Weapons")};
                             // if (iTabOpen != iTabSelected) ImGui::SetTabItemClosed(tabLabels[iTabSelected]);
 
                             iTabSelected = iTabOpen;
@@ -1012,37 +1142,37 @@ void QuickArmorRebalance::RenderUI() {
                             if (ImGui::BeginTabItem(tabLabels[iTab], nullptr, bForceSelect && iTabOpen == iTab ? ImGuiTabItemFlags_SetSelected : 0)) {
                                 iTabSelected = iTab;
                                 if (SliderTable()) {
-                                    SliderRow("Armor Rating", params.armor.rating);
-                                    SliderRow("Weight", params.armor.weight);
+                                    SliderRow(LZ("Armor Rating"), params.armor.rating);
+                                    SliderRow(LZ("Weight"), params.armor.weight);
 
                                     // Warmth
                                     {
                                         const char* warmthDesc[] = {
-                                            "None",       //<0.1
-                                            "Cold",       //<0.2
-                                            "Poor",       //<0.3
-                                            "Limited",    //<0.4
-                                            "Fair",       //<0.5
-                                            "Average",    //<0.6
-                                            "Good",       //<0.7
-                                            "Warm",       //<0.8
-                                            "Full",       //<0.9
-                                            "Excellent",  //<1.0
-                                            "Maximum",    //=1.0
+                                            LZ("None"),       //<0.1
+                                            LZ("Cold"),       //<0.2
+                                            LZ("Poor"),       //<0.3
+                                            LZ("Limited"),    //<0.4
+                                            LZ("Fair"),       //<0.5
+                                            LZ("Average"),    //<0.6
+                                            LZ("Good"),       //<0.7
+                                            LZ("Warm"),       //<0.8
+                                            LZ("Full"),       //<0.9
+                                            LZ("Excellent"),  //<1.0
+                                            LZ("Maximum"),    //=1.0
                                         };
 
                                         const char* coverageDesc[] = {
-                                            "None",         //<0.1
-                                            "Minimal",      //<0.2
-                                            "Poor",         //<0.3
-                                            "Limited",      //<0.4
-                                            "Fair",         //<0.5
-                                            "Average",      //<0.6
-                                            "Good",         //<0.7
-                                            "Significant",  //<0.8
-                                            "Full",         //<0.9
-                                            "Excellent",    //<1.0
-                                            "Maximum",      //=1.0
+                                            LZ("None"),         //<0.1
+                                            LZ("Minimal"),      //<0.2
+                                            LZ("Poor"),         //<0.3
+                                            LZ("Limited"),      //<0.4
+                                            LZ("Fair"),         //<0.5
+                                            LZ("Average"),      //<0.6
+                                            LZ("Good"),         //<0.7
+                                            LZ("Significant"),  //<0.8
+                                            LZ("Full"),         //<0.9
+                                            LZ("Excellent"),    //<1.0
+                                            LZ("Maximum"),      //=1.0
                                         };
 
                                         bool showCoverage = g_Config.isFrostfallInstalled || g_Config.bShowFrostfallCoverage;
@@ -1051,10 +1181,10 @@ void QuickArmorRebalance::RenderUI() {
                                         ImGui::TableNextRow();
                                         ImGui::TableNextColumn();
 
-                                        ImGui::Checkbox("Modify Warmth", &pair.bModify);
+                                        ImGui::Checkbox(LZ("Modify Warmth"), &pair.bModify);
                                         MakeTooltip(
-                                            "The total warmth of the armor set.\n"
-                                            "This number is NOT relative to the base armor set's warmth.");
+                                            LZ("The total warmth of the armor set.\n"
+                                               "This number is NOT relative to the base armor set's warmth."));
                                         ImGui::BeginDisabled(!pair.bModify);
                                         ImGui::TableNextColumn();
 
@@ -1070,7 +1200,7 @@ void QuickArmorRebalance::RenderUI() {
                                         }
 
                                         ImGui::TableNextColumn();
-                                        if (ImGui::Button("Reset")) {
+                                        if (ImGui::Button(LZ("Reset"))) {
                                             pair.fScale = 50.0f;
                                             params.armor.coverage = 50.0f;
                                         }
@@ -1081,7 +1211,7 @@ void QuickArmorRebalance::RenderUI() {
                                 }
 
                                 ImGui::Separator();
-                                ImGui::Text("Stat distribution curve");
+                                ImGui::Text(LZ("Stat distribution curve"));
                                 ImGui::SameLine();
 
                                 static auto* curCurve = &g_Config.curves[0];
@@ -1104,7 +1234,7 @@ void QuickArmorRebalance::RenderUI() {
                                 ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 40);
 
                                 hlSlots.Push(bSlotWarning);
-                                if (ImGui::Button("Remap Slots")) popupRemapSlots = true;
+                                if (ImGui::Button(LZ("Remap Slots"))) popupRemapSlots = true;
                                 hlSlots.Pop();
 
                                 ImGui::EndTabItem();
@@ -1117,10 +1247,10 @@ void QuickArmorRebalance::RenderUI() {
                             if (ImGui::BeginTabItem(tabLabels[iTab], nullptr, bForceSelect && iTabOpen == iTab ? ImGuiTabItemFlags_SetSelected : 0)) {
                                 iTabSelected = iTab;
                                 if (SliderTable()) {
-                                    SliderRow("Damage", params.weapon.damage);
-                                    SliderRow("Weight", params.weapon.weight);
-                                    SliderRow("Speed", params.weapon.speed);
-                                    SliderRow("Stagger", params.weapon.stagger);
+                                    SliderRow(LZ("Damage"), params.weapon.damage);
+                                    SliderRow(LZ("Weight"), params.weapon.weight);
+                                    SliderRow(LZ("Speed"), params.weapon.speed);
+                                    SliderRow(LZ("Stagger"), params.weapon.stagger);
 
                                     ImGui::EndTable();
                                 }
@@ -1136,22 +1266,22 @@ void QuickArmorRebalance::RenderUI() {
                     ImGui::EndChild();
 
                     if (SliderTable()) {
-                        SliderRow("Gold Value", params.value);
+                        SliderRow(LZ("Gold Value"), params.value);
 
                         ImGui::EndTable();
                     }
 
-                    ImGui::Checkbox("Modify Keywords", &params.bModifyKeywords);
-                    MakeTooltip("Changes basic keywords to match those on the base item.");
+                    ImGui::Checkbox(LZ("Modify Keywords"), &params.bModifyKeywords);
+                    MakeTooltip(LZ("Changes basic keywords to match those on the base item."));
 
                     ImGui::SameLine();
-                    if (ImGui::Button(RightAlign("Custom Keywords"))) {
+                    if (ImGui::Button(RightAlign(LZ("Custom Keywords")))) {
                         popupCustomKeywords = true;
                     }
                     MakeTooltip(
-                        "Allows you to add or remove any keywords.\n"
-                        "Note: Adding and removing basic Skyrim keywords is already included \n"
-                        "as part of armor conversion.");
+                        LZ("Allows you to add or remove any keywords.\n"
+                           "Note: Adding and removing basic Skyrim keywords is already included \n"
+                           "as part of armor conversion."));
 
                     if (ImGui::BeginTable("Crafting Table", 3, ImGuiTableFlags_SizingFixedFit)) {
                         ImGui::TableSetupColumn("CraftCol1");
@@ -1160,37 +1290,38 @@ void QuickArmorRebalance::RenderUI() {
 
                         ImGui::TableNextRow();
                         ImGui::TableNextColumn();
-                        ImGui::Checkbox("Modify Temper Recipe", &params.temper.bModify);
+                        ImGui::Checkbox(LZ("Modify Temper Recipe"), &params.temper.bModify);
                         ImGui::BeginDisabled(!params.temper.bModify);
                         ImGui::TableNextColumn();
-                        ImGui::Checkbox("Create recipe if missing##Temper", &params.temper.bNew);
+                        ImGui::Checkbox(LZ("Create recipe if missing##Temper"), &params.temper.bNew);
                         MakeTooltip(
-                            "If an item being modified lacks an existing temper recipe to modify, checking\n"
-                            "this will create one automatically");
+                            LZ("If an item being modified lacks an existing temper recipe to modify, checking\n"
+                               "this will create one automatically"));
                         ImGui::TableNextColumn();
-                        ImGui::Checkbox(g_Config.fTemperGoldCostRatio > 0 ? "Cost gold if no recipe to copy##Temper" : "Make free if no recipe to copy##Temper",
+                        ImGui::Checkbox(g_Config.fTemperGoldCostRatio > 0 ? LZ("Cost gold if no recipe to copy##Temper") : LZ("Make free if no recipe to copy##Temper"),
                                         &params.temper.bFree);
                         MakeTooltip(
-                            "If the item being copied lacks a tempering recipe, checking will remove all\n"
-                            "components and conditions to temper the modified item");
+                            LZ("If the item being copied lacks a tempering recipe, checking will remove all\n"
+                               "components and conditions to temper the modified item"));
                         ImGui::EndDisabled();
 
                         ImGui::TableNextRow();
                         ImGui::TableNextColumn();
-                        ImGui::Checkbox("Modify Crafting Recipe", &params.craft.bModify);
+                        ImGui::Checkbox(LZ("Modify Crafting Recipe"), &params.craft.bModify);
                         ImGui::BeginDisabled(!params.craft.bModify);
                         ImGui::TableNextColumn();
-                        ImGui::Checkbox("Create recipe if missing##Craft", &params.craft.bNew);
+                        ImGui::Checkbox(LZ("Create recipe if missing##Craft"), &params.craft.bNew);
                         if (ImGui::IsItemHovered())
                             ImGui::SetTooltip(
-                                "If an item being modified lacks an existing crafting recipe to modify,\n"
-                                "checking this will create one automatically");
+                                LZ("If an item being modified lacks an existing crafting recipe to modify,\n"
+                                   "checking this will create one automatically"));
                         ImGui::TableNextColumn();
-                        ImGui::Checkbox(g_Config.fCraftGoldCostRatio > 0 ? "Cost gold if no recipe to copy##Craft" : "Make free if no recipe to copy##Craft", &params.craft.bFree);
+                        ImGui::Checkbox(g_Config.fCraftGoldCostRatio > 0 ? LZ("Cost gold if no recipe to copy##Craft") : LZ("Make free if no recipe to copy##Craft"),
+                                        &params.craft.bFree);
                         if (ImGui::IsItemHovered())
                             ImGui::SetTooltip(
-                                "If the item being copied lacks a crafting recipe, checking will remove all\n"
-                                "components and conditions to craft the modified item");
+                                LZ("If the item being copied lacks a crafting recipe, checking will remove all\n"
+                                   "components and conditions to craft the modified item"));
                         ImGui::EndDisabled();
 
                         ImGui::EndTable();
@@ -1201,10 +1332,10 @@ void QuickArmorRebalance::RenderUI() {
                 ImGui::TableNextColumn();
                 if (params.filteredItems.size() >= kItemListLimit) {
                     ImGui::Text(
-                        "Too many items.\n"
-                        "Limit the amount of items by using the filters.");
+                        LZ("Too many items.\n"
+                           "Limit the amount of items by using the filters."));
                 } else {
-                    ImGui::Text((std::format("{}", params.filteredItems.size()) + " Items").c_str());
+                    ImGui::Text(LZFormat("{} Items", params.filteredItems.size()).c_str());
 
                     auto avail = ImGui::GetContentRegionAvail();
                     avail.y -= ImGui::GetFontSize() * 1 + ImGui::GetStyle().FramePadding.y * 2;
@@ -1222,60 +1353,60 @@ void QuickArmorRebalance::RenderUI() {
                         auto xPos = ImGui::GetCursorPosX();
 
                         if (ImGui::BeginPopupContextWindow()) {
-                            if (ImGui::Selectable("Unequip worn items")) {
+                            if (ImGui::Selectable(LZ("Unequip worn items"))) {
                                 givenItems.UnequipCurrent();
                             }
 
                             ImGui::Separator();
 
                             ImGui::BeginDisabled(selectedItems.empty());
-                            if (ImGui::BeginMenu("Selected ...")) {
-                                if (ImGui::Selectable("Equip")) {
+                            if (ImGui::BeginMenu(LZ("Selected ..."))) {
+                                if (ImGui::Selectable(LZ("Equip"))) {
                                     for (auto i : selectedItems) givenItems.Give(i, true, true);
                                 }
-                                if (ImGui::Selectable("Unequip")) {
+                                if (ImGui::Selectable(LZ("Unequip"))) {
                                     for (auto i : selectedItems) givenItems.Unequip(i);
                                 }
 
                                 ImGui::Separator();
 
-                                if (ImGui::Selectable("Enable")) {
+                                if (ImGui::Selectable(LZ("Enable"))) {
                                     for (auto i : selectedItems) uncheckedItems.erase(i);
                                 }
-                                if (ImGui::Selectable("Enable ONLY")) {
+                                if (ImGui::Selectable(LZ("Enable ONLY"))) {
                                     uncheckedItems.clear();
                                     uncheckedItems.insert(params.filteredItems.begin(), params.filteredItems.end());
                                     for (auto i : selectedItems) uncheckedItems.erase(i);
                                 }
-                                if (ImGui::Selectable("Disable")) {
+                                if (ImGui::Selectable(LZ("Disable"))) {
                                     for (auto i : selectedItems) uncheckedItems.insert(i);
                                 }
 
                                 ImGui::Separator();
                                 ImGui::BeginDisabled(curMod);
-                                if (ImGui::Selectable("Select source mod")) {
+                                if (ImGui::Selectable(LZ("Select source mod"))) {
                                     switchToMod = g_Data.modData[(*selectedItems.begin())->GetFile(0)].get();
                                 }
                                 ImGui::EndDisabled();
 
-                                if (ImGui::BeginMenu("Delete changes ...")) {
-                                    if (MenuItemConfirmed("All")) {
+                                if (ImGui::BeginMenu(LZ("Delete changes ..."))) {
+                                    if (MenuItemConfirmed(LZ("All"))) {
                                         DeleteChanges(selectedItems);
                                     }
                                     ImGui::Separator();
-                                    if (MenuItemConfirmed("Loot Distribution")) {
+                                    if (MenuItemConfirmed(LZ("Loot Distribution"))) {
                                         const char* fields[] = {"loot", nullptr};
                                         DeleteChanges(selectedItems, fields);
                                     }
-                                    if (MenuItemConfirmed("Slots")) {
+                                    if (MenuItemConfirmed(LZ("Slots"))) {
                                         const char* fields[] = {"slots", nullptr};
                                         DeleteChanges(selectedItems, fields);
                                     }
-                                    if (MenuItemConfirmed("Crafting")) {
+                                    if (MenuItemConfirmed(LZ("Crafting"))) {
                                         const char* fields[] = {"craft", nullptr};
                                         DeleteChanges(selectedItems, fields);
                                     }
-                                    if (MenuItemConfirmed("Tempering")) {
+                                    if (MenuItemConfirmed(LZ("Tempering"))) {
                                         const char* fields[] = {"temper", nullptr};
                                         DeleteChanges(selectedItems, fields);
                                     }
@@ -1287,20 +1418,20 @@ void QuickArmorRebalance::RenderUI() {
                             }
                             ImGui::EndDisabled();
 
-                            if (ImGui::BeginMenu("Select ...")) {
-                                if (ImGui::Selectable("Armor")) {
+                            if (ImGui::BeginMenu(LZ("Select ..."))) {
+                                if (ImGui::Selectable(LZ("Armor"))) {
                                     selectedItems.clear();
                                     for (auto i : params.filteredItems) {
                                         if (auto armor = i->As<RE::TESObjectARMO>()) selectedItems.insert(armor);
                                     }
                                 }
-                                if (ImGui::Selectable("Weapons")) {
+                                if (ImGui::Selectable(LZ("Weapons"))) {
                                     selectedItems.clear();
                                     for (auto i : params.filteredItems) {
                                         if (auto weap = i->As<RE::TESObjectWEAP>()) selectedItems.insert(weap);
                                     }
                                 }
-                                if (ImGui::Selectable("Ammo")) {
+                                if (ImGui::Selectable(LZ("Ammo"))) {
                                     selectedItems.clear();
                                     for (auto i : params.filteredItems) {
                                         if (auto ammo = i->As<RE::TESAmmo>()) selectedItems.insert(ammo);
@@ -1311,8 +1442,8 @@ void QuickArmorRebalance::RenderUI() {
                             }
 
                             ImGui::Separator();
-                            if (ImGui::Selectable("Enable all")) uncheckedItems.clear();
-                            if (ImGui::Selectable("Disable all"))
+                            if (ImGui::Selectable(LZ("Enable all"))) uncheckedItems.clear();
+                            if (ImGui::Selectable(LZ("Disable all")))
                                 for (auto i : params.filteredItems) uncheckedItems.insert(i);
 
                             ImGui::EndPopup();
@@ -1542,7 +1673,7 @@ void QuickArmorRebalance::RenderUI() {
 
                             if (!curMod && ImGui::IsItemHovered(ImGuiHoveredFlags_Stationary)) {
                                 if (ImGui::BeginTooltip()) {
-                                    if (!curMod) ImGui::Text("File: %s", i->GetFile(0)->fileName);
+                                    if (!curMod) ImGui::Text(LZ("File: %s"), i->GetFile(0)->fileName);
                                     ImGui::EndTooltip();
                                 }
                             }
@@ -1558,7 +1689,7 @@ void QuickArmorRebalance::RenderUI() {
 
                     ImGui::BeginDisabled(!player || !curMod || isInventoryOpen);
 
-                    if (ImGui::Button(selectedItems.empty() ? "Give All" : "Give Selected")) {
+                    if (ImGui::Button(selectedItems.empty() ? LZ("Give All") : LZ("Give Selected"))) {
                         if (selectedItems.empty())
                             for (auto i : params.filteredItems) {
                                 givenItems.Give(i);
@@ -1568,10 +1699,10 @@ void QuickArmorRebalance::RenderUI() {
                                 givenItems.Give(i);
                             }
                     }
-                    if (isInventoryOpen) MakeTooltip("Can't use while inventory is open");
+                    if (isInventoryOpen) MakeTooltip(LZ("Can't use while inventory is open"));
 
                     ImGui::SameLine();
-                    if (ImGui::Button(selectedItems.empty() ? "Equip All" : "Equip Selected")) {
+                    if (ImGui::Button(selectedItems.empty() ? LZ("Equip All") : LZ("Equip Selected"))) {
                         givenItems.UnequipCurrent();
                         if (selectedItems.empty())
                             for (auto i : params.filteredItems) {
@@ -1582,14 +1713,14 @@ void QuickArmorRebalance::RenderUI() {
                                 givenItems.Give(i, true);
                             }
                     }
-                    if (isInventoryOpen) MakeTooltip("Can't use while inventory is open");
+                    if (isInventoryOpen) MakeTooltip(LZ("Can't use while inventory is open"));
 
                     ImGui::BeginDisabled(givenItems.items.empty());
                     ImGui::SameLine();
-                    if (ImGui::Button("Delete Given")) {
+                    if (ImGui::Button(LZ("Delete Given"))) {
                         givenItems.Remove();
                     }
-                    if (isInventoryOpen) MakeTooltip("Can't use while inventory is open");
+                    if (isInventoryOpen) MakeTooltip(LZ("Can't use while inventory is open"));
 
                     ImGui::EndDisabled();  // givenItems.empty()
                     ImGui::EndDisabled();  //! player
@@ -1617,7 +1748,7 @@ void QuickArmorRebalance::RenderUI() {
         static char bufDisable[4096] = "";
 
         if (popupSettings) {
-            ImGui::OpenPopup("Settings");
+            ImGui::OpenPopup(LZ("Settings"));
 
             std::string strDisable;
             for (auto& w : g_Config.lsDisableWords) {
@@ -1631,12 +1762,96 @@ void QuickArmorRebalance::RenderUI() {
 
         bool bPopupActive = true;
         if (ImGui::BeginPopupModal("Settings", &bPopupActive, ImGuiWindowFlags_AlwaysAutoResize)) {
-            ImGui::Text("NOTE: Many changes require restarting Skyrim to take full effect.");
-            if (ImGui::BeginTabBar("Settings Tabs")) {
-                if (ImGui::BeginTabItem("General")) {
-                    const char* logLevels[] = {"Trace", "Debug", "Info", "Warn", "Error", "Critical", "Off"};
+            ImGui::Text(LZ("NOTE: Many changes require restarting Skyrim to take full effect."));
+            if (ImGui::BeginTabBar(LZ("Settings Tabs"))) {
+                if (ImGui::BeginTabItem(LZ("General"))) {
+                    ImGui::Text(LZ("Language"));
+                    ImGui::SameLine();
 
-                    ImGui::Text("Log verbsity");
+                    std::string language;
+                    {
+                        wchar_t languageName[256];
+                        if (GetLocaleInfoEx(Localization::Get()->language.c_str(), LOCALE_SLOCALIZEDLANGUAGENAME, languageName, 256) > 0) {
+                            language = WStringToString(std::wstring(languageName));
+                        } else {
+                            language = "English";
+                            Localization::Get()->SetTranslation(L"en");
+                        }
+                    }
+
+                    if (ImGui::BeginCombo("##Language", language.c_str(), ImGuiComboFlags_PopupAlignLeft)) {
+                        static std::vector<std::pair<std::wstring, std::string>> languagesTranslated;
+                        static std::vector<std::pair<std::wstring, std::string>> languagesUntranslated;
+
+                        if (languagesTranslated.empty() && languagesUntranslated.empty()) {
+                            std::set<std::wstring> codes;
+                            struct LocaleEnum {
+                                static BOOL CALLBACK Proc(LPWSTR lpLocaleStr, DWORD, LPARAM lParam) {
+                                    // Convert the wide-character locale name to a narrow string
+                                    std::wstring ws(lpLocaleStr);
+
+                                    size_t underscore_pos = ws.find(L'-');
+                                    if (!underscore_pos) return TRUE;
+
+                                    if (underscore_pos != std::string::npos) {
+                                        ws = ws.substr(0, underscore_pos);
+                                    }
+                                    auto locales = reinterpret_cast<std::set<std::wstring>*>(lParam);
+                                    locales->insert(ws);
+
+                                    // Return true to continue enumeration
+                                    return TRUE;
+                                }
+                            };
+
+                            EnumSystemLocalesEx(LocaleEnum::Proc, LOCALE_ALL, reinterpret_cast<LPARAM>(&codes), nullptr);
+
+                            languagesTranslated.reserve(Localization::Get()->translations.size());
+                            languagesUntranslated.reserve(codes.size());
+
+                            for (auto& i : codes) {
+                                wchar_t languageName[256];
+
+                                if (GetLocaleInfoEx(i.c_str(), LOCALE_SLOCALIZEDLANGUAGENAME, languageName, 256) > 0) {
+                                    auto str = WStringToString(std::wstring(languageName));
+                                    if (Localization::Get()->HasTranslation(i.c_str()))
+                                        languagesTranslated.push_back({i, str});
+                                    else
+                                        languagesUntranslated.push_back({i, str});
+                                }
+                            }
+
+                            std::sort(languagesTranslated.begin(), languagesTranslated.end(), [](auto& a, auto& b) { return a.second.compare(b.second) < 0; });
+                            std::sort(languagesUntranslated.begin(), languagesUntranslated.end(), [](auto& a, auto& b) { return a.second.compare(b.second) < 0; });
+                        }
+
+                        auto Entry = [](auto& i) {
+                            bool selected = !Localization::Get()->language.compare(i.first);
+                            if (ImGui::Selectable(i.second.c_str(), selected)) {
+                                Localization::Get()->SetTranslation(i.first);
+                                bRebuildFonts = true;
+                            }
+                            if (selected) ImGui::SetItemDefaultFocus();
+                        };
+                        std::for_each(languagesTranslated.begin(), languagesTranslated.end(), Entry);
+
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+                        std::for_each(languagesUntranslated.begin(), languagesUntranslated.end(), Entry);
+                        ImGui::PopStyleColor();
+
+                        ImGui::EndCombo();
+                    }
+
+                    ImGui::SameLine();
+                    ImGui::Checkbox(LZ("Export untranslated strings"), &g_Config.bExportUntranslated);
+
+                    if (ImGui::SliderInt(LZ("Font Size"), &g_Config.nFontSize, 10, 24, "%d", ImGuiSliderFlags_AlwaysClamp)) {
+                        bRebuildFonts = true;
+                    }
+
+                    const char* logLevels[] = {LZ("Trace"), LZ("Debug"), LZ("Info"), LZ("Warn"), LZ("Error"), LZ("Critical"), LZ("Off")};
+
+                    ImGui::Text(LZ("Log verbsity"));
                     ImGui::SameLine();
                     if (ImGui::BeginCombo("##Verbosity", logLevels[g_Config.verbosity], ImGuiComboFlags_PopupAlignLeft)) {
                         for (int i = 0; i < spdlog::level::n_levels; i++) {
@@ -1651,24 +1866,24 @@ void QuickArmorRebalance::RenderUI() {
                         ImGui::EndCombo();
                     }
 
-                    ImGui::Checkbox("Close console after qar command", &g_Config.bCloseConsole);
-                    ImGui::Checkbox("Delete given items after applying changes", &g_Config.bAutoDeleteGiven);
-                    ImGui::Checkbox("Round weights to 0.1", &g_Config.bRoundWeight);
-                    ImGui::Checkbox("Reset sliders after changing mods", &g_Config.bResetSliders);
-                    ImGui::Checkbox("Reset slot remapping after changing mods", &g_Config.bResetSlotRemap);
-                    ImGui::Checkbox("Allow remapping armor slots to unhandled slots", &g_Config.bAllowInvalidRemap);
-                    ImGui::Checkbox("Allow remapping of protected armor slots (Not recommended)", &g_Config.bEnableProtectedSlotRemapping);
+                    ImGui::Checkbox(LZ("Close console after qar command"), &g_Config.bCloseConsole);
+                    ImGui::Checkbox(LZ("Delete given items after applying changes"), &g_Config.bAutoDeleteGiven);
+                    ImGui::Checkbox(LZ("Round weights to 0.1"), &g_Config.bRoundWeight);
+                    ImGui::Checkbox(LZ("Reset sliders after changing mods"), &g_Config.bResetSliders);
+                    ImGui::Checkbox(LZ("Reset slot remapping after changing mods"), &g_Config.bResetSlotRemap);
+                    ImGui::Checkbox(LZ("Allow remapping armor slots to unhandled slots"), &g_Config.bAllowInvalidRemap);
+                    ImGui::Checkbox(LZ("Allow remapping of protected armor slots (Not recommended)"), &g_Config.bEnableProtectedSlotRemapping);
                     MakeTooltip(
-                        "Body, hands, feet, and head slots tend to break in various ways if you move them to other "
-                        "slots.");
-                    ImGui::Checkbox("Highlight things you may want to look at", &g_Config.bHighlights);
-                    ImGui::Checkbox("Show Frostfall coverage slider even if not installed", &g_Config.bShowFrostfallCoverage);
-                    ImGui::Checkbox("USE AT YOUR OWN RISK: Enable <All Items> in item list", &g_Config.bEnableAllItems);
+                        LZ("Body, hands, feet, and head slots tend to break in various ways if you move them to other "
+                           "slots."));
+                    ImGui::Checkbox(LZ("Highlight things you may want to look at"), &g_Config.bHighlights);
+                    ImGui::Checkbox(LZ("Show Frostfall coverage slider even if not installed"), &g_Config.bShowFrostfallCoverage);
+                    ImGui::Checkbox(LZ("USE AT YOUR OWN RISK: Enable <All Items> in item list"), &g_Config.bEnableAllItems);
                     MakeTooltip(
-                        "This can result in performance issues, and making a mess by changing too many items at once.\n"
-                        "Use with caution.");
+                        LZ("This can result in performance issues, and making a mess by changing too many items at once.\n"
+                           "Use with caution."));
 
-                    ImGui::Text("Automatically disable items with the following words (one per line):");
+                    ImGui::Text(LZ("Automatically disable items with the following words (one per line):"));
                     if (ImGui::InputTextMultiline("##DisableWords", bufDisable, sizeof(bufDisable), ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 5))) {
                         std::vector<std::string> lines;
                         std::istringstream stream(bufDisable);
@@ -1683,40 +1898,40 @@ void QuickArmorRebalance::RenderUI() {
                             lines.push_back(MakeLower(line));
                         }
 
-                        g_Config.lsDisableWords = std::move(lines);     
+                        g_Config.lsDisableWords = std::move(lines);
                         g_Config.RebuildDisabledWords();
                     }
 
                     ImGui::EndTabItem();
                 }
 
-                if (ImGui::BeginTabItem("Distribution")) {
-                    ImGui::Checkbox("Enforce loot rarity with empty loot", &g_Config.bEnableRarityNullLoot);
+                if (ImGui::BeginTabItem(LZ("Distribution"))) {
+                    ImGui::Checkbox(LZ("Enforce loot rarity with empty loot"), &g_Config.bEnableRarityNullLoot);
                     MakeTooltip(
-                        "Example: The subset of items elible for loot has 1 rare item, 0 commons and uncommons\n"
-                        "DISABLED: You will always get that rare item\n"
-                        "ENABLED: You will have a 5%% chance at the item, and 95%% chance of nothing");
+                        LZ("Example: The subset of items elible for loot has 1 rare item, 0 commons and uncommons\n"
+                           "DISABLED: You will always get that rare item\n"
+                           "ENABLED: You will have a 5%% chance at the item, and 95%% chance of nothing"));
 
-                    ImGui::Checkbox("Normalize drop rates between mods", &g_Config.bNormalizeModDrops);
-                    ImGui::SliderFloat("Adjust drop rates", &g_Config.fDropRates, 0.0f, 300.0f, "%.0f%%", ImGuiSliderFlags_AlwaysClamp);
-                    ImGui::SliderInt("Drop curve level granularity", &g_Config.levelGranularity, 1, 5, "%d", ImGuiSliderFlags_AlwaysClamp);
-                    MakeTooltip("A lower number generates more loot lists but more accurate distribution");
+                    ImGui::Checkbox(LZ("Normalize drop rates between mods"), &g_Config.bNormalizeModDrops);
+                    ImGui::SliderFloat(LZ("Adjust drop rates"), &g_Config.fDropRates, 0.0f, 300.0f, "%.0f%%", ImGuiSliderFlags_AlwaysClamp);
+                    ImGui::SliderInt(LZ("Drop curve level granularity"), &g_Config.levelGranularity, 1, 5, "%d", ImGuiSliderFlags_AlwaysClamp);
+                    MakeTooltip(LZ("A lower number generates more loot lists but more accurate distribution"));
 
-                    ImGui::Checkbox("Prevent distribution of dynamic variants", &g_Config.bPreventDistributionOfDynamicVariants);
+                    ImGui::Checkbox(LZ("Prevent distribution of dynamic variants"), &g_Config.bPreventDistributionOfDynamicVariants);
 
-                    ImGui::SeparatorText("Preferred Variants");
+                    ImGui::SeparatorText(LZ("Preferred Variants"));
                     MakeTooltip(
-                        "When two items exist, one with the word and one without,\n"
-                        "these settings will determine which will appear.\n\n"
-                        "For example: Mod contains items 'Cape' and 'Cape (SMP)'\n"
-                        "Setting SMP as preferred will cause only 'Cape (SMP)' to appear in loot.");
+                        LZ("When two items exist, one with the word and one without,\n"
+                           "these settings will determine which will appear.\n\n"
+                           "For example: Mod contains items 'Cape' and 'Cape (SMP)'\n"
+                           "Setting SMP as preferred will cause only 'Cape (SMP)' to appear in loot."));
 
-                    const char* prefDesc[] = {"Don't care", "Prefer items with", "Prefer items without"};
+                    const char* prefDesc[] = {LZ("Don't care"), LZ("Prefer items with"), LZ("Prefer items without")};
 
                     ImGui::PushItemWidth(-FLT_MIN);
-                    if (ImGui::BeginTable("Preference Variants", 2, ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_SizingFixedFit)) {
-                        ImGui::TableSetupColumn("Word");
-                        ImGui::TableSetupColumn("Options");
+                    if (ImGui::BeginTable(LZ("Preference Variants"), 2, ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_SizingFixedFit)) {
+                        ImGui::TableSetupColumn(LZ("Word"));
+                        ImGui::TableSetupColumn(LZ("Options"));
 
                         for (auto& i : g_Config.mapPrefVariants) {
                             ImGui::TableNextColumn();
@@ -1733,20 +1948,20 @@ void QuickArmorRebalance::RenderUI() {
                     }
 
                     static TimedTooltip resp;
-                    if (ImGui::Button("Rescan ALL modified items for preference words")) {
+                    if (ImGui::Button(LZ("Rescan ALL modified items for preference words"))) {
                         auto r = RescanPreferenceVariants();
-                        resp.Enable(std::format("{} matching items found", r));
+                        resp.Enable(LZFormat("{} matching items found", r));
                     }
                     if (!resp.Show())
                         MakeTooltip(
-                            "You need only press this when new words are added to the list above.\n"
-                            "You do not need to rescan when simply changing preferences.");
+                            LZ("You need only press this when new words are added to the list above.\n"
+                               "You do not need to rescan when simply changing preferences."));
 
                     ImGui::EndTabItem();
                 }
 
-                if (ImGui::BeginTabItem("Crafting")) {
-                    ImGui::Text("Only generate crafting recipes for");
+                if (ImGui::BeginTabItem(LZ("Crafting"))) {
+                    ImGui::Text(LZ("Only generate crafting recipes for"));
                     ImGui::SameLine();
 
                     if (ImGui::BeginCombo("##Rarity", rarity[g_Config.craftingRarityMax], ImGuiComboFlags_PopupAlignLeft)) {
@@ -1760,48 +1975,48 @@ void QuickArmorRebalance::RenderUI() {
                     }
 
                     ImGui::SameLine();
-                    ImGui::Text("rarity and below");
+                    ImGui::Text(LZ("rarity and below"));
 
                     ImGui::Indent();
-                    ImGui::Checkbox("Disable existing crafting recipies above that rarity", &g_Config.bDisableCraftingRecipesOnRarity);
+                    ImGui::Checkbox(LZ("Disable existing crafting recipies above that rarity"), &g_Config.bDisableCraftingRecipesOnRarity);
                     ImGui::Unindent();
 
-                    ImGui::Checkbox("Keep crafting books as requirement", &g_Config.bKeepCraftingBooks);
+                    ImGui::Checkbox(LZ("Keep crafting books as requirement"), &g_Config.bKeepCraftingBooks);
 
-                    ImGui::Checkbox("Use recipes from as similar item if primary item is lacking", &g_Config.bUseSecondaryRecipes);
+                    ImGui::Checkbox(LZ("Use recipes from as similar item if primary item is lacking"), &g_Config.bUseSecondaryRecipes);
 
-                    ImGui::Checkbox("Enable smelting recipes", &g_Config.bEnableSmeltingRecipes);
+                    ImGui::Checkbox(LZ("Enable smelting recipes"), &g_Config.bEnableSmeltingRecipes);
 
-                    ImGui::Text("Instead of free recipes, make recipes cost gold as a portion of the item's value:");
+                    ImGui::Text(LZ("Instead of free recipes, make recipes cost gold as a portion of the item's value:"));
                     ImGui::Indent();
-                    ImGui::Text("Temper recipes");
+                    ImGui::Text(LZ("Temper recipes"));
                     ImGui::SameLine();
                     ImGui::SetNextItemWidth(-FLT_MIN);
                     ImGui::SliderFloat("##TemperRatio", &g_Config.fTemperGoldCostRatio, 0.0f, 200.0f, "%.0f%%", ImGuiSliderFlags_AlwaysClamp);
-                    MakeTooltip("Set to 0%% to keep free");
-                    ImGui::Text("Craft recipes");
+                    MakeTooltip(LZ("Set to 0%% to keep free"));
+                    ImGui::Text(LZ("Craft recipes"));
                     ImGui::SameLine();
                     ImGui::SetNextItemWidth(-FLT_MIN);
                     ImGui::SliderFloat("##CraftRatio", &g_Config.fCraftGoldCostRatio, 0.0f, 200.0f, "%.0f%%", ImGuiSliderFlags_AlwaysClamp);
-                    MakeTooltip("Set to 0%% to keep free");
+                    MakeTooltip(LZ("Set to 0%% to keep free"));
                     ImGui::Unindent();
 
                     ImGui::EndTabItem();
                 }
 
-                if (ImGui::BeginTabItem("Permissions")) {
-                    if (ImGui::BeginTable("Permissions", 2, ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_SizingFixedFit | ImGuiTableColumnFlags_NoReorder)) {
-                        ImGui::TableSetupColumn("Local Changes Permissions");
-                        ImGui::TableSetupColumn("Shared Changes Permissions");
+                if (ImGui::BeginTabItem(LZ("Permissions"))) {
+                    if (ImGui::BeginTable(LZ("Permissions"), 2, ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_SizingFixedFit | ImGuiTableColumnFlags_NoReorder)) {
+                        ImGui::TableSetupColumn(LZ("Local Changes Permissions"));
+                        ImGui::TableSetupColumn(LZ("Shared Changes Permissions"));
 
                         ImGui::TableHeadersRow();
                         ImGui::TableNextRow();
 
                         ImGui::TableNextColumn();
-                        PermissionsChecklist("Local", g_Config.permLocal);
+                        PermissionsChecklist(LZ("Local"), g_Config.permLocal);
 
                         ImGui::TableNextColumn();
-                        PermissionsChecklist("Shared", g_Config.permShared);
+                        PermissionsChecklist(LZ("Shared"), g_Config.permShared);
 
                         ImGui::EndTable();
                     }
@@ -1809,30 +2024,34 @@ void QuickArmorRebalance::RenderUI() {
                     ImGui::EndTabItem();
                 }
 
-                if (ImGui::BeginTabItem("Hooks")) {
-                    ImGui::Checkbox("Enable NIF armor slot remapping hook", &g_Config.bEnableArmorSlotModelFixHook);
-                    MakeTooltip("Fixes armor pieces not rendering when remapping their armor slots");
+                if (ImGui::BeginTabItem(LZ("Hooks"))) {
+                    ImGui::Checkbox(LZ("Enable NIF armor slot remapping hook"), &g_Config.bEnableArmorSlotModelFixHook);
+                    MakeTooltip(LZ("Fixes armor pieces not rendering when remapping their armor slots"));
 
                     ImGui::BeginDisabled(REL::Module::IsVR());
-                    ImGui::Checkbox("Enable Skyrim warmth system hook", &g_Config.bEnableSkyrimWarmthHook);
+                    ImGui::Checkbox(LZ("Enable Skyrim warmth system hook"), &g_Config.bEnableSkyrimWarmthHook);
                     MakeTooltip(
-                        "Required to enable changes to item warmth.\n"
-                        "WARNING: Likely to cause crashes on VR!");
+                        LZ("Required to enable changes to item warmth.\n"
+                           "WARNING: Likely to cause crashes on VR!"));
                     ImGui::EndDisabled();
 
                     ImGui::EndTabItem();
                 }
 
-                if (ImGui::BeginTabItem("Integrations")) {
-                    ImGui::SeparatorText("Dynamic Armor Variants");
-                    ImGui::Checkbox("Enable exports to DAV", &g_Config.bEnableDAVExports);
+                if (ImGui::BeginTabItem(LZ("Integrations"))) {
+                    ImGui::SeparatorText(LZ("Dynamic Armor Variants"));
+                    ImGui::Checkbox(LZ("Enable exports to DAV"), &g_Config.bEnableDAVExports);
                     ImGui::SameLine();
                     ImGui::BeginDisabled(!g_Config.bEnableDAVExports);
-                    ImGui::Checkbox("Even if DAV not present", &g_Config.bEnableDAVExportsAlways);
-                    if (ImGui::Button("Re-export all files to DAV")) {
+                    ImGui::Checkbox(LZ("Even if DAV not present"), &g_Config.bEnableDAVExportsAlways);
+                    if (ImGui::Button(LZ("Re-export all files to DAV"))) {
                         ExportAllToDAV();
                     }
                     ImGui::EndDisabled();
+                    ImGui::EndTabItem();
+                }
+
+                if (ImGui::BeginTabItem(LZ("Language"))) {
                     ImGui::EndTabItem();
                 }
 
@@ -1869,15 +2088,15 @@ void QuickArmorRebalance::RenderUI() {
                 }
             }
 
-            ImGui::Text("Click and drag from the original slot on the left to the new replacement slot on the right");
+            ImGui::Text(LZ("Click and drag from the original slot on the left to the new replacement slot on the right"));
             ImGui::PushItemWidth(-FLT_MIN);
 
             if (ImGui::BeginTable(
                     "Slot Mapping", 3,
                     ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_PadOuterX | ImGuiTableFlags_PreciseWidths | ImGuiTableFlags_ScrollY)) {
-                ImGui::TableSetupColumn("Original");
-                ImGui::TableSetupColumn("Items", ImGuiTableColumnFlags_WidthStretch);
-                ImGui::TableSetupColumn("Remapped");
+                ImGui::TableSetupColumn(LZ("Original"));
+                ImGui::TableSetupColumn(LZ("Items"), ImGuiTableColumnFlags_WidthStretch);
+                ImGui::TableSetupColumn(LZ("Remapped"));
 
                 ImGui::TableHeadersRow();
                 ImGui::TableNextRow();
@@ -1900,18 +2119,18 @@ void QuickArmorRebalance::RenderUI() {
                             popCol++;
                         } else if ((((uint64_t)1 << i) & slotsUsed & ~(uint64_t)g_Config.usedSlotsMask)) {
                             ImGui::PushStyleColor(ImGuiCol_Text, colorDeleted);
-                            strWarn = "Warning: Items in this slot will not be changed unless remapped to another slot.";
+                            strWarn = LZ("Warning: Items in this slot will not be changed unless remapped to another slot.");
                             popCol++;
                         } else if ((1ull << i) & slotsUsed & (remappedTar & ~remappedSrc)) {
                             ImGui::PushStyleColor(ImGuiCol_Text, colorDeleted);
                             strWarn =
-                                "Warning: Other items are being remapped to this slot.\n"
-                                "This will cause conflicts unless this slot is also remapped.";
+                                LZ("Warning: Other items are being remapped to this slot.\n"
+                                   "This will cause conflicts unless this slot is also remapped.");
                             popCol++;
                         }
 
                         bool bSelected = false;
-                        if (ImGui::Selectable(strSlotDesc[i], &bSelected, 0)) {
+                        if (ImGui::Selectable(strSlotDesc[i].c_str(), &bSelected, 0)) {
                         }
 
                         if (strWarn) MakeTooltip(strWarn);
@@ -1920,7 +2139,7 @@ void QuickArmorRebalance::RenderUI() {
                             nSlotView = i;
                             g_Config.acParams.mapArmorSlots.erase(i);
                             ImGui::SetDragDropPayload("ARMOR SLOT", &i, sizeof(i));
-                            ImGui::Text(strSlotDesc[i]);
+                            ImGui::Text(strSlotDesc[i].c_str());
                             ImGui::EndDragDropSource();
                         }
 
@@ -1974,8 +2193,8 @@ void QuickArmorRebalance::RenderUI() {
                     }
                     if (bWarn)
                         MakeTooltip(
-                            "Warning: Items are being remapped to this slot, but other items are already using this "
-                            "slot.");
+                            LZ("Warning: Items are being remapped to this slot, but other items are already using this "
+                               "slot."));
 
                     if (!bProtected && (g_Config.bAllowInvalidRemap || !bDisabled) && ImGui::BeginDragDropTarget()) {
                         if (auto payload = ImGui::AcceptDragDropPayload("ARMOR SLOT")) {
@@ -1984,7 +2203,7 @@ void QuickArmorRebalance::RenderUI() {
                         ImGui::EndDragDropTarget();
                     }
                     ImGui::SameLine();
-                    if (ImGui::RadioButton(strSlotDesc[i], &bCheckbox)) {
+                    if (ImGui::RadioButton(strSlotDesc[i].c_str(), &bCheckbox)) {
                     }
                     tarCenter[i] = (ImGui::GetItemRectMin() + ImGui::GetItemRectMax()) / 2;
                     tarCenter[i].x = ImGui::GetItemRectMin().x + ImGui::GetItemRectMax().y - tarCenter[i].y;  // Want center of the circle
@@ -2066,22 +2285,22 @@ void QuickArmorRebalance::RenderUI() {
 
         if (ImGui::BeginPopupModal("Dynamic Variants", &bPopupActive, ImGuiWindowFlags_NoScrollbar)) {
             dvWndWasOpen = true;
-            ImGui::Text("Drag the appropriate words (if any) to their associated dynamic type on the right side.");
+            ImGui::Text(LZ("Drag the appropriate words (if any) to their associated dynamic type on the right side."));
 
             static TimedTooltip resp;
             ImGui::BeginDisabled(!hasModifiedItems);
-            if (ImGui::Button(RightAlign("Update Dynamic Variants"))) {
+            if (ImGui::Button(RightAlign(LZ("Update Dynamic Variants")))) {
                 g_Config.acParams.dvSets = MapVariants(analyzeResults, mapDVWords);
                 auto r = AddDynamicVariants(g_Config.acParams);
 
-                resp.Enable(std::format("{} dynamic variants added", r));
+                resp.Enable(LZFormat("{} dynamic variants added", r));
             }
 
             if (!resp.Show()) {
                 if (!hasModifiedItems)
                     MakeTooltip(
-                        "This only updates previously modified items, but none have been detected.\n\n"
-                        "Dynamic variants will be included when clicking Apply Changes after closing this window.");
+                        LZ("This only updates previously modified items, but none have been detected.\n\n"
+                           "Dynamic variants will be included when clicking Apply Changes after closing this window."));
             }
 
             ImGui::EndDisabled();
@@ -2145,32 +2364,32 @@ void QuickArmorRebalance::RenderUI() {
 
             if (ImGui::BeginTable("WindowTable", 4, ImGuiTableFlags_Resizable | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingFixedSame | ImGuiTableFlags_ScrollY,
                                   ImGui::GetContentRegionAvail())) {
-                ImGui::TableSetupColumn("Static Variants");
-                ImGui::TableSetupColumn("Unassigned");
-                ImGui::TableSetupColumn("Dynamic Variants");
-                ImGui::TableSetupColumn("Output Variant Sets", ImGuiTableColumnFlags_WidthStretch);
+                ImGui::TableSetupColumn(LZ("Static Variants"));
+                ImGui::TableSetupColumn(LZ("Unassigned"));
+                ImGui::TableSetupColumn(LZ("Dynamic Variants"));
+                ImGui::TableSetupColumn(LZ("Output Variant Sets"), ImGuiTableColumnFlags_WidthStretch);
 
                 ImGui::TableNextRow(ImGuiTableRowFlags_Headers);
                 ImGui::TableNextColumn();
-                ImGui::TableHeader("Static Variants");
+                ImGui::TableHeader(LZ("Static Variants"));
                 MakeTooltip(
-                    "Static Variants are similar but distinct items.\n"
-                    "Usually colors or different versions of an item piece.\n\n"
-                    "The accurracy of words in this table is not important.");
+                    LZ("Static Variants are similar but distinct items.\n"
+                       "Usually colors or different versions of an item piece.\n\n"
+                       "The accurracy of words in this table is not important."));
 
                 ImGui::TableNextColumn();
-                ImGui::TableHeader("Unassigned");
+                ImGui::TableHeader(LZ("Unassigned"));
 
                 ImGui::TableNextColumn();
-                ImGui::TableHeader("Dynamic Variants");
+                ImGui::TableHeader(LZ("Dynamic Variants"));
                 MakeTooltip(
-                    "Dynamic Variants are the same item in different forms.\n\n"
-                    "Place associated words under the associated variant type.\n"
-                    "If there are multiple, they should be ordered that the most default is at the top and the most "
-                    "changed at the bottom.");
+                    LZ("Dynamic Variants are the same item in different forms.\n\n"
+                       "Place associated words under the associated variant type.\n"
+                       "If there are multiple, they should be ordered that the most default is at the top and the most "
+                       "changed at the bottom."));
 
                 ImGui::TableNextColumn();
-                ImGui::TableHeader("Output Variant Sets");
+                ImGui::TableHeader(LZ("Output Variant Sets"));
 
                 ImGui::TableNextRow();
                 ImGui::TableNextColumn();
@@ -2205,11 +2424,11 @@ void QuickArmorRebalance::RenderUI() {
                     ImGui::Separator();
 
                     ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x);
-                    if (ImGui::Button("Show More Words")) {
+                    if (ImGui::Button(LZ("Show More Words"))) {
                         nShowWords = std::min(nShowWords + 1, AnalyzeResults::eWords_Count - 1);
                     }
 
-                    if (ImGui::Button("Show Less Words")) {
+                    if (ImGui::Button(LZ("Show Less Words"))) {
                         nShowWords = std::max(nShowWords - 1, (int)AnalyzeResults::eWords_StaticVariants);
                     }
                     ImGui::PopItemWidth();
@@ -2366,9 +2585,9 @@ void QuickArmorRebalance::RenderUI() {
             for (int i = 0; i < 32; i++) {
                 itemCats[eCatArmor0 + i].first = strSlotDesc[i];
             }
-            itemCats[eCatArmorNoSlots].first = "Armor - Unassigned slot";
-            itemCats[eCatWeapons].first = "Weapons";
-            itemCats[eCatAmmo].first = "Ammo";
+            itemCats[eCatArmorNoSlots].first = LZ("Armor - Unassigned slot");
+            itemCats[eCatWeapons].first = LZ("Weapons");
+            itemCats[eCatAmmo].first = LZ("Ammo");
 
             auto itemGroups = GroupItems(params.items, params.analyzeResults);
             for (auto& i : itemGroups) {
@@ -2420,7 +2639,7 @@ void QuickArmorRebalance::RenderUI() {
             static float fMaxKWSize = 0;
 
             if (ImGui::BeginMenuBar()) {
-                if (ImGui::BeginMenu("Import Keywords")) {
+                if (ImGui::BeginMenu(LZ("Import Keywords"))) {
                     static RE::TESFile* curKWFile = nullptr;
                     static std::map<RE::TESFile*, std::vector<RE::BGSKeyword*>> mapFileKeywords;
                     static std::vector<RE::TESFile*> lsSortedFiles;
@@ -2449,7 +2668,7 @@ void QuickArmorRebalance::RenderUI() {
                     }
 
                     ImGui::SetNextItemWidth(300.0f);
-                    if (ImGui::BeginCombo("##Mod", curKWFile ? curKWFile->fileName : "Select a mod", ImGuiComboFlags_HeightLarge)) {
+                    if (ImGui::BeginCombo("##Mod", curKWFile ? curKWFile->fileName : LZ("Select a mod"), ImGuiComboFlags_HeightLarge)) {
                         for (auto file : lsSortedFiles) {
                             if (ImGui::Selectable(file->fileName, file == curKWFile)) {
                                 curKWFile = file;
@@ -2459,7 +2678,7 @@ void QuickArmorRebalance::RenderUI() {
                         ImGui::EndCombo();
                     }
 
-                    ImGui::Text("Tab (optional)");
+                    ImGui::Text(LZ("Tab (optional)"));
                     ImGui::SameLine();
                     static char strTab[64] = "";
                     ImGui::SetNextItemWidth(150.0f);
@@ -2467,10 +2686,10 @@ void QuickArmorRebalance::RenderUI() {
 
                     if (ImGui::BeginListBox("##KeywordList", ImVec2(300.0f, 500.0f))) {
                         if (ImGui::BeginPopupContextWindow()) {
-                            if (ImGui::Selectable("Enable all")) {
+                            if (ImGui::Selectable(LZ("Enable all"))) {
                                 for (auto kw : mapFileKeywords[curKWFile]) mapEnabledKWs[kw] = true;
                             }
-                            if (ImGui::Selectable("Disable all")) {
+                            if (ImGui::Selectable(LZ("Disable all"))) {
                                 for (auto kw : mapFileKeywords[curKWFile]) mapEnabledKWs[kw] = false;
                             }
                             ImGui::EndPopup();
@@ -2485,7 +2704,7 @@ void QuickArmorRebalance::RenderUI() {
                     }
 
                     static TimedTooltip resp;
-                    if (ImGui::Button(RightAlign("Import"))) {
+                    if (ImGui::Button(RightAlign(LZ("Import")))) {
                         std::set<RE::BGSKeyword*> kws;
 
                         // auto& tab = mapKWTabs[strTab];
@@ -2497,22 +2716,22 @@ void QuickArmorRebalance::RenderUI() {
                         }
 
                         ImportKeywords(curKWFile, strTab, kws);
-                        resp.Enable("Keywords imported.");
+                        resp.Enable(LZ("Keywords imported."));
                     }
                     if (!resp.Show())
                         MakeTooltip(
-                            "Creates a basic config file for the selected keywords.\n"
-                            "Advanced configuration is available by editing the generated file directly.");
+                            LZ("Creates a basic config file for the selected keywords.\n"
+                               "Advanced configuration is available by editing the generated file directly."));
 
                     ImGui::EndMenu();
                 }
 
-                if (ImGui::BeginMenu("Export Changes")) {
-                    if (ImGui::BeginMenu("to Keyword Item Distributor (KID)")) {
-                        ImGui::Text("This will export all keyword additions for currently displayed items to KID.");
-                        ImGui::Text("Note: KID only supports the addition of keywords, not any removals.");
+                if (ImGui::BeginMenu(LZ("Export Changes"))) {
+                    if (ImGui::BeginMenu(LZ("to Keyword Item Distributor (KID)"))) {
+                        ImGui::Text(LZ("This will export all keyword additions for currently displayed items to KID."));
+                        ImGui::Text(LZ("Note: KID only supports the addition of keywords, not any removals."));
 
-                        ImGui::Text("File name:");
+                        ImGui::Text(LZ("File name:"));
                         ImGui::SameLine();
                         ImGui::SetNextItemWidth(340.0f);
                         ImGui::InputText("##Filename", filenameKIDExport, sizeof(filenameKIDExport));
@@ -2524,28 +2743,28 @@ void QuickArmorRebalance::RenderUI() {
 
                         if (std::filesystem::exists(path)) {
                             ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 0, 255));
-                            ImGui::Text("Warning: File exists, contents will be overwritten.");
+                            ImGui::Text(LZ("Warning: File exists, contents will be overwritten."));
                             ImGui::Spacing();
                             ImGui::PopStyleColor();
                         }
 
                         ImGui::BeginDisabled(!*filenameKIDExport);
                         static TimedTooltip resp;
-                        if (ImGui::Button(RightAlign("Export Changes##Button"))) {
+                        if (ImGui::Button(RightAlign(LZ("Export Changes##Button")))) {
                             if (ExportToKID(params.filteredItems, params.mapKeywordChanges, path))
-                                resp.Enable("Exported succesfully");
+                                resp.Enable(LZ("Exported succesfully"));
                             else
-                                resp.Enable(std::format("Could not open file to write {}:\n\n{}", path.generic_string(), std::strerror(errno)));
+                                resp.Enable(LZFormat("Could not open file to write {}:\n\n{}", path.generic_string(), std::strerror(errno)));
                         }
                         resp.Show();
                         ImGui::EndDisabled();
 
                         ImGui::EndMenu();
                     }
-                    if (ImGui::BeginMenu("to Skypatcher")) {
-                        ImGui::Text("This will create multiple file(s) for SkyPatcher to use.");
-                        ImGui::Text("It is recommended to export to a subdirectory.");
-                        ImGui::Text("File name(s):");
+                    if (ImGui::BeginMenu(LZ("to Skypatcher"))) {
+                        ImGui::Text(LZ("This will create multiple file(s) for SkyPatcher to use."));
+                        ImGui::Text(LZ("It is recommended to export to a subdirectory."));
+                        ImGui::Text(LZ("File name(s):"));
                         ImGui::SameLine();
                         ImGui::SetNextItemWidth(420.0f);
                         ImGui::InputText("##Filename", filenameSkypatcherExport, sizeof(filenameSkypatcherExport));
@@ -2557,30 +2776,30 @@ void QuickArmorRebalance::RenderUI() {
 
                         if (std::filesystem::exists(pathBase / "armor" / filename)) {
                             ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 0, 255));
-                            ImGui::Text("Warning: Armor file exists, contents may be overwritten.");
+                            ImGui::Text(LZ("Warning: Armor file exists, contents may be overwritten."));
                             ImGui::Spacing();
                             ImGui::PopStyleColor();
                         }
                         if (std::filesystem::exists(pathBase / "weapon" / filename)) {
                             ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 0, 255));
-                            ImGui::Text("Warning: Weapon file exists, contents may be overwritten.");
+                            ImGui::Text(LZ("Warning: Weapon file exists, contents may be overwritten."));
                             ImGui::Spacing();
                             ImGui::PopStyleColor();
                         }
                         if (std::filesystem::exists(pathBase / "ammo" / filename)) {
                             ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 0, 255));
-                            ImGui::Text("Warning: Ammo file exists, contents may be overwritten.");
+                            ImGui::Text(LZ("Warning: Ammo file exists, contents may be overwritten."));
                             ImGui::Spacing();
                             ImGui::PopStyleColor();
                         }
 
                         ImGui::BeginDisabled(!*filenameSkypatcherExport);
                         static TimedTooltip resp;
-                        if (ImGui::Button(RightAlign("Export Changes##Button"))) {
+                        if (ImGui::Button(RightAlign(LZ("Export Changes##Button")))) {
                             if (ExportToSkypatcher(params.filteredItems, params.mapKeywordChanges, filename))
-                                resp.Enable("Exported succesfully");
+                                resp.Enable(LZ("Exported succesfully"));
                             else
-                                resp.Enable("Unable to export to Skypatcher, see logs for details");
+                                resp.Enable(LZ("Unable to export to Skypatcher, see logs for details"));
                         }
                         resp.Show();
                         ImGui::EndDisabled();
@@ -2591,10 +2810,10 @@ void QuickArmorRebalance::RenderUI() {
                     ImGui::EndMenu();
                 }
 
-                if (ImGui::BeginMenu("Options")) {
-                    ImGui::MenuItem("Show Types and Slots", nullptr, &g_Config.bShowKeywordSlots);
-                    ImGui::MenuItem("Reorder keywords based on relevance", nullptr, &g_Config.bReorderKeywordsForRelevance);
-                    if (ImGui::MenuItem("Equip example items", nullptr, &g_Config.bEquipPreviewForKeywords)) {
+                if (ImGui::BeginMenu(LZ("Options"))) {
+                    ImGui::MenuItem(LZ("Show Types and Slots"), nullptr, &g_Config.bShowKeywordSlots);
+                    ImGui::MenuItem(LZ("Reorder keywords based on relevance"), nullptr, &g_Config.bReorderKeywordsForRelevance);
+                    if (ImGui::MenuItem(LZ("Equip example items"), nullptr, &g_Config.bEquipPreviewForKeywords)) {
                         if (!g_Config.bEquipPreviewForKeywords) {
                             itemsCustomTemp.Pop(true);
                             itemsCustomTemp.Restore();
@@ -2608,16 +2827,16 @@ void QuickArmorRebalance::RenderUI() {
             }
 
             static TimedTooltip resp;
-            if (ImGui::Button(RightAlign("Save changes"))) {
+            if (ImGui::Button(RightAlign(LZ("Save changes")))) {
                 MakeKeywordChanges(params, true);
-                resp.Enable("Changes saved");
+                resp.Enable(LZ("Changes saved"));
             }
-            if (!resp.Show()) MakeTooltip("Keyword changes are also saved with the Apply Changes button.");
+            if (!resp.Show()) MakeTooltip(LZ("Keyword changes are also saved with the Apply Changes button."));
 
             if (ImGui::BeginTable("WindowTable", 2, ImGuiTableFlags_Resizable | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingStretchProp,
                                   ImGui::GetContentRegionAvail())) {
-                ImGui::TableSetupColumn("Items", 0, 100.0f);
-                ImGui::TableSetupColumn("Keywords", ImGuiTableColumnFlags_WidthStretch, 300.0f);
+                ImGui::TableSetupColumn(LZ("Items"), 0, 100.0f);
+                ImGui::TableSetupColumn(LZ("Keywords"), ImGuiTableColumnFlags_WidthStretch, 300.0f);
 
                 ImGui::TableNextRow();
                 ImGui::TableNextColumn();
@@ -2669,7 +2888,7 @@ void QuickArmorRebalance::RenderUI() {
 
                             for (auto i : group.second) {
                                 if (IsItemChanged(i)) {
-                                    bAnyChanged = true;                                    
+                                    bAnyChanged = true;
                                     continue;
                                 }
                                 bAllChanged = false;
@@ -2681,7 +2900,7 @@ void QuickArmorRebalance::RenderUI() {
                                 nPopColor++;
                             } else if (bAnyChanged) {
                                 ImGui::PushStyleColor(ImGuiCol_Text, colorChangedPartial);
-                                nPopColor++;                            
+                                nPopColor++;
                             }
 
                             auto bOpen = ImGui::TreeNodeEx(group.first.c_str(), (IsAllSelected(group) ? ImGuiTreeNodeFlags_Selected : 0) | ImGuiTreeNodeFlags_OpenOnArrow);
@@ -2796,7 +3015,7 @@ void QuickArmorRebalance::RenderUI() {
                 ImGui::TableNextColumn();
 
                 if (g_Config.mapCustomKWTabs.empty())
-                    ImGui::Text("No keywords, import some to begin.");
+                    ImGui::Text(LZ("No keywords, import some to begin."));
                 else {
                     if (fMaxKWSize == 0) {
                         for (auto& tab : g_Config.mapCustomKWTabs) {
@@ -2814,8 +3033,7 @@ void QuickArmorRebalance::RenderUI() {
                                 slotsUsed |= slots;
                             else
                                 slotsUsed |= (1ull << eCatArmorNoSlots);
-                        }
-                        else if (auto weapon = i->As<RE::TESObjectWEAP>())
+                        } else if (auto weapon = i->As<RE::TESObjectWEAP>())
                             slotsUsed |= (1ull << eCatWeapons);
                         else if (auto ammo = i->As<RE::TESAmmo>())
                             slotsUsed |= (1ull << eCatAmmo);
@@ -2823,7 +3041,7 @@ void QuickArmorRebalance::RenderUI() {
 
                     if (ImGui::BeginTabBar("##KWTabs")) {
                         for (auto& tab : g_Config.mapCustomKWTabs) {
-                            if (ImGui::BeginTabItem(tab.first.empty() ? "General" : tab.first.c_str())) {
+                            if (ImGui::BeginTabItem(tab.first.empty() ? LZ("General") : tab.first.c_str())) {
                                 int nCols = std::clamp((int)(ImGui::GetContentRegionAvail().x / fMaxKWSize), 1, 8);
 
                                 if (ImGui::BeginTable("Keywords Table", nCols, ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingStretchSame | ImGuiTableFlags_ScrollY,
@@ -2966,5 +3184,6 @@ void QuickArmorRebalance::RenderUI() {
     ImGuiIntegration::BlockInput(!ImGui::IsMouseDown(ImGuiMouseButton_Middle) && !ImGui::IsWindowCollapsed(), ImGui::IsItemHovered());
     ImGui::End();
 
+    if (g_Config.bExportUntranslated) Localization::Get()->Export();
     if (!isActive) ImGuiIntegration::Show(false);
 }

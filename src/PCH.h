@@ -15,6 +15,8 @@
 #include "toml++/toml.hpp"
 
 #include <rapidjson/fwd.h>
+
+#define IMGUI_ENABLE_FREETYPE
 #include <imgui.h>
 
 using namespace std::literals;

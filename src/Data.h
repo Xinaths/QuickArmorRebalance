@@ -1,5 +1,7 @@
 #pragma once
 
+std::string& toLowerUTF8(std::string& utf8_str); //In NameParsing.cpp
+
 namespace QuickArmorRebalance {
     using ArmorSet = std::vector<RE::TESObjectARMO*>;
     using ArmorSlot = unsigned int;
@@ -25,7 +27,8 @@ namespace QuickArmorRebalance {
     bool WriteJSONFile(std::filesystem::path path, rapidjson::Document& doc);
 
     inline void ToLower(std::string& str) {
-        std::transform(str.begin(), str.end(), str.begin(), [](unsigned char c) { return std::tolower(c, std::locale()); });
+        //std::transform(str.begin(), str.end(), str.begin(), [](unsigned char c) { return std::tolower(c, std::locale()); });
+        toLowerUTF8(str);
     }
 
     inline std::string MakeLower(std::string str) {
@@ -42,6 +45,15 @@ namespace QuickArmorRebalance {
         else
             return it->second;
     }
+
+    inline rapidjson::Value& EnsureHas(rapidjson::Value& obj, const char* field, rapidjson::Type t, rapidjson::MemoryPoolAllocator<>& al) {
+        if (!obj.HasMember(field) || obj[field].GetType() != t) {
+            obj.RemoveMember(field);
+            obj.AddMember(rapidjson::Value(field, al), rapidjson::Value(t), al);
+        }
+        return obj[field];
+    }
+
 
     static RE::TESForm* FindIn(const RE::TESFile* mod, const char* str, bool* pOtherFile = nullptr) {
         if (pOtherFile) *pOtherFile = false;

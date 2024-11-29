@@ -157,7 +157,7 @@ ArmorSlots QuickArmorRebalance::GetConvertableArmorSlots(const ArmorChangeParams
 
     coveredSlots = 0;  // weird case where an item's in the armor set but not in the curve tree
 
-    ProcessBaseArmorSet(params, coveredHeadSlots, [&](ArmorSlot slot, RE::TESObjectARMO*) { coveredSlots |= GetAllCoveredSlots(*params.curve, slot); });
+    ProcessBaseArmorSet(params, coveredHeadSlots, [&](ArmorSlot slot, RE::TESObjectARMO*) { coveredSlots |= GetAllCoveredSlots(params.curve->tree, slot); });
 
     return coveredSlots;
 }
@@ -180,11 +180,11 @@ int QuickArmorRebalance::MakeArmorChanges(const ArmorChangeParams& params) {
     ProcessBaseArmorSet(params, coveredHeadSlots, [&](ArmorSlot slot, RE::TESObjectARMO* i) { slotValues[slot].item = i; });
 
     int totalWeight = 0;
-    for (const auto& i : *params.curve)
+    for (const auto& i : params.curve->tree)
         totalWeight += GetTotalWeight(&i, ~((ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kShield | (ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kAmulet |
                                             (ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kRing));
-    for (const auto& i : *params.curve) PropogateBaseValues(slotValues, nullptr, &i);
-    for (const auto& i : *params.curve) CalcCoveredValues(slotValues, coveredSlots, &i);
+    for (const auto& i : params.curve->tree) PropogateBaseValues(slotValues, nullptr, &i);
+    for (const auto& i : params.curve->tree) CalcCoveredValues(slotValues, coveredSlots, &i);
 
     Document doc;
     auto& al = doc.GetAllocator();

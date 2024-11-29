@@ -53,6 +53,9 @@ target_include_directories(${PROJECT_NAME} PRIVATE include)
 find_package(ImGui CONFIG REQUIRED)
 target_link_libraries(${PROJECT_NAME} PRIVATE imgui::imgui)
 
+#find_package(ICU 74.2 REQUIRED i18n uc data)
+#target_link_libraries(${PROJECT_NAME} PRIVATE ICU::i18n ICU::uc ICU::data)
+
 add_compile_definitions(_SILENCE_ALL_MS_EXT_DEPRECATION_WARNINGS)
 
 # When your SKSE .dll is compiled, this will automatically copy the .dll into your mods folder.

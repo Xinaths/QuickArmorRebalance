@@ -39,6 +39,13 @@ namespace QuickArmorRebalance {
         Tree children;
     };
 
+    struct RebalanceCurve {
+        RebalanceCurveNode::Tree tree;
+        std::string slotName[32];
+
+        void Load(const rapidjson::Value& node);
+    };
+
     struct BaseArmorSet {
         std::string name;
         std::string strContents;
@@ -58,7 +65,7 @@ namespace QuickArmorRebalance {
         std::vector<RE::TESBoundObject*> items;
 
         BaseArmorSet* armorSet = nullptr;
-        RebalanceCurveNode::Tree* curve = nullptr;
+        RebalanceCurve* curve = nullptr;
 
         struct SliderPair {
             float fScale = 100.0f;
@@ -170,7 +177,7 @@ namespace QuickArmorRebalance {
         std::set<RE::BGSKeyword*> kwSetWeap;
         std::set<RE::BGSKeyword*> kwSetWeapTypes;
 
-        std::vector<std::pair<std::string, RebalanceCurveNode::Tree>> curves;
+        std::vector<std::pair<std::string, RebalanceCurve>> curves;
         std::vector<BaseArmorSet> armorSets;
         std::set<std::string> lootProfiles;
 
@@ -205,6 +212,8 @@ namespace QuickArmorRebalance {
 
         std::string strCriticalError = "Not loaded";
 
+        int nFontSize = 13;
+
         bool bCloseConsole = true;
         bool bAutoDeleteGiven = false;
         bool bResetSliders = false;
@@ -224,6 +233,8 @@ namespace QuickArmorRebalance {
         bool bEnableProtectedSlotRemapping = false;
         bool bEnableArmorSlotModelFixHook = true;
         bool bPreventDistributionOfDynamicVariants = true;
+
+        bool bExportUntranslated = false;
 
         bool bEnableDAVExports = true;
         bool bEnableDAVExportsAlways = false;

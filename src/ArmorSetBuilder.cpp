@@ -1,6 +1,10 @@
 #include "ArmorSetBuilder.h"
 
+// #include <unicode/brkiter.h>
+// #include <unicode/unistr.h>
+
 #include "Config.h"
+#include "NameParsing.h"
 
 using namespace QuickArmorRebalance;
 
@@ -17,8 +21,7 @@ namespace {
         return s;
     }
 
-    RE::TESObjectARMO* PickBetterKeywords(RE::TESObjectARMO* base, RE::TESObjectARMO* first,
-                                          RE::TESObjectARMO* second) {
+    RE::TESObjectARMO* PickBetterKeywords(RE::TESObjectARMO* base, RE::TESObjectARMO* first, RE::TESObjectARMO* second) {
         auto set1(GetKeywordSetFor(first));
         auto set2(GetKeywordSetFor(second));
 
@@ -39,6 +42,7 @@ namespace {
         return nullptr;
     }
 
+    /*
     void SplitNumbers(char* token, std::set<std::size_t>& words, std::vector<std::string>* pStrings) {
         auto tail = token;
 
@@ -62,8 +66,12 @@ namespace {
         words.insert(hash);
         if (pStrings) pStrings->push_back(token);
     }
+    */
 
     WordSet GetWords(RE::TESObjectARMO* item, std::vector<std::string>* pStrings = nullptr) {
+        return SplitWords(item->fullName.c_str(), pStrings);
+
+        /*
         std::string text(item->fullName);
 
         // Might be a bad idea to transform to lower, as SomeModsMightNameThingsWithoutSpaces which could be handled, if
@@ -80,6 +88,65 @@ namespace {
         }
 
         return words;
+        */
+        /*
+        std::string input(item->fullName);
+        WordSet result;
+
+        // Convert the input string to ICU UnicodeString
+        icu::UnicodeString unicodeStr = icu::UnicodeString::fromUTF8(input);
+
+        // Break into words using ICU's word boundary iterator
+        UErrorCode error = U_ZERO_ERROR;
+        std::unique_ptr<icu::BreakIterator> wordIterator(icu::BreakIterator::createWordInstance(icu::Locale::getDefault(), error));
+        if (U_FAILURE(error)) {
+            // std::cerr << "Error creating word iterator: " << u_errorName(error) << std::endl;
+            return result;
+        }
+        wordIterator->setText(unicodeStr);
+
+        int32_t start = wordIterator->first();
+        for (int32_t end = wordIterator->next(); end != icu::BreakIterator::DONE; start = end, end = wordIterator->next()) {
+            // Extract each word
+            icu::UnicodeString word = unicodeStr.tempSubStringBetween(start, end);
+
+            static const auto delimeters = icu::UnicodeString::fromUTF8(u8" ()[]{}<>‒–—―〜/\\|:;.,?!_*+=^&%$#@~（）【】《》ー／、．〜，.／");
+
+            // Remove delimiters like () - []
+            word = word.findAndReplace(0, word.length(), delimeters, {});
+            word = word.trim();
+
+            if (!word.isEmpty()) {
+                // Convert to lowercase
+                word.toLower();
+
+                // Add the original word
+                std::string utf8Word;
+                word.toUTF8String(utf8Word);
+                result.insert(std::hash<std::string>{}(utf8Word));
+
+                // Process for words with numbers at the end
+                std::string::size_type pos = utf8Word.find_first_of("0123456789");
+                if (pos != std::string::npos) {
+                    std::string baseWord = utf8Word.substr(0, pos);
+                    std::string trailingNum = utf8Word.substr(pos);
+
+                    if (!baseWord.empty()) {
+                        result.insert(std::hash<std::string>{}(baseWord));
+                        if (pStrings) pStrings->push_back(std::move(baseWord));
+                    }
+                    if (!trailingNum.empty()) {
+                        result.insert(std::hash<std::string>{}(trailingNum));
+                        if (pStrings) pStrings->push_back(std::move(trailingNum));
+                    }
+                }
+
+                if (pStrings) pStrings->push_back(std::move(utf8Word));
+            }
+        }
+
+        return result;
+        */
     }
 
     RE::TESObjectARMO* PickBetterName(RE::TESObjectARMO* base, RE::TESObjectARMO* first, RE::TESObjectARMO* second) {
@@ -117,9 +184,7 @@ namespace {
         return nullptr;
     }
 
-    std::vector<RE::TESObjectARMO*> FindBestMatches(RE::TESObjectARMO* baseItem,
-                                                    const std::vector<RE::TESBoundObject*>& items, unsigned int slots,
-                                                    unsigned int covered) {
+    std::vector<RE::TESObjectARMO*> FindBestMatches(RE::TESObjectARMO* baseItem, const std::vector<RE::TESBoundObject*>& items, unsigned int slots, unsigned int covered) {
         std::vector<RE::TESObjectARMO*> best;
 
         for (auto i : items) {
@@ -291,8 +356,7 @@ void QuickArmorRebalance::AnalyzeArmor(const std::vector<RE::TESBoundObject*>& i
     for (auto& i : mapWords) {
         remainingWords[i.first] = &i.second;
 
-        std::sort(i.second.items.begin(), i.second.items.end(),
-                  [](RE::TESObjectARMO* a, RE::TESObjectARMO* b) { return _stricmp(a->GetName(), b->GetName()) < 0; });
+        std::sort(i.second.items.begin(), i.second.items.end(), [](RE::TESObjectARMO* a, RE::TESObjectARMO* b) { return _stricmp(a->GetName(), b->GetName()) < 0; });
 
         size_t nLen = 0;
         for (auto item : i.second.items) nLen += strlen(item->GetName()) + 1;
@@ -313,8 +377,7 @@ void QuickArmorRebalance::AnalyzeArmor(const std::vector<RE::TESBoundObject*>& i
                     mapArmorWords[item].erase(i.second);
                 }
                 remainingWords.erase(i.second);
-            }
-            else
+            } else
                 i.second = 0;
         }
     }
@@ -589,8 +652,7 @@ void QuickArmorRebalance::AnalyzeArmor(const std::vector<RE::TESBoundObject*>& i
     */
 
     for (auto& i : mapWords) {
-        results.mapWordItems.emplace(i.first, std::move(AnalyzeResults::WordContents{std::move(i.second.items),
-                                                                                     std::move(i.second.strContents)}));
+        results.mapWordItems.emplace(i.first, std::move(AnalyzeResults::WordContents{std::move(i.second.items), std::move(i.second.strContents)}));
     }
     results.mapArmorWords = std::move(mapArmorWords);
 }
@@ -696,12 +758,9 @@ void QuickArmorRebalance::AnalyzeAllArmor() {
     logger::info("Finished all armor analysis");
 }
 
-inline std::size_t HashStep(std::size_t& hash, std::size_t n) {
-    return hash ^= (n + 0x9e3779b9 + (hash << 6) + (hash >> 2));
-}
+inline std::size_t HashStep(std::size_t& hash, std::size_t n) { return hash ^= (n + 0x9e3779b9 + (hash << 6) + (hash >> 2)); }
 
-std::size_t QuickArmorRebalance::HashWordSet(const WordSet& set, RE::TESObjectARMO* armor, std::size_t skip,
-                                             bool includeTypeAndSlot) {
+std::size_t QuickArmorRebalance::HashWordSet(const WordSet& set, RE::TESObjectARMO* armor, std::size_t skip, bool includeTypeAndSlot) {
     std::size_t hash = 0;
     if (includeTypeAndSlot) {
         HashStep(hash, (int)armor->bipedModelData.armorType.get());
@@ -715,8 +774,7 @@ std::size_t QuickArmorRebalance::HashWordSet(const WordSet& set, RE::TESObjectAR
     return hash;
 }
 
-DynamicVariantSets QuickArmorRebalance::MapVariants(
-    AnalyzeResults& results, const std::map<const DynamicVariant*, std::vector<std::size_t>>& mapDVWords) {
+DynamicVariantSets QuickArmorRebalance::MapVariants(AnalyzeResults& results, const std::map<const DynamicVariant*, std::vector<std::size_t>>& mapDVWords) {
     DynamicVariantSets ret;
 
     for (auto& dv : mapDVWords) {
@@ -763,16 +821,14 @@ DynamicVariantSets QuickArmorRebalance::MapVariants(
     return ret;
 }
 
-std::map<std::string, std::vector<RE::TESBoundObject*>> QuickArmorRebalance::GroupItems(
-    const std::vector<RE::TESBoundObject*>& items, AnalyzeResults& results) {
-
-    if (results.mapArmorWords.empty()) { //No data to work with - probably not a singular mod, so just return everything solo
+std::map<std::string, std::vector<RE::TESBoundObject*>> QuickArmorRebalance::GroupItems(const std::vector<RE::TESBoundObject*>& items, AnalyzeResults& results) {
+    if (results.mapArmorWords.empty()) {  // No data to work with - probably not a singular mod, so just return everything solo
         std::map<std::string, std::vector<RE::TESBoundObject*>> ret;
         for (auto item : items) {
             ret.emplace(item->GetName(), std::vector{item});
         }
 
-        return ret;   
+        return ret;
     }
 
     std::map<std::size_t, ArmorSet> sets;
@@ -884,8 +940,7 @@ std::map<std::string, std::vector<RE::TESBoundObject*>> QuickArmorRebalance::Gro
         else
             name = it->second;
 
-        std::sort(i.second.begin(), i.second.end(),
-                  [](auto& a, auto& b) { return _stricmp(a->fullName.c_str(), b->fullName.c_str()) < 0; });
+        std::sort(i.second.begin(), i.second.end(), [](auto& a, auto& b) { return _stricmp(a->fullName.c_str(), b->fullName.c_str()) < 0; });
 
         ret.emplace(std::move(name), std::vector<RE::TESBoundObject*>(i.second.begin(), i.second.end()));
     }

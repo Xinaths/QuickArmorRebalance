@@ -1,6 +1,7 @@
 #include "Config.h"
 
 #include <filesystem>
+// #include <boost/locale.hpp>
 
 #include "Data.h"
 #include "rapidjson/document.h"
@@ -15,6 +16,7 @@
 
 #define USER_BLACKLIST_FILE "User Blacklist.json"
 
+#include "Localization.h"
 #include "LootLists.h"
 
 using namespace rapidjson;
@@ -23,7 +25,6 @@ using namespace QuickArmorRebalance;
 namespace QuickArmorRebalance {
     Config g_Config;
 
-    RebalanceCurveNode::Tree LoadCurveNode(const Value& node);
     bool LoadArmorSet(BaseArmorSet& s, const Value& node);
     void LoadCustomKeywords(const Value& jsonCustomKWs);
 
@@ -63,7 +64,6 @@ namespace QuickArmorRebalance {
         }
         return nullptr;
     }
-
 }
 
 void LoadPermissions(QuickArmorRebalance::Permissions& p, toml::node_view<toml::node> tbl) {
@@ -88,6 +88,29 @@ void LoadPermissions(QuickArmorRebalance::Permissions& p, toml::node_view<toml::
 }
 
 bool QuickArmorRebalance::Config::Load() {
+    {
+        /*
+        boost::locale::generator gen;
+        std::locale loc = gen("");
+        std::locale::global(loc);
+        */
+
+        Localization::Get()->translations[L"en"] = {};
+        wchar_t localeName[85];
+
+        // Get the default user locale name
+        if (GetUserDefaultLocaleName(localeName, 85)) {
+            // Convert the wide string (wchar_t*) to a narrow string (char*)
+            std::wstring ws(localeName);
+
+            // Extract the language code from the locale name
+            size_t underscore_pos = ws.find(L'-');
+            if (underscore_pos != std::string::npos) ws = ws.substr(0, underscore_pos);
+            Localization::Get()->SetTranslation(ws);
+        } else
+            Localization::Get()->SetTranslation(L"en");
+    }
+
     bool bSuccess = false;
     auto pathConfig = std::filesystem::current_path() / PATH_ROOT PATH_CONFIGS;
 
@@ -171,6 +194,7 @@ bool QuickArmorRebalance::Config::Load() {
             g_Config.acParams.craft.bNew = config["craft"]["new"].value_or(false);
             g_Config.acParams.craft.bFree = config["craft"]["free"].value_or(false);
 
+            g_Config.nFontSize = config["settings"]["fontsize"].value_or(13);
             g_Config.verbosity = std::clamp(config["settings"]["verbosity"].value_or((int)spdlog::level::info), 0, spdlog::level::n_levels - 1);
             g_Config.bCloseConsole = config["settings"]["closeconsole"].value_or(true);
             g_Config.bAutoDeleteGiven = config["settings"]["autodelete"].value_or(false);
@@ -199,6 +223,11 @@ bool QuickArmorRebalance::Config::Load() {
             g_Config.bShowKeywordSlots = config["settings"]["showkeyworditemcats"].value_or(true);
             g_Config.bReorderKeywordsForRelevance = config["settings"]["reorderkeywords"].value_or(true);
             g_Config.bEquipPreviewForKeywords = config["settings"]["equipkeywordpreview"].value_or(true);
+            g_Config.bExportUntranslated = config["settings"]["exportuntranslated"].value_or(false);
+
+            if (auto code = config["settings"]["language"].as_string()) {
+                if (!code->get().empty()) Localization::Get()->SetTranslation(StringToWString(code->get()));
+            }
 
             if (auto arr = config["settings"]["autodisablewords"].as_array()) {
                 g_Config.lsDisableWords.reserve(arr->size());
@@ -394,8 +423,9 @@ bool QuickArmorRebalance::Config::LoadFile(std::filesystem::path path) {
 
         if (jsonCurves.IsObject()) {
             for (const auto& i : jsonCurves.GetObj()) {
-                auto curve{LoadCurveNode(i.value)};
-                if (!curve.empty()) curves.push_back({i.name.GetString(), std::move(curve)});
+                RebalanceCurve curve;
+                curve.Load(i.value);
+                if (!curve.tree.empty()) curves.push_back({i.name.GetString(), std::move(curve)});
             }
         } else
             ConfigFileWarning(path, "curves expected to be an object");
@@ -473,10 +503,12 @@ bool QuickArmorRebalance::Config::LoadFile(std::filesystem::path path) {
         LoadCustomKeywords(d["customKeywords"]);
     }
 
+    if (d.HasMember("translation")) Localization::Get()->LoadTranslation(d["translation"]);
+
     return true;
 }
 
-QuickArmorRebalance::RebalanceCurveNode::Tree QuickArmorRebalance::LoadCurveNode(const Value& node) {
+RebalanceCurveNode::Tree LoadCurveNode(RebalanceCurve& curve, const rapidjson::Value& node) {
     RebalanceCurveNode::Tree v;
 
     if (node.IsArray()) {
@@ -493,18 +525,30 @@ QuickArmorRebalance::RebalanceCurveNode::Tree QuickArmorRebalance::LoadCurveNode
                 } else
                     continue;
 
+                if (i.HasMember("name") && i["name"].IsString()) curve.slotName[n.slot - 30] = i["name"].GetString();
+
                 if (i.HasMember("weight") && i["weight"].IsInt())
                     n.weight = i["weight"].GetInt();
                 else
                     continue;
 
-                if (i.HasMember("children")) n.children = LoadCurveNode(i["children"]);
+                if (i.HasMember("children")) n.children = LoadCurveNode(curve, i["children"]);
                 v.push_back(std::move(n));
             }
         }
     }
 
     return v;
+}
+
+void RebalanceCurve::Load(const rapidjson::Value& node) {
+    const char* strSlotDesc[] = {"Head",       "Hair",   "Body",   "Hands",     "Forearms",         "Amulet",      "Ring",       "Feet",
+                                 "Calves",     "Shield", "Tail",   "Long Hair", "Circlet",          "Ears",        "Face",       "Neck",
+                                 "Chest",      "Back",   "???",    "Pelvis",    "Decapitated Head", "Decapitate",  "Lower body", "Leg (right)",
+                                 "Leg (left)", "Face2",  "Chest2", "Shoulder",  "Arm (left)",       "Arm (right)", "???",        "???"};
+    for (int i = 0; i < 32; i++) slotName[i] = strSlotDesc[i];
+
+    tree = LoadCurveNode(*this, node);
 }
 
 bool QuickArmorRebalance::LoadArmorSet(BaseArmorSet& s, const Value& node) {
@@ -662,7 +706,8 @@ void QuickArmorRebalance::Config::Save() {
                              {"sets", g_Config.acParams.bDistAsSet},
                              {"matching", g_Config.acParams.bMatchSetPieces},
                              {"profile", g_Config.acParams.distProfile ? g_Config.acParams.distProfile : "error"}}},
-        {"settings", toml::table{{"verbosity", g_Config.verbosity},
+        {"settings", toml::table{{"fontsize", g_Config.nFontSize},
+                                 {"verbosity", g_Config.verbosity},
                                  {"closeconsole", g_Config.bCloseConsole},
                                  {"autodelete", g_Config.bAutoDeleteGiven},
                                  {"roundweights", g_Config.bRoundWeight},
@@ -690,7 +735,9 @@ void QuickArmorRebalance::Config::Save() {
                                  {"showkeyworditemcats", g_Config.bShowKeywordSlots},
                                  {"reorderkeywords", g_Config.bReorderKeywordsForRelevance},
                                  {"equipkeywordpreview", g_Config.bEquipPreviewForKeywords},
-                                 {"autodisablewords", tomlDisableWords}}},
+                                 {"autodisablewords", tomlDisableWords},
+                                 {"language", WStringToString(Localization::Get()->language)},
+                                 {"exportuntranslated", g_Config.bExportUntranslated}}},
         {"integrations",
          toml::table{
              {"enableDAVexports", g_Config.bEnableDAVExports},
@@ -776,14 +823,6 @@ void QuickArmorRebalance::Config::RebuildDisabledWords() {
     for (auto w : lsDisableWords) {
         wordsAutoDisable.insert(std::hash<std::string>{}(w));
     }
-}
-
-Value& EnsureHas(Value& obj, const char* field, rapidjson::Type t, MemoryPoolAllocator<>& al) {
-    if (!obj.HasMember(field) || !obj[field].GetType() != t) {
-        obj.RemoveMember(field);
-        obj.AddMember(Value(field, al), Value(t), al);
-    }
-    return obj[field];
 }
 
 void QuickArmorRebalance::ImportKeywords(const RE::TESFile* mod, const char* tabName, const std::set<RE::BGSKeyword*>& kws) {

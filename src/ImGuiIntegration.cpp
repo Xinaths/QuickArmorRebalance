@@ -15,6 +15,7 @@
 namespace logger = SKSE::log;
 
 static void (*g_RenderCallback)() = nullptr;
+static void (*g_LoadFontCallback)() = nullptr;
 bool g_showImGui = false;
 bool g_blockInput = true;
 bool g_blockClicks = false;
@@ -65,7 +66,9 @@ struct D3DInitHook {
         func();
 
         logger::debug("D3DInit Hooked!");
-        auto render_manager = RE::BSRenderManager::GetSingleton();
+
+        /*
+        auto render_manager = RE::BSGraphics::Renderer::GetSingleton();
         if (!render_manager) {
             logger::error("Cannot find render manager. Initialization failed!");
             return;
@@ -78,6 +81,10 @@ struct D3DInitHook {
             logger::error("Cannot find swapchain. Initialization failed!");
             return;
         }
+        */
+
+        auto renderWindow = *REL::Relocation<RE::BSGraphics::RendererWindow**>{RELOCATION_ID(524730, 411349)}; //From RE::BSGraphics::Renderer::GetCurrentWindow, but not in the current release
+        auto swapchain = renderWindow->swapChain;
 
         logger::debug("Getting swapchain desc...");
         DXGI_SWAP_CHAIN_DESC sd{};
@@ -86,8 +93,9 @@ struct D3DInitHook {
             return;
         }
 
+        auto& render_data = RE::BSGraphics::Renderer::GetSingleton()->data;
         auto device = render_data.forwarder;
-        auto context = render_data.context;
+        auto context = render_data.context;       
 
         logger::debug("Initializing ImGui...");
         ImGui::CreateContext();
@@ -116,6 +124,11 @@ struct DXGIPresentHook {
 
     static void thunk(std::uint32_t a_p1) {
         func(a_p1);
+
+        if (g_LoadFontCallback) {
+            g_LoadFontCallback();
+            g_LoadFontCallback = nullptr;
+        }
 
         ImGui_ImplWin32_NewFrame(); //Let imgui clear out any queued messages and whatnot
 
@@ -582,3 +595,5 @@ void ImGuiIntegration::BlockInput(bool toBlock, bool toBlockClicks) {
     g_blockInput = toBlock;
     g_blockClicks = toBlockClicks;
 }
+
+void ImGuiIntegration::LoadFont(void callback()) { g_LoadFontCallback = callback; }

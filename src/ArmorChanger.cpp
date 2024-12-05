@@ -153,6 +153,8 @@ ArmorSlots QuickArmorRebalance::GetConvertableArmorSlots(const ArmorChangeParams
     params.remapMask = 0;
     for (auto i : params.mapArmorSlots) params.remapMask |= (1 << i.first);
 
+    if (!params.armorSet) return (ArmorSlots)~0;
+
     auto [coveredSlots, coveredHeadSlots] = CalcCoveredSlots(params.armorSet->items, params);
 
     coveredSlots = 0;  // weird case where an item's in the armor set but not in the curve tree
@@ -164,180 +166,146 @@ ArmorSlots QuickArmorRebalance::GetConvertableArmorSlots(const ArmorChangeParams
 
 int QuickArmorRebalance::MakeArmorChanges(const ArmorChangeParams& params) {
     int nChanges = 0;
+    auto& data = *params.data;
 
-    if (params.items.empty()) return 0;
-    params.bMixedSetDone = false;
+    if (data.items.empty()) return 0;
+    data.bMixedSetDone = false;
 
     params.remapMask = 0;
     for (auto i : params.mapArmorSlots) params.remapMask |= (1 << i.first);
 
-    // Build list of base items per slot
-    auto [_discard, coveredHeadSlots] = CalcCoveredSlots(params.armorSet->items, params);
-    auto [coveredSlots, coveredHeadSlotsChanges] = CalcCoveredSlots(params.items, params, true);
-
-    SlotRelativeWeight slotValues[32];
-
-    ProcessBaseArmorSet(params, coveredHeadSlots, [&](ArmorSlot slot, RE::TESObjectARMO* i) { slotValues[slot].item = i; });
-
-    int totalWeight = 0;
-    for (const auto& i : params.curve->tree)
-        totalWeight += GetTotalWeight(&i, ~((ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kShield | (ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kAmulet |
-                                            (ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kRing));
-    for (const auto& i : params.curve->tree) PropogateBaseValues(slotValues, nullptr, &i);
-    for (const auto& i : params.curve->tree) CalcCoveredValues(slotValues, coveredSlots, &i);
-
     Document doc;
     auto& al = doc.GetAllocator();
 
-    std::map<RE::TESFile*, Value> mapFileChanges;
+    std::map<RE::TESBoundObject*, Value> mapChanges;
 
-    for (auto i : params.items) {
-        if (auto armor = i->As<RE::TESObjectARMO>()) {
-            SlotRelativeWeight* itemBase = nullptr;
-            int weight = 0;
+    // Process some things only when there's a new conversion, the rest can merge with previous conversions
+    if (params.armorSet) {
+        // Build list of base items per slot
+        auto [_discard, coveredHeadSlots] = CalcCoveredSlots(params.armorSet->items, params);
+        auto [coveredSlots, coveredHeadSlotsChanges] = CalcCoveredSlots(data.items, params, true);
 
-            // Need to retrieve the original slots, or double-applying will loose data
-            ArmorSlots slotsOrig = MapFindOr(g_Data.modifiedArmorSlots, armor, (ArmorSlots)armor->GetSlotMask());
-            ArmorSlots slotsRemapped = RemapSlots(slotsOrig, params);
-            ArmorSlots slots = slotsRemapped;
+        SlotRelativeWeight slotValues[32];
 
-            slots = PromoteHeadSlots(slots, coveredHeadSlotsChanges);
+        ProcessBaseArmorSet(params, coveredHeadSlots, [&](ArmorSlot slot, RE::TESObjectARMO* i) { slotValues[slot].item = i; });
 
-            while (slots) {
-                unsigned long slot;
-                _BitScanForward(&slot, slots);
-                slots &= slots - 1;
+        int totalWeight = 0;
+        for (const auto& i : params.curve->tree)
+            totalWeight += GetTotalWeight(&i, ~((ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kShield | (ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kAmulet |
+                                                (ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kRing));
+        for (const auto& i : params.curve->tree) PropogateBaseValues(slotValues, nullptr, &i);
+        for (const auto& i : params.curve->tree) CalcCoveredValues(slotValues, coveredSlots, &i);
 
-                auto& v = slotValues[slot];
-                if (v.base && v.base->weightBase) {
-                    if (!itemBase) itemBase = v.base;
-                    weight += v.weightUsed;
+        for (auto i : data.items) {
+            Value changes(kObjectType);
+            RE::TESBoundObject* objBase = nullptr;
+
+            if (auto armor = i->As<RE::TESObjectARMO>()) {
+                SlotRelativeWeight* itemBase = nullptr;
+                int weight = 0;
+
+                // Need to retrieve the original slots, or double-applying will loose data
+                ArmorSlots slotsOrig = MapFindOr(g_Data.modifiedArmorSlots, armor, (ArmorSlots)armor->GetSlotMask());
+                ArmorSlots slotsRemapped = RemapSlots(slotsOrig, params);
+                ArmorSlots slots = slotsRemapped;
+
+                slots = PromoteHeadSlots(slots, coveredHeadSlotsChanges);
+
+                while (slots) {
+                    unsigned long slot;
+                    _BitScanForward(&slot, slots);
+                    slots &= slots - 1;
+
+                    auto& v = slotValues[slot];
+                    if (v.base && v.base->weightBase) {
+                        if (!itemBase) itemBase = v.base;
+                        weight += v.weightUsed;
+                    }
+                }
+
+                if (itemBase) {
+                    objBase = itemBase->item;
+
+                    Value weights(kObjectType);
+                    weights.AddMember("item", weight, al);
+                    weights.AddMember("base", itemBase->weightBase, al);
+                    weights.AddMember("set", totalWeight, al);
+                    changes.AddMember("w", weights, al);
+                }
+            } else if (auto weap = i->As<RE::TESObjectWEAP>()) {
+                if (auto itemBase = params.armorSet->FindMatching(weap)) {
+                    objBase = itemBase;
+                }
+            } else if (auto ammo = i->As<RE::TESAmmo>()) {
+                if (auto itemBase = params.armorSet->FindMatching(ammo)) {
+                    objBase = itemBase;
                 }
             }
 
-            if (itemBase) {
-                // float rel = itemBase->weightBase > 0 ? (float)weight / itemBase->weightBase : 0.0f;
-                Value changes(kObjectType);
+            if (objBase) {
                 changes.AddMember("name", Value(i->GetName(), al), al);
-                changes.AddMember("srcname", Value(itemBase->item->GetFullName(), al), al);
-                changes.AddMember("srcfile", Value(itemBase->item->GetFile(0)->fileName, al), al);
-                changes.AddMember("srcid", Value(GetFileId(itemBase->item)), al);
-
-                // changes.AddMember("w", Value(rel), al);
-                Value weights(kObjectType);
-                weights.AddMember("item", weight, al);
-                weights.AddMember("base", itemBase->weightBase, al);
-                weights.AddMember("set", totalWeight, al);
-                changes.AddMember("w", weights, al);
-
-                if (params.bModifyKeywords) changes.AddMember("keywords", Value(true), al);
-
-                AddModification("armor", params.armor.rating, changes, al);
-                AddModification("weight", params.armor.weight, changes, al);
-                AddModification("warmth", params.armor.warmth, changes, al);
-                if (g_Config.isFrostfallInstalled || g_Config.bShowFrostfallCoverage) changes.AddMember("coverage", Value(0.01f * params.armor.coverage), al);
-                AddModification("value", params.value, changes, al);
-
-                if (slotsRemapped != slotsOrig) changes.AddMember("slots", slotsRemapped, al);
-
-                if (params.temper.bModify) {
-                    Value recipe(kObjectType);
-                    if (params.temper.bNew) recipe.AddMember("new", Value(true), al);
-                    if (params.temper.bFree) recipe.AddMember("free", Value(true), al);
-                    changes.AddMember("temper", recipe, al);
-                }
-                if (params.craft.bModify) {
-                    Value recipe(kObjectType);
-                    if (params.craft.bNew) recipe.AddMember("new", Value(true), al);
-                    if (params.craft.bFree) recipe.AddMember("free", Value(true), al);
-                    changes.AddMember("craft", recipe, al);
-                }
-
-                auto loot = MakeLootChanges(params, armor, al);
-                if (!loot.IsNull()) changes.AddMember("loot", loot, al);
-
-                Value* ls = &mapFileChanges[i->GetFile(0)];
-                if (!ls->IsObject()) ls->SetObject();
-
-                ls->AddMember(Value(std::to_string(GetFileId(i)).c_str(), al), changes, al);
-            } else
-                logger::debug("No item base, skipping changes to {}", i->GetName());
-        } else if (auto weap = i->As<RE::TESObjectWEAP>()) {
-            if (auto itemBase = params.armorSet->FindMatching(weap)) {
-                Value changes(kObjectType);
-                changes.AddMember("name", Value(i->GetName(), al), al);
-                changes.AddMember("srcname", Value(itemBase->GetFullName(), al), al);
-                changes.AddMember("srcfile", Value(itemBase->GetFile(0)->fileName, al), al);
-                changes.AddMember("srcid", Value(GetFileId(itemBase)), al);
-
-                if (params.bModifyKeywords) changes.AddMember("keywords", Value(true), al);
-
-                AddModification("damage", params.weapon.damage, changes, al);
-                AddModification("weight", params.weapon.weight, changes, al);
-                AddModification("speed", params.weapon.speed, changes, al);
-                AddModification("stagger", params.weapon.stagger, changes, al);
-                AddModification("value", params.value, changes, al);
-
-                if (params.temper.bModify) {
-                    Value recipe(kObjectType);
-                    if (params.temper.bNew) recipe.AddMember("new", Value(true), al);
-                    if (params.temper.bFree) recipe.AddMember("free", Value(true), al);
-                    changes.AddMember("temper", recipe, al);
-                }
-                if (params.craft.bModify) {
-                    Value recipe(kObjectType);
-                    if (params.craft.bNew) recipe.AddMember("new", Value(true), al);
-                    if (params.craft.bFree) recipe.AddMember("free", Value(true), al);
-                    changes.AddMember("craft", recipe, al);
-                }
-
-                auto loot = MakeLootChanges(params, weap, al);
-                if (!loot.IsNull()) changes.AddMember("loot", loot, al);
-
-                Value* ls = &mapFileChanges[i->GetFile(0)];
-                if (!ls->IsObject()) ls->SetObject();
-
-                ls->AddMember(Value(std::to_string(GetFileId(i)).c_str(), al), changes, al);
-            } else
-                logger::debug("No item base, skipping changes to {}", i->GetName());
-        } else if (auto ammo = i->As<RE::TESAmmo>()) {
-            if (auto itemBase = params.armorSet->FindMatching(ammo)) {
-                Value changes(kObjectType);
-                changes.AddMember("name", Value(i->GetName(), al), al);
-                changes.AddMember("srcname", Value(itemBase->GetFullName(), al), al);
-                changes.AddMember("srcfile", Value(itemBase->GetFile(0)->fileName, al), al);
-                changes.AddMember("srcid", Value(GetFileId(itemBase)), al);
-
-                if (params.bModifyKeywords) changes.AddMember("keywords", Value(true), al);
-
-                AddModification("damage", params.weapon.damage, changes, al);
-                AddModification("weight", params.weapon.weight, changes, al);
-                AddModification("value", params.value, changes, al);
-
-                if (params.temper.bModify) {
-                    Value recipe(kObjectType);
-                    if (params.temper.bNew) recipe.AddMember("new", Value(true), al);
-                    if (params.temper.bFree) recipe.AddMember("free", Value(true), al);
-                    changes.AddMember("temper", recipe, al);
-                }
-                if (params.craft.bModify) {
-                    Value recipe(kObjectType);
-                    if (params.craft.bNew) recipe.AddMember("new", Value(true), al);
-                    if (params.craft.bFree) recipe.AddMember("free", Value(true), al);
-                    changes.AddMember("craft", recipe, al);
-                }
-
-                auto loot = MakeLootChanges(params, ammo, al);
-                if (!loot.IsNull()) changes.AddMember("loot", loot, al);
-
-                Value* ls = &mapFileChanges[i->GetFile(0)];
-                if (!ls->IsObject()) ls->SetObject();
-
-                ls->AddMember(Value(std::to_string(GetFileId(i)).c_str(), al), changes, al);
-            } else
-                logger::debug("No item base, skipping changes to {}", i->GetName());
+                changes.AddMember("srcname", Value(objBase->GetName(), al), al);
+                changes.AddMember("srcfile", Value(objBase->GetFile(0)->fileName, al), al);
+                changes.AddMember("srcid", Value(GetFileId(objBase)), al);
+                mapChanges[i] = std::move(changes);
+            }
         }
     }
+
+    for (auto i : data.items) {
+        auto& changes = mapChanges[i];
+        if (!changes.IsObject()) changes.SetObject();
+
+        if (auto armor = i->As<RE::TESObjectARMO>()) {
+            AddModification("armor", params.armor.rating, changes, al);
+            AddModification("weight", params.armor.weight, changes, al);
+            AddModification("warmth", params.armor.warmth, changes, al);
+            if (g_Config.isFrostfallInstalled || g_Config.bShowFrostfallCoverage) changes.AddMember("coverage", Value(0.01f * params.armor.coverage), al);
+            AddModification("value", params.value, changes, al);
+
+            ArmorSlots slotsOrig = MapFindOr(g_Data.modifiedArmorSlots, armor, (ArmorSlots)armor->GetSlotMask());
+            ArmorSlots slotsRemapped = RemapSlots(slotsOrig, params);
+            if (slotsRemapped != slotsOrig) changes.AddMember("slots", slotsRemapped, al);
+
+        } else if (auto weap = i->As<RE::TESObjectWEAP>()) {
+            AddModification("damage", params.weapon.damage, changes, al);
+            AddModification("weight", params.weapon.weight, changes, al);
+            AddModification("speed", params.weapon.speed, changes, al);
+            AddModification("stagger", params.weapon.stagger, changes, al);
+            AddModification("value", params.value, changes, al);
+
+        } else if (auto ammo = i->As<RE::TESAmmo>()) {
+            AddModification("damage", params.weapon.damage, changes, al);
+            AddModification("weight", params.weapon.weight, changes, al);
+            AddModification("value", params.value, changes, al);
+        }
+
+        if (params.bModifyKeywords) changes.AddMember("keywords", Value(true), al);
+        if (params.temper.bModify) {
+            Value recipe(kObjectType);
+            if (params.temper.bNew) recipe.AddMember("new", Value(true), al);
+            if (params.temper.bFree) recipe.AddMember("free", Value(true), al);
+            changes.AddMember("temper", recipe, al);
+        }
+        if (params.craft.bModify) {
+            Value recipe(kObjectType);
+            if (params.craft.bNew) recipe.AddMember("new", Value(true), al);
+            if (params.craft.bFree) recipe.AddMember("free", Value(true), al);
+            changes.AddMember("craft", recipe, al);
+        }
+
+        auto loot = MakeLootChanges(params, i, al);
+        if (!loot.IsNull()) changes.AddMember("loot", loot, al);
+    }
+
+    std::map<RE::TESFile*, Value> mapFileChanges;
+    for (auto& i : mapChanges) {
+        Value* ls = &mapFileChanges[i.first->GetFile(0)];
+        if (!ls->IsObject()) ls->SetObject();
+
+        ls->AddMember(Value(std::to_string(GetFileId(i.first)).c_str(), al), i.second, al);
+    }
+    mapChanges.clear();
 
     for (auto& i : mapFileChanges) {
         int r = 0;
@@ -346,8 +314,6 @@ int QuickArmorRebalance::MakeArmorChanges(const ArmorChangeParams& params) {
     }
 
     for (auto& i : mapFileChanges) {
-        nChanges += ApplyChanges(i.first, i.second, g_Config.permLocal);
-
         ExportToDAV(i.first, i.second);
 
         std::filesystem::path path(std::filesystem::current_path() / PATH_ROOT PATH_CHANGES "local/");
@@ -362,14 +328,17 @@ int QuickArmorRebalance::MakeArmorChanges(const ArmorChangeParams& params) {
 
         for (auto& j : i.second.GetObj()) {
             if (!params.bMerge) {
-                doc.RemoveMember(j.name);  // it doesn't automaticaly remove duplicates
-                doc.AddMember(j.name, j.value, al);
+                if (j.value.HasMember("srcid")) {
+                    doc.RemoveMember(j.name);  // it doesn't automaticaly remove duplicates
+                    doc.AddMember(j.name, j.value, al);
+                }
             } else {
                 if (doc.HasMember(j.name)) {
                     auto& prev = doc[j.name];
                     if (!prev.IsObject()) {
                         doc.RemoveMember(j.name);
-                        doc.AddMember(j.name, j.value, al);
+                        if (j.value.HasMember("srcid")) 
+                            doc.AddMember(j.name, j.value, al);
                         continue;
                     }
 
@@ -377,8 +346,10 @@ int QuickArmorRebalance::MakeArmorChanges(const ArmorChangeParams& params) {
                         prev.RemoveMember(m.name);
                         prev.AddMember(m.name, m.value, al);
                     }
-                } else
-                    doc.AddMember(j.name, j.value, al);
+                } else {
+                    if (j.value.HasMember("srcid")) 
+                        doc.AddMember(j.name, j.value, al);
+                }
             }
         }
 
@@ -390,6 +361,8 @@ int QuickArmorRebalance::MakeArmorChanges(const ArmorChangeParams& params) {
                 "Changes cannot be saved so further use of QAR is disabled",
                 path.filename().generic_string(), path.generic_string(), std::strerror(errno));
         }
+
+        nChanges += ApplyChanges(i.first, doc.GetObj(), g_Config.permLocal);
     }
 
     if (!params.mapKeywordChanges.empty()) MakeKeywordChanges(params);
@@ -398,10 +371,12 @@ int QuickArmorRebalance::MakeArmorChanges(const ArmorChangeParams& params) {
 }
 
 int QuickArmorRebalance::AddDynamicVariants(const ArmorChangeParams& params) {
+    auto& data = *params.data;
+
     int r = 0;
     std::set<RE::TESFile*> files;
 
-    for (auto i : params.items) {
+    for (auto i : data.items) {
         if (auto armor = i->As<RE::TESObjectARMO>()) {
             files.insert(armor->GetFile(0));
         }
@@ -427,10 +402,11 @@ int QuickArmorRebalance::AddDynamicVariants(const ArmorChangeParams& params) {
 }
 
 int ::AddDynamicVariants(const RE::TESFile* file, const ArmorChangeParams& params, rapidjson::Value& ls, MemoryPoolAllocator<>& al) {
+    auto& data = *params.data;
     int r = 0;
 
     // First pass to clear out existing DV entries (or reset them if they will no longer apply)
-    for (auto item : params.items) {
+    for (auto item : data.items) {
         if (item->GetFile(0) != file) continue;
 
         auto itemId = std::to_string(GetFileId(item));
@@ -443,7 +419,7 @@ int ::AddDynamicVariants(const RE::TESFile* file, const ArmorChangeParams& param
         vals.RemoveMember("dynamicVariants");
     }
 
-    for (auto& dv : params.dvSets) {
+    for (auto& dv : data.dvSets) {
         for (auto& set : dv.second) {
             if (set.second.size() < 2) continue;
 
@@ -452,7 +428,7 @@ int ::AddDynamicVariants(const RE::TESFile* file, const ArmorChangeParams& param
                 auto item = set.second[i];
 
                 // Should only operate on checked items - this is crappy performance but shouldn't be running much
-                if (std::find(params.items.begin(), params.items.end(), item) == params.items.end()) continue;
+                if (std::find(data.items.begin(), data.items.end(), item) == data.items.end()) continue;
 
                 if (item->GetFile(0) != file) continue;
                 if (item->GetFile(0) != base->GetFile(0)) continue;  // Not supported
@@ -497,18 +473,19 @@ int QuickArmorRebalance::RescanPreferenceVariants() {
 
         if (doc.HasParseError() || !doc.IsObject()) return;
 
-        ArmorChangeParams params;
+        ArmorChangeData data;
+        ArmorChangeParams params(data);
 
         for (auto& i : doc.GetObj()) {
             RE::FormID id = atoi(i.name.GetString());
             if (auto item = RE::TESForm::LookupByID(GetFullId(mod, id))) {
-                if (auto armor = item->As<RE::TESObjectARMO>()) params.items.push_back(armor);
+                if (auto armor = item->As<RE::TESObjectARMO>()) data.items.push_back(armor);
             }
         }
 
-        if (params.items.empty()) return;
+        if (data.items.empty()) return;
 
-        AnalyzeArmor(params.items, params.analyzeResults);
+        AnalyzeArmor(data.items, data.analyzeResults);
         if (::AddPreferenceVariants(mod, params, doc.GetObj(), doc.GetAllocator(), r)) {
             logger::trace("Updating {}", path.generic_string().c_str());
             WriteJSONFile(path, doc);
@@ -540,9 +517,10 @@ void WritePrefrenceVariantValue(RE::TESObjectARMO* item, rapidjson::Value& ls, c
 }
 
 bool ::AddPreferenceVariants(const RE::TESFile* file, const ArmorChangeParams& params, rapidjson::Value& ls, MemoryPoolAllocator<>& al, int& count) {
+    auto& data = *params.data;
     bool bAny = false;
 
-    for (auto item : params.items) {
+    for (auto item : data.items) {
         if (item->GetFile(0) != file) continue;
 
         auto itemId = std::to_string(GetFileId(item));
@@ -558,24 +536,24 @@ bool ::AddPreferenceVariants(const RE::TESFile* file, const ArmorChangeParams& p
     std::map<std::size_t, RE::TESObjectARMO*> mapHashed;
 
     for (auto& pw : g_Config.mapPrefVariants) {
-        auto it = params.analyzeResults.mapWordItems.find(pw.second.hash);
-        if (it != params.analyzeResults.mapWordItems.end()) {
+        auto it = data.analyzeResults.mapWordItems.find(pw.second.hash);
+        if (it != data.analyzeResults.mapWordItems.end()) {
             if (mapHashed.empty()) {  // Build hash map for words to armor
-                for (auto item : params.items) {
+                for (auto item : data.items) {
                     if (item->GetFile(0) != file) continue;
                     if (auto armor = item->As<RE::TESObjectARMO>()) {
-                        auto itArmor = params.analyzeResults.mapArmorWords.find(armor);
-                        if (itArmor != params.analyzeResults.mapArmorWords.end()) mapHashed[HashWordSet(itArmor->second, armor)] = armor;
+                        auto itArmor = data.analyzeResults.mapArmorWords.find(armor);
+                        if (itArmor != data.analyzeResults.mapArmorWords.end()) mapHashed[HashWordSet(itArmor->second, armor)] = armor;
                     }
                 }
             }
 
             for (auto item : it->second.items) {
                 if (item->GetFile(0) != file) continue;
-                if (std::find(params.items.begin(), params.items.end(), static_cast<RE::TESBoundObject*>(item)) == params.items.end()) continue;
+                if (std::find(data.items.begin(), data.items.end(), static_cast<RE::TESBoundObject*>(item)) == data.items.end()) continue;
 
-                auto itArmor = params.analyzeResults.mapArmorWords.find(item);
-                if (itArmor != params.analyzeResults.mapArmorWords.end()) {
+                auto itArmor = data.analyzeResults.mapArmorWords.find(item);
+                if (itArmor != data.analyzeResults.mapArmorWords.end()) {
                     auto hash = HashWordSet(itArmor->second, item, pw.second.hash);
 
                     auto itMatch = mapHashed.find(hash);
@@ -1278,8 +1256,9 @@ bool QuickArmorRebalance::LoadKeywordChanges(const RE::TESFile* file, std::files
 }
 
 KeywordChangeMap QuickArmorRebalance::LoadKeywordChanges(const ArmorChangeParams& params) {
+    auto& data = *params.data;
     std::set<RE::TESFile*> files;
-    for (auto item : params.items) {
+    for (auto item : data.items) {
         files.insert(item->GetFile(0));
     }
 
@@ -1301,8 +1280,9 @@ KeywordChangeMap QuickArmorRebalance::LoadKeywordChanges(const ArmorChangeParams
 }
 
 int QuickArmorRebalance::MakeKeywordChanges(const ArmorChangeParams& params, bool bApply) {
+    auto& data = *params.data;
     std::set<RE::TESFile*> files;
-    for (auto item : params.items) {
+    for (auto item : data.items) {
         files.insert(item->GetFile(0));
     }
 
@@ -1326,7 +1306,7 @@ int QuickArmorRebalance::MakeKeywordChanges(const ArmorChangeParams& params, boo
         // Often will be deleting everything one by one only to re-add it
         //
         // Purge any changes to existing items
-        for (auto item : params.items) {
+        for (auto item : data.items) {
             if (item->GetFile(0) != file) continue;
 
             for (auto& i : prevChanges) {

@@ -1,33 +1,27 @@
 #pragma once
 
-#include "Data.h"
 #include "ArmorSetBuilder.h"
+#include "Data.h"
 
 #define PATH_ROOT "Data/SKSE/Plugins/" PLUGIN_NAME "/"
 #define PATH_CONFIGS "config/"
 #define PATH_CHANGES "changes/"
 #define PATH_CUSTOMKEYWORDS "custom keywords/"
 
-namespace QuickArmorRebalance {  
+namespace QuickArmorRebalance {
 
-    enum Preference {
-        Pref_Ignore,
-        Pref_With,
-        Pref_Without
-    };
-   
+    enum Preference { Pref_Ignore, Pref_With, Pref_Without };
+
     struct LootDistGroup;
 
     const unsigned int kCosmeticSlotMask = 0;
     //(unsigned int)RE::BIPED_MODEL::BipedObjectSlot::kHead | (unsigned int)RE::BIPED_MODEL::BipedObjectSlot::kHair;
 
-    const ArmorSlots kHeadSlotMask = (ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kHead |
-                                     (ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kHair |
-                                     (ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kCirclet;
+    const ArmorSlots kHeadSlotMask =
+        (ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kHead | (ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kHair | (ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kCirclet;
 
-    const ArmorSlots kProtectedSlotMask =
-        (ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kBody | (ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kHands |
-        (ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kFeet | (ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kHead;
+    const ArmorSlots kProtectedSlotMask = (ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kBody | (ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kHands |
+                                          (ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kFeet | (ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kHead;
 
     struct RebalanceCurveNode {
         using Tree = std::vector<RebalanceCurveNode>;
@@ -60,19 +54,29 @@ namespace QuickArmorRebalance {
         RE::TESAmmo* FindMatching(RE::TESAmmo* w) const;
     };
 
-    struct ArmorChangeParams {
+    struct ArmorChangeData {
         std::vector<RE::TESBoundObject*> filteredItems;
         std::vector<RE::TESBoundObject*> items;
 
+        bool isWornArmor = false;
+        mutable bool bMixedSetDone = false;
+
+        AnalyzeResults analyzeResults;
+        DynamicVariantSets dvSets;
+    };
+
+    struct ArmorChangeParams {
+        ArmorChangeParams(ArmorChangeData& data) : data(&data) {}
+        ArmorChangeData* data = nullptr;
+
         BaseArmorSet* armorSet = nullptr;
-        RebalanceCurve* curve = nullptr;
+        static RebalanceCurve* curve;
+        static const char* distProfile;
 
         struct SliderPair {
             float fScale = 100.0f;
             bool bModify = true;
         };
-
-        bool isWornArmor = false;
 
         bool bModifyKeywords = true;
 
@@ -101,7 +105,6 @@ namespace QuickArmorRebalance {
         RecipeOptions temper;
         RecipeOptions craft;
 
-        const char* distProfile = nullptr;
         int rarity = 0;
         bool bDistribute = false;
         bool bDistAsSet = true;
@@ -112,12 +115,10 @@ namespace QuickArmorRebalance {
         mutable ArmorSlots remapMask = 0;
         std::map<int, int> mapArmorSlots;
 
-        DynamicVariantSets dvSets;
-        AnalyzeResults analyzeResults;
-
         KeywordChangeMap mapKeywordChanges;
 
-        mutable bool bMixedSetDone = false;
+        void Reset(bool bForce = false);  // Resets sliders etc. to defaults
+        void Clear();  // Resets to a modificationless state
     };
 
     struct Permissions {
@@ -164,8 +165,7 @@ namespace QuickArmorRebalance {
         void AddUserBlacklist(RE::TESFile* mod);
 
         BaseArmorSet* FindArmorSet(const char* name) {
-            auto it = std::find_if(armorSets.begin(), armorSets.end(),
-                                   [=](const BaseArmorSet& as) { return !as.name.compare(name); });
+            auto it = std::find_if(armorSets.begin(), armorSets.end(), [=](const BaseArmorSet& as) { return !as.name.compare(name); });
             return it != armorSets.end() ? &*it : nullptr;
         }
 
@@ -206,9 +206,9 @@ namespace QuickArmorRebalance {
         std::vector<std::string> lsDisableWords;
         WordSet wordsAutoDisable;
 
-
         unsigned int usedSlotsMask = 0;
-        ArmorChangeParams acParams;
+        ArmorChangeData acData;
+        ArmorChangeParams acParams{acData};
 
         std::string strCriticalError = "Not loaded";
 

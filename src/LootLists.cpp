@@ -55,17 +55,20 @@ namespace {
 
 Value QuickArmorRebalance::MakeLootChanges(const ArmorChangeParams& params, RE::TESBoundObject* i,
                                            MemoryPoolAllocator<>& al) {
-    for (auto item : params.items) //Don't build loot sets from current armor (aka mixed mod sets) - maybe in the future
+    if (!params.armorSet) return {};
+
+    auto& data = *params.data;
+    for (auto item : data.items)  // Don't build loot sets from current armor (aka mixed mod sets) - maybe in the future
         if (item->GetFile(0) != i->GetFile(0)) return {};
 
-    if (!params.isWornArmor && params.bDistribute && params.distProfile) {
+    if (!data.isWornArmor && params.bDistribute && params.distProfile) {
         Value loot(kObjectType);
 
         if (auto armor = i->As<RE::TESObjectARMO>()) {
             if (params.bDistAsSet &&
                 ((unsigned int)armor->GetSlotMask() & (unsigned int)RE::BIPED_MODEL::BipedObjectSlot::kBody) != 0) {
                 if (params.bMatchSetPieces) {
-                    auto s = BuildSetFrom(i, params.items);
+                    auto s = BuildSetFrom(i, data.items);
                     if (!s.empty()) {
                         Value setv(kArrayType);
                         for (auto j : s) setv.PushBack(GetFileId(j), al);
@@ -74,11 +77,11 @@ Value QuickArmorRebalance::MakeLootChanges(const ArmorChangeParams& params, RE::
                 } else {
                     // If its not matching, we actually can just throw everything into one set and it'll be mixed
                     // properly on loading
-                    if (!params.bMixedSetDone) {
+                    if (!data.bMixedSetDone) {
                         Value setv(kArrayType);
-                        for (auto j : params.items) setv.PushBack(GetFileId(j), al);
+                        for (auto j : data.items) setv.PushBack(GetFileId(j), al);
                         loot.AddMember("set", setv, al);
-                        params.bMixedSetDone = true;
+                        data.bMixedSetDone = true;
                     }
                 }
             }

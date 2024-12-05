@@ -64,6 +64,49 @@ namespace QuickArmorRebalance {
         }
         return nullptr;
     }
+
+    RebalanceCurve* ArmorChangeParams::curve = nullptr;
+    const char* ArmorChangeParams::distProfile = nullptr;
+
+    void ArmorChangeParams::Reset(bool bForce) {
+        mapKeywordChanges.clear();
+
+        if (bForce || g_Config.bResetSliders) {
+            armor.rating.fScale = 100.0f;
+            armor.weight.fScale = 100.0f;
+            armor.warmth.fScale = 50.0f;
+            weapon.damage.fScale = 100.0f;
+            weapon.speed.fScale = 100;
+            weapon.weight.fScale = 100.0f;
+            weapon.stagger.fScale = 100.0f;
+            value.fScale = 100.0f;
+        }
+        if (bForce || g_Config.bResetSlotRemap) {
+            mapArmorSlots.clear();
+        }
+    }
+    void ArmorChangeParams::Clear() {
+        armorSet = nullptr;
+
+        bMerge = true;
+        bDistribute = false;
+        bModifyKeywords = false;
+        armor.rating.bModify = false;
+        armor.weight.bModify = false;
+        armor.warmth.bModify = false;
+
+        weapon.damage.bModify = false;
+        weapon.weight.bModify = false;
+        weapon.speed.bModify = false;
+        weapon.stagger.bModify = false;
+
+        value.bModify = false;
+        temper.bModify = false;
+        craft.bModify = false;
+
+        mapArmorSlots.clear();
+        mapKeywordChanges.clear();
+    }
 }
 
 void LoadPermissions(QuickArmorRebalance::Permissions& p, toml::node_view<toml::node> tbl) {
@@ -249,7 +292,7 @@ bool QuickArmorRebalance::Config::Load() {
             spdlog::set_level((spdlog::level::level_enum)g_Config.verbosity);
         }
 
-        if (!g_Config.acParams.armorSet) g_Config.acParams.armorSet = &g_Config.armorSets[0];
+        //if (!g_Config.acParams.armorSet) g_Config.acParams.armorSet = &g_Config.armorSets[0];
         if (!g_Config.acParams.curve) g_Config.acParams.curve = &g_Config.curves[0].second;
         if (g_Config.lootProfiles.contains(lootProfile))
             g_Config.acParams.distProfile = g_Config.lootProfiles.find(lootProfile)->c_str();

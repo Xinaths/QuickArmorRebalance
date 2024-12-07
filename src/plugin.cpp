@@ -15,7 +15,7 @@ namespace QuickArmorRebalance {
     SKSEPluginLoad(const SKSE::LoadInterface* skse) {
         SKSE::Init(skse);
         SKSE::GetPapyrusInterface()->Register(BindPapyrusFunctions);
-        SetupLog();
+        SetupLog(REL::Module::GetRuntime() == REL::Module::Runtime::VR ? spdlog::level::trace : spdlog::level::info);
 
         ImGuiIntegration::Start(RenderUI);
         InstallConsoleCommands();
@@ -37,23 +37,36 @@ namespace QuickArmorRebalance {
     void OnDataLoaded() {
         g_Data.loot = std::make_unique<decltype(g_Data.loot)::element_type>();
 
+        logger::trace("Data loaded - loading files");
+
+        logger::trace("Loading configuration files");
         if (!g_Config.Load()) {
             logger::error("Failed to load configuration files, aborting");
             return;
         }
+
+        logger::trace("Processing Skyrim data");
         ProcessData();
+
+        logger::trace("Loading changes");
         LoadChangesFromFiles();
+
+        logger::trace("Setting up loot");
         SetupLootLists();
 
         std::erase_if(g_Config.mapPrefVariants, [](auto& v) { return !v.second.hash; });
 
         g_Data.loot.release();
 
-        if (g_Config.bEnableSkyrimWarmthHook)
+        if (g_Config.bEnableSkyrimWarmthHook) {
+            logger::trace("Installing warmth hook");
             InstallWarmthHooks();
+        }
 
-        if (g_Config.bEnableArmorSlotModelFixHook)
+        if (g_Config.bEnableArmorSlotModelFixHook) {
+            logger::trace("Installing model slot fix hook");
             InstallModelArmorSlotFixHooks();
+        }
 
         //AnalyzeAllArmor();
     }

@@ -126,14 +126,17 @@ void CopyRecipe(std::map<RE::TESBoundObject*, RE::BGSConstructibleObject*>& map,
 void QuickArmorRebalance::ProcessData() {
     auto dataHandler = RE::TESDataHandler::GetSingleton();
 
+    logger::trace("Processing armor");
     for (auto i : dataHandler->GetFormArray<RE::TESObjectARMO>()) {
         ProcessItem(i);
     }
 
+    logger::trace("Processing weapons");
     for (auto i : dataHandler->GetFormArray<RE::TESObjectWEAP>()) {
         ProcessItem(i);
     }
 
+    logger::trace("Processing ammo");
     for (auto i : dataHandler->GetFormArray<RE::TESAmmo>()) {
         ProcessItem(i);
     }
@@ -153,6 +156,7 @@ void QuickArmorRebalance::ProcessData() {
     auto smelter = RE::TESForm::LookupByEditorID<RE::BGSKeyword>("CraftingSmelter");
     if (!temperBench) return;
 
+    logger::trace("Processing recipes");
     auto& lsRecipies = dataHandler->GetFormArray<RE::BGSConstructibleObject>();
     for (auto i : lsRecipies) {
         if (!i->createdItem) continue;
@@ -169,6 +173,8 @@ void QuickArmorRebalance::ProcessData() {
     }
 
     if (g_Config.bUseSecondaryRecipes) {
+        logger::trace("Building secondary recipes");
+
         for (auto& i : g_Config.armorSets) {
             if (!i.strFallbackRecipeSet.empty()) {
                 if (auto as = g_Config.FindArmorSet(i.strFallbackRecipeSet.c_str())) {
@@ -205,6 +211,8 @@ void QuickArmorRebalance::ProcessData() {
             */
         }
     }
+
+    logger::trace("Building list of skyrim armor model files");
 
     auto& lsAddons = dataHandler->GetFormArray<RE::TESObjectARMA>();
     for (auto addon : lsAddons) {

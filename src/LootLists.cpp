@@ -230,6 +230,8 @@ void QuickArmorRebalance::LoadLootConfig(const Value& jsonLoot) {
 }
 
 void QuickArmorRebalance::ValidateLootConfig() {
+    logger::trace("Validating loot configuration");
+
     for (const auto& i : g_Data.loot->containerGroups) {
         if (i.second.small.empty() && i.second.large.empty())
             logger::warn("Loot container group {} has no associated containers", i.first);
@@ -614,6 +616,7 @@ void QuickArmorRebalance::SetupLootLists() {
         }
     }
 
+    logger::trace("Building loot lists");
     BuildSetLists();
     logger::info("Done processing loot, {} lists created", g_nLListsCreated);
 }

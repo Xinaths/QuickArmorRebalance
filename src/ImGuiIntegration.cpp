@@ -565,15 +565,22 @@ struct InputFunc {
 // Integration entry point
 
 bool ImGuiIntegration::Start(void callback()) {
+    logger::trace("Adding hooks for ImGui integration");
+
     g_RenderCallback = callback;
 
     SKSE::AllocTrampoline(14 * 2);
 
     // D3DInitHook::post_init_callbacks.push_back(postInitCallback);
+    logger::trace("Adding D3DInit hook");
     write_thunk_call<D3DInitHook>();
+
+    logger::trace("Adding DXGIPresent hook");
     write_thunk_call<DXGIPresentHook>();
 
     SKSE::AllocTrampoline(14);
+
+    logger::trace("Adding input hook");
     write_thunk_call<InputFunc>();
 
     ImGui_ImplWin32_EnableDpiAwareness();

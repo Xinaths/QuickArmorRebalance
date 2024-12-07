@@ -336,6 +336,12 @@ bool QuickArmorRebalance::Config::Load() {
         }
     }
 
+    auto& enchs = dataHandler->GetFormArray<RE::EnchantmentItem>();
+    for (auto i : enchs) {
+        logger::info("Ench: {:#10x} {}", i->GetFormID(), i->GetName());
+    }
+
+
     for (const auto& i : mapDynamicVariants) {
         wordsDynamicVariants.insert(i.second.autos.begin(), i.second.autos.end());
         wordsDynamicVariants.insert(i.second.hints.begin(), i.second.hints.end());

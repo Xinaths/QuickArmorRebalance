@@ -72,14 +72,6 @@ namespace {
 
 }
 
-template <class T>
-void HookVirtualFunction() {
-    auto vtbl = (std::uintptr_t*)T::id.address();
-
-    T::func = vtbl[T::offset.offset()];
-    REL::safe_write((std::uintptr_t)&vtbl[T::offset.offset()], (std::uintptr_t)T::thunk);
-}
-
 void QuickArmorRebalance::InstallModelArmorSlotFixHooks() {
     HookVirtualFunction<BSDismemberSkinInstance_LoadBinary_Hook>();
 }

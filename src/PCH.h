@@ -42,4 +42,12 @@ namespace QuickArmorRebalance {
         REL::Relocation<std::uintptr_t> hook{T::id, T::offset};
         T::func = trampoline.write_call<5>(hook.address(), T::thunk);
     }
+
+    template <class T>
+    void HookVirtualFunction() {
+        auto vtbl = (std::uintptr_t*)T::id.address();
+
+        T::func = vtbl[T::offset.offset()];
+        REL::safe_write((std::uintptr_t)&vtbl[T::offset.offset()], (std::uintptr_t)T::thunk);
+    }
 }

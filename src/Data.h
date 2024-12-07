@@ -185,6 +185,9 @@ namespace QuickArmorRebalance {
 
         std::unique_ptr<ModLootData> loot;
         std::map<std::string, LootDistGroup> distGroups;
+
+        std::unordered_set<RE::TESContainer*> distContainers;
+        std::unordered_set<RE::TESBoundObject*> distItems;
     };
 
     bool IsValidItem(RE::TESBoundObject* i);

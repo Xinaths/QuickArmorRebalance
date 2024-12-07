@@ -130,7 +130,10 @@ void QuickArmorRebalance::LoadLootChanges(RE::TESBoundObject* item, const Value&
     RE::TESBoundObject* piece = nullptr;
     ArmorSet items;
 
-    if (jsonLoot.HasMember("piece") && jsonLoot["piece"].GetBool()) piece = item;
+    if (jsonLoot.HasMember("piece") && jsonLoot["piece"].GetBool()) {
+        piece = item;
+        g_Data.distItems.insert(item);
+    }
 
     if (auto armor = item->As<RE::TESObjectARMO>()) {
         if (DoNotDistribute(armor)) {
@@ -140,8 +143,10 @@ void QuickArmorRebalance::LoadLootChanges(RE::TESBoundObject* item, const Value&
                 RE::FormID id = GetFullId(item->GetFile(), i.GetUint());
 
                 if (auto setitem = RE::TESForm::LookupByID<RE::TESObjectARMO>(id)) {
-                    if (!DoNotDistribute(setitem))
+                    if (!DoNotDistribute(setitem)) {
                         items.push_back(setitem);
+                        g_Data.distItems.insert(setitem);
+                    }
                 }
             }
         }
@@ -537,6 +542,7 @@ namespace {
 
             if (auto container = entry.first->As<RE::TESContainer>()) {
                 container->AddObjectToContainer(list, entry.second.count, nullptr);
+                g_Data.distContainers.insert(container);
             } else if (auto llist = entry.first->As<RE::TESLevItem>()) {
                 if (llist->numEntries < kLLMaxSize) {
                     llist->entries.resize(llist->entries.size() + 1);

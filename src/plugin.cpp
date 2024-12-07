@@ -7,6 +7,7 @@
 #include "WarmthHook.h"
 #include "ModelArmorSlotFix.h"
 #include "ArmorSetBuilder.h"
+#include "Enchantments.h"
 
 namespace QuickArmorRebalance {
     void OnDataLoaded();
@@ -54,6 +55,8 @@ namespace QuickArmorRebalance {
 
         if (g_Config.bEnableArmorSlotModelFixHook)
             InstallModelArmorSlotFixHooks();
+
+        InstallEnchantmentHooks();
 
         //AnalyzeAllArmor();
     }

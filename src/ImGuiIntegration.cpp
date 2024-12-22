@@ -34,8 +34,7 @@ public:
         return std::addressof(listener);
     }
 
-    virtual RE::BSEventNotifyControl ProcessEvent(RE::InputEvent* const* a_event,
-                                                  RE::BSTEventSource<RE::InputEvent*>* a_eventSource) override;
+    virtual RE::BSEventNotifyControl ProcessEvent(RE::InputEvent* const* a_event, RE::BSTEventSource<RE::InputEvent*>* a_eventSource) override;
 };
 
 // ImGui says to paste the below line
@@ -83,8 +82,20 @@ struct D3DInitHook {
         }
         */
 
-        auto renderWindow = *REL::Relocation<RE::BSGraphics::RendererWindow**>{RELOCATION_ID(524730, 411349)}; //From RE::BSGraphics::Renderer::GetCurrentWindow, but not in the current release
-        auto swapchain = renderWindow->swapChain;
+        IDXGISwapChain* swapchain = nullptr;
+
+        auto& render_data = RE::BSGraphics::Renderer::GetSingleton()->data;
+        auto device = render_data.forwarder;
+        auto context = render_data.context;
+
+        logger::debug("Getting swapchain");
+        if (REL::Module::GetRuntime() != REL::Module::Runtime::VR) {
+            auto renderWindow = *REL::Relocation<RE::BSGraphics::RendererWindow**>{
+                RELOCATION_ID(524730, 411349)};  // From RE::BSGraphics::Renderer::GetCurrentWindow, but not in the current release
+            swapchain = renderWindow->swapChain;
+        } else {
+            swapchain = render_data.renderWindows[0].swapChain;
+        }
 
         logger::debug("Getting swapchain desc...");
         DXGI_SWAP_CHAIN_DESC sd{};
@@ -93,16 +104,16 @@ struct D3DInitHook {
             return;
         }
 
-        auto& render_data = RE::BSGraphics::Renderer::GetSingleton()->data;
-        auto device = render_data.forwarder;
-        auto context = render_data.context;       
-
         logger::debug("Initializing ImGui...");
         ImGui::CreateContext();
+
+        logger::debug("ImGui Win32 Init");
         if (!ImGui_ImplWin32_Init(sd.OutputWindow)) {
             logger::error("ImGui initialization failed (Win32)");
             return;
         }
+
+        logger::debug("ImGui DX11 Init");
         if (!ImGui_ImplDX11_Init(device, context)) {
             logger::error("ImGui initialization failed (DX11)");
             return;
@@ -111,8 +122,7 @@ struct D3DInitHook {
 
         // initialized.store(true);
 
-        WndProcHook::func = reinterpret_cast<WNDPROC>(
-            SetWindowLongPtrA(sd.OutputWindow, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(WndProcHook::thunk)));
+        WndProcHook::func = reinterpret_cast<WNDPROC>(SetWindowLongPtrA(sd.OutputWindow, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(WndProcHook::thunk)));
         if (!WndProcHook::func) logger::error("SetWindowLongPtrA failed!");
     }
     static inline REL::Relocation<decltype(thunk)> func;
@@ -130,10 +140,10 @@ struct DXGIPresentHook {
             g_LoadFontCallback = nullptr;
         }
 
-        ImGui_ImplWin32_NewFrame(); //Let imgui clear out any queued messages and whatnot
+        ImGui_ImplWin32_NewFrame();  // Let imgui clear out any queued messages and whatnot
 
-        //Its best to skip the stuff below if possible, but there's a situation where input messages are queued and not processed until frames are rendered
-        //This forces it to update once in a while to clear out anything queued
+        // Its best to skip the stuff below if possible, but there's a situation where input messages are queued and not processed until frames are rendered
+        // This forces it to update once in a while to clear out anything queued
         if (!g_showImGui) {
             ImGui::GetIO().SetAppAcceptingEvents(false);
             return;
@@ -143,8 +153,7 @@ struct DXGIPresentHook {
         ImGui_ImplDX11_NewFrame();
         ImGui::NewFrame();
 
-        if (g_showImGui && g_RenderCallback)
-            g_RenderCallback();
+        if (g_showImGui && g_RenderCallback) g_RenderCallback();
 
         ImGui::Render();
         ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
@@ -371,14 +380,13 @@ static ImGuiKey ImGui_ImplWin32_VirtualKeyToImGuiKey(WPARAM wParam) {
     }
 }
 
-//For some reason, RE::CharEvent isn't in the header files, so define a copy
+// For some reason, RE::CharEvent isn't in the header files, so define a copy
 class CharEvent : public RE::InputEvent {
 public:
     uint32_t keyCode;  // 18 (ascii code)
 };
 
-RE::BSEventNotifyControl InputListener::ProcessEvent(RE::InputEvent* const* a_event,
-                                                     RE::BSTEventSource<RE::InputEvent*>*) {
+RE::BSEventNotifyControl InputListener::ProcessEvent(RE::InputEvent* const* a_event, RE::BSTEventSource<RE::InputEvent*>*) {
     if (!a_event) return RE::BSEventNotifyControl::kContinue;
     if (!g_showImGui) return RE::BSEventNotifyControl::kContinue;
 
@@ -521,7 +529,7 @@ struct InputFunc {
 
         if (!g_showImGui)
             block = false;
-        else {       
+        else {
             bool isAltDown = ImGui::IsKeyDown(ImGuiKey_LeftAlt) || ImGui::IsKeyDown(ImGuiKey_RightAlt);
 
             if (!(block = g_blockInput) && (isAltDown || g_blockClicks)) {
@@ -531,8 +539,7 @@ struct InputFunc {
 
                     for (auto event = *a_events; event && !hasClick; event = event->next) {
                         if (event->eventType == RE::INPUT_EVENT_TYPE::kButton) {
-                            if (const auto button = static_cast<RE::ButtonEvent*>(event))
-                            {
+                            if (const auto button = static_cast<RE::ButtonEvent*>(event)) {
                                 switch (button->device.get()) {
                                     case RE::INPUT_DEVICE::kMouse:
                                         hasClick = true;

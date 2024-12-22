@@ -49,10 +49,12 @@ bool QuickArmorRebalance::InstallConsoleCommands() {
 
     logger::trace("Adding console command hook");
     REL::Relocation<std::uintptr_t> hookPoint;
+
     if (REL::Module::GetRuntime() != REL::Module::Runtime::VR)
         hookPoint = decltype(hookPoint){REL::RelocationID(52065, 52952), REL::VariantOffset(0xE2, 0x52, 0xE2)};
     else
-        hookPoint = 0x90E1F0 + 0xE2;
+        return true;
+        //hookPoint = 0x90E1F0 + 0xE2;
 
     auto& trampoline = SKSE::GetTrampoline();
     _CompileAndRun = trampoline.write_call<5>(hookPoint.address(), CompileAndRun);

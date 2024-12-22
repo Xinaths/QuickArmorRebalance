@@ -2075,10 +2075,6 @@ void QuickArmorRebalance::RenderUI() {
                     ImGui::EndTabItem();
                 }
 
-                if (ImGui::BeginTabItem(LZ("Language"))) {
-                    ImGui::EndTabItem();
-                }
-
                 ImGui::EndTabBar();
             }
 

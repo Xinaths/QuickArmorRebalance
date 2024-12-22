@@ -191,6 +191,7 @@ bool QuickArmorRebalance::Config::Load() {
 
         auto config = toml::parse_file((std::filesystem::current_path() / PATH_ROOT SETTINGS_FILE).generic_string());
         if (config) {
+            logger::trace("Loading local settings");
             g_Config.acParams.bMerge = config["merge"].value_or(true);
             g_Config.acParams.bModifyKeywords = config["modifyKeywords"].value_or(true);
             g_Config.acParams.armor.rating.bModify = config["modifyArmor"].value_or(true);
@@ -290,7 +291,8 @@ bool QuickArmorRebalance::Config::Load() {
                 tbl->for_each([this](const toml::key& key, auto&& val) { mapPrefVariants[std::string(key.str())].pref = (Preference)val.value_or(0); });
 
             spdlog::set_level((spdlog::level::level_enum)g_Config.verbosity);
-        }
+        } else
+            logger::trace("Local settings file not found");
 
         //if (!g_Config.acParams.armorSet) g_Config.acParams.armorSet = &g_Config.armorSets[0];
         if (!g_Config.acParams.curve) g_Config.acParams.curve = &g_Config.curves[0].second;
@@ -358,6 +360,8 @@ bool QuickArmorRebalance::Config::Load() {
         strCriticalError.clear();
     else
         strCriticalError = "Failed to load";
+
+    logger::trace("Done loading configuration");
     return bSuccess;
 }
 

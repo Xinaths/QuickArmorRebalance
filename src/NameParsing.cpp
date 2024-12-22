@@ -63,6 +63,8 @@ inline char32_t to_lower_unicode(char32_t ch) {
 }
 
 std::string& toLowerUTF8(std::string& utf8_str) {
+    if (!utf8::is_valid(utf8_str.begin(), utf8_str.end())) utf8_str = utf8::replace_invalid(utf8_str);
+
     for (auto it = utf8_str.begin(), end = utf8_str.end(); it != end;) {
         auto pos = it;
         utf8::append(to_lower_unicode(utf8::next(it, end)), pos);  // Overwrite the current position with the lowercase character
@@ -75,6 +77,8 @@ WordSet QuickArmorRebalance::SplitWords(const char* str, std::vector<std::string
     WordSet results;
 
     std::string input(str);
+    if (!utf8::is_valid(input.begin(), input.end())) input = utf8::replace_invalid(input);
+
     bool includesSpaces = false;
 
     {

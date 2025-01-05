@@ -4,6 +4,7 @@
 #include "ArmorSetBuilder.h"
 #include "Config.h"
 #include "Data.h"
+#include "Enchantments.h"
 #include "ImGui/imgui_impl_dx11.h"
 #include "ImGuiIntegration.h"
 #include "Localization.h"
@@ -56,18 +57,24 @@ bool MenuItemConfirmed(const char* str) {
     return bRet;
 }
 
-std::vector<ModData*> GetFilteredMods(int nModFilter) {
+std::vector<ModData*> GetFilteredMods(int nModFilter, const char* nameFilter) {
     std::vector<ModData*> list;
     list.reserve(g_Data.sortedMods.size());
     switch (nModFilter) {
         case 0:
-            list = g_Data.sortedMods;
+            if (!*nameFilter)
+                list = g_Data.sortedMods;
+            else
+                std::copy_if(g_Data.sortedMods.begin(), g_Data.sortedMods.end(), std::back_inserter(list),
+                             [=](ModData* mod) { return StringContainsI(mod->mod->fileName, nameFilter); });
             break;
         case 1:
-            std::copy_if(g_Data.sortedMods.begin(), g_Data.sortedMods.end(), std::back_inserter(list), [](ModData* mod) { return !mod->bModified; });
+            std::copy_if(g_Data.sortedMods.begin(), g_Data.sortedMods.end(), std::back_inserter(list),
+                         [=](ModData* mod) { return !mod->bModified && (!*nameFilter || StringContainsI(mod->mod->fileName, nameFilter)); });
             break;
         case 2:
-            std::copy_if(g_Data.sortedMods.begin(), g_Data.sortedMods.end(), std::back_inserter(list), [](ModData* mod) { return mod->bModified; });
+            std::copy_if(g_Data.sortedMods.begin(), g_Data.sortedMods.end(), std::back_inserter(list),
+                         [=](ModData* mod) { return mod->bModified && (!*nameFilter || StringContainsI(mod->mod->fileName, nameFilter)); });
             break;
         case 3: {
             static bool bOnce = false;
@@ -84,8 +91,9 @@ std::vector<ModData*> GetFilteredMods(int nModFilter) {
                 }
             }
         }
-            std::copy_if(g_Data.sortedMods.begin(), g_Data.sortedMods.end(), std::back_inserter(list),
-                         [](ModData* mod) { return mod->bModified && !mod->bHasDynamicVariants && mod->bHasPotentialDVs; });
+            std::copy_if(g_Data.sortedMods.begin(), g_Data.sortedMods.end(), std::back_inserter(list), [=](ModData* mod) {
+                return mod->bModified && !mod->bHasDynamicVariants && mod->bHasPotentialDVs && (!*nameFilter || StringContainsI(mod->mod->fileName, nameFilter));
+            });
             break;
     }
 
@@ -760,6 +768,14 @@ void QuickArmorRebalance::RenderUI() {
 
                         ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
                         if (ImGui::BeginCombo("##Mod", curMod ? curMod->mod->fileName : strModSpecial[nModSpecial], ImGuiComboFlags_HeightLarge)) {
+                            ImGui::Text(LZ("Search:"));
+                            ImGui::SameLine();
+
+                            static char strModFilter[200] = "";
+
+                            // ImGui::SetNextItemWidth(200);
+                            ImGui::InputText("##ModNameFilter", strModFilter, sizeof(strModFilter) - 1, ImGuiInputTextFlags_AutoSelectAll);
+
                             if (!nModFilter) {
                                 for (int i = 0; strModSpecial[i]; i++) {
                                     if (!bModSpecialEnabled[i]) continue;
@@ -773,7 +789,7 @@ void QuickArmorRebalance::RenderUI() {
                                 }
                             }
 
-                            for (auto i : GetFilteredMods(nModFilter)) {
+                            for (auto i : GetFilteredMods(nModFilter, strModFilter)) {
                                 bool selected = curMod == i;
 
                                 int pop = 0;
@@ -1144,8 +1160,9 @@ void QuickArmorRebalance::RenderUI() {
                             int iTabSelected = iTabOpen;
 
                             bool bTabEnabled[] = {hasEnabledArmor && (!params.armorSet || !params.armorSet->items.empty()),
-                                                  hasEnabledWeap && (!params.armorSet || !params.armorSet->weaps.empty())};
-                            const int nTabCount = 2;
+                                                  hasEnabledWeap && (!params.armorSet || !params.armorSet->weaps.empty()), true};
+                            bTabEnabled[2] = bTabEnabled[0] || bTabEnabled[1];
+                            const int nTabCount = 3;
 
                             bool bForceSelect = false;
                             if (!bTabEnabled[iTabOpen]) {
@@ -1156,7 +1173,7 @@ void QuickArmorRebalance::RenderUI() {
                                 bForceSelect = true;
                             }
 
-                            const char* tabLabels[] = {LZ("Armor"), LZ("Weapons")};
+                            const char* tabLabels[] = {LZ("Armor"), LZ("Weapons"), LZ("Enchantments")};
                             // if (iTabOpen != iTabSelected) ImGui::SetTabItemClosed(tabLabels[iTabSelected]);
 
                             iTabSelected = iTabOpen;
@@ -1278,11 +1295,72 @@ void QuickArmorRebalance::RenderUI() {
 
                                     ImGui::EndTable();
                                 }
-                                iTab++;
 
                                 ImGui::EndTabItem();
                             }
+                            iTab++;
                             ImGui::EndDisabled();
+
+                            // Enchantment tab
+                            ImGui::BeginDisabled(!bTabEnabled[iTab]);
+                            if (ImGui::BeginTabItem(tabLabels[iTab], nullptr, bForceSelect && iTabOpen == iTab ? ImGuiTabItemFlags_SetSelected : 0)) {
+                                iTabSelected = iTab;
+
+                                ImGui::Text(LZ("List"));
+                                ImGui::SameLine();
+
+                                ImGui::SetNextItemWidth(220);
+                                if (ImGui::BeginCombo("##Curve", params.ench.pool ? LZ(params.ench.pool->name.c_str()) : "<None>",
+                                                      ImGuiComboFlags_PopupAlignLeft | ImGuiComboFlags_HeightLarge)) {
+                                    {
+                                        bool selected = !params.ench.pool;
+                                        if (ImGui::Selectable(LZ("<None>"), selected)) params.ench.pool = nullptr;
+                                        if (selected) ImGui::SetItemDefaultFocus();
+                                    }
+
+                                    std::vector<EnchantmentPool*> pools;
+                                    pools.reserve(g_Config.mapEnchPools.size());
+                                    for (auto& i : g_Config.mapEnchPools) pools.push_back(&i.second);
+                                    std::sort(pools.begin(), pools.end(), [](auto a, auto b) { return a->name.compare(b->name) < 0; });
+
+                                    for (auto i : pools) {
+                                        bool selected = params.ench.pool == i;
+                                        if (ImGui::Selectable(LZ(i->name.c_str()), selected)) params.ench.pool = i;
+                                        if (selected) ImGui::SetItemDefaultFocus();
+                                        MakeTooltip(i->strContents.c_str(), true);
+                                    }
+
+                                    ImGui::EndCombo();
+                                }
+
+                                ImGui::BeginDisabled(!params.ench.pool);
+
+                                ImGui::SameLine();
+                                ImGui::Checkbox(LZ("Only"), &params.ench.poolRestrict);
+
+                                ImGui::SameLine();
+                                ImGui::BeginDisabled(params.ench.poolRestrict);
+
+                                static float fMaxChance = 100.0f;
+                                float* pfChance = params.ench.poolRestrict ? &fMaxChance : &params.ench.poolChance;
+
+                                ImGui::SetNextItemWidth(-1.0f);
+                                ImGui::SliderFloat("##Bias", pfChance, 0.0f, 100.0f, "%.0f%% chance from this list", ImGuiSliderFlags_AlwaysClamp);
+                                ImGui::EndDisabled();
+                                ImGui::EndDisabled();
+
+                                if (SliderTable()) {
+                                    SliderRow(LZ("Chance"), params.ench.rate, 0.0f, 500.0f);
+                                    SliderRow(LZ("Power"), params.ench.power, 10.0f, 300.0f);
+
+                                    ImGui::EndTable();
+                                }
+
+                                ImGui::EndTabItem();
+                            }
+                            iTab++;
+                            ImGui::EndDisabled();
+
                             ImGui::EndTabBar();
                             iTabOpen = iTabSelected;
                         }
@@ -1942,6 +2020,21 @@ void QuickArmorRebalance::RenderUI() {
                     MakeTooltip(LZ("A lower number generates more loot lists but more accurate distribution"));
 
                     ImGui::Checkbox(LZ("Prevent distribution of dynamic variants"), &g_Config.bPreventDistributionOfDynamicVariants);
+
+                    if (ImGui::Checkbox(LZ("[EXPERIMENTAL] Add random enchantments to distributed gear"), &g_Config.bEnableEnchantmentDistrib)) {
+                        if (g_Config.bEnableEnchantmentDistrib) InstallEnchantmentHooks();
+                    }
+                    MakeTooltip(
+                        LZ("This is a new feature that will result in permanent changes in saved games.\n"
+                           "At the time of this release, there are no known issues, however\n"
+                           "out of an abundance of caution this is disabled by default.\n"
+                           "Please only enable this if you understand that there may be unknown issues\n"
+                           "and you are willing to take the risk of potential crashes or save game corruption."));
+                    ImGui::SliderFloat(LZ("Adjust enchantment rates"), &g_Config.fEnchantRates, 0.0f, 300.0f, "%.0f%%", ImGuiSliderFlags_AlwaysClamp);
+                    MakeTooltip(LZFormat("This is relative to the base enchantment rates, which are currently set between {:.0f}%% and {:.0f}%%.\n"
+                                         "Other factors may modify this rate further.",
+                                         100.0f * g_Config.enchChanceBase, 100.0f * (g_Config.enchChanceBase + g_Config.enchChanceBonusMax))
+                                    .c_str());
 
                     ImGui::SeparatorText(LZ("Preferred Variants"));
                     MakeTooltip(

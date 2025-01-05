@@ -2,4 +2,6 @@
 
 namespace QuickArmorRebalance {
     void InstallEnchantmentHooks();
+
+    void FinalizeEnchantmentConfig();
 }

@@ -13,6 +13,7 @@ namespace QuickArmorRebalance {
     enum Preference { Pref_Ignore, Pref_With, Pref_Without };
 
     struct LootDistGroup;
+    struct EnchantmentPool;
 
     const unsigned int kCosmeticSlotMask = 0;
     //(unsigned int)RE::BIPED_MODEL::BipedObjectSlot::kHead | (unsigned int)RE::BIPED_MODEL::BipedObjectSlot::kHair;
@@ -48,6 +49,8 @@ namespace QuickArmorRebalance {
         std::set<RE::TESObjectARMO*> items;
         std::set<RE::TESObjectWEAP*> weaps;
         std::set<RE::TESAmmo*> ammo;
+
+        EnchantParams ench;
 
         RE::TESObjectARMO* FindMatching(RE::TESObjectARMO* w) const;
         RE::TESObjectWEAP* FindMatching(RE::TESObjectWEAP* w) const;
@@ -93,6 +96,14 @@ namespace QuickArmorRebalance {
             SliderPair speed;
             SliderPair stagger;
         } weapon;
+
+        struct {
+            SliderPair power;
+            SliderPair rate;
+            EnchantmentPool* pool = nullptr;
+            float poolChance = 50.0f;
+            bool poolRestrict = false;
+        } ench;
 
         SliderPair value;
 
@@ -169,6 +180,12 @@ namespace QuickArmorRebalance {
             return it != armorSets.end() ? &*it : nullptr;
         }
 
+        BaseArmorSet* GetArmorSetFor(RE::TESBoundObject* obj) {
+            auto it = mapObjToSet.find(obj);
+            if (it != mapObjToSet.end()) return it->second;
+            return nullptr;
+        }
+
         std::set<const RE::TESFile*> blacklist;
         std::set<RE::BGSKeyword*> kwSet;
         std::set<RE::BGSKeyword*> kwSlotSpecSet;
@@ -179,6 +196,8 @@ namespace QuickArmorRebalance {
 
         std::vector<std::pair<std::string, RebalanceCurve>> curves;
         std::vector<BaseArmorSet> armorSets;
+        std::unordered_map<RE::TESBoundObject*, BaseArmorSet*> mapObjToSet;
+
         std::set<std::string> lootProfiles;
 
         WordSet wordsDynamicVariants;
@@ -200,6 +219,9 @@ namespace QuickArmorRebalance {
 
         std::unordered_map<RE::BGSKeyword*, CustomKeyword> mapCustomKWs;
         std::map<std::string, std::vector<RE::BGSKeyword*>> mapCustomKWTabs;
+
+        std::map<RE::EnchantmentItem*, EnchantmentRanks> mapEnchantments;
+        std::map<std::size_t, EnchantmentPool> mapEnchPools;
 
         void RebuildDisabledWords();
 
@@ -234,6 +256,8 @@ namespace QuickArmorRebalance {
         bool bEnableArmorSlotModelFixHook = true;
         bool bPreventDistributionOfDynamicVariants = true;
 
+        bool bEnableEnchantmentDistrib = false;
+
         bool bExportUntranslated = false;
 
         bool bEnableDAVExports = true;
@@ -246,9 +270,16 @@ namespace QuickArmorRebalance {
         bool isFrostfallInstalled = false;
 
         float fDropRates = 100.0f;
+        float fEnchantRates = 100.0f;
         int verbosity = spdlog::level::info;
         int levelGranularity = 3;
         int craftingRarityMax = 2;
+
+        int levelMaxDist = 1;
+        int levelEnchDelay = 3;
+        float enchChanceBase = 0.1f;
+        float enchChanceBonus = 0.01f;
+        float enchChanceBonusMax = 0.15f;
 
         float fTemperGoldCostRatio = 20.0f;
         float fCraftGoldCostRatio = 70.0f;

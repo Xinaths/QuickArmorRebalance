@@ -22,15 +22,6 @@ using namespace rapidjson;
 using namespace QuickArmorRebalance;
 
 namespace {
-    int GetJsonInt(const Value& parent, const char* id, int min = 0, int max = 0, int d = 0) {
-        if (parent.HasMember(id)) {
-            const auto& v = parent[id];
-            if (v.IsInt()) return std::clamp(v.GetInt(), min, max);
-        }
-
-        return std::max(min, d);
-    }
-
     bool DoNotDistribute(RE::TESObjectARMO* armor) {
         if (g_Config.bPreventDistributionOfDynamicVariants) {
             for (auto addon : armor->armorAddons) {
@@ -165,14 +156,18 @@ void LoadContainerList(std::map<RE::TESForm*, QuickArmorRebalance::ContainerChan
             for (const auto& entry : jsonFiles.value.GetObj()) {
                 if (auto form = QuickArmorRebalance::FindIn<RE::TESForm>(file, entry.name.GetString())) {
                     if (form->As<RE::TESContainer>() || form->As<RE::TESLevItem>()) {
+                        ContainerChance params;
                         if (entry.value.IsObject()) {
-                            auto num = GetJsonInt(entry.value, "num", 1, 20);
-                            auto chance = GetJsonInt(entry.value, "chance", 1, 100, 100);
-                            set[form] = {num, chance};
+                            params.count = GetJsonInt(entry.value, "num", 1, 20);
+                            params.chance = GetJsonInt(entry.value, "chance", 1, 100, 100);
+                            params.ench.enchPower = GetJsonFloat(entry.value, "enchPower", 0.5f, 3.0f, 1.0f);
+                            params.ench.enchRate = GetJsonFloat(entry.value, "enchRate", 0.0f, 5.0f, 1.0f);
                         } else if (entry.value.IsInt()) {
-                            set[form] = {1, std::clamp(entry.value.GetInt(), 1, 100)};
-                        } else
-                            set[form] = {1, 100};
+                            params.chance = std::clamp(entry.value.GetInt(), 1, 100);
+                        }
+
+                        set[form] = params;
+
 
                     } else
                         logger::warn("Item not container or leveled list: {}", entry.name.GetString());
@@ -189,6 +184,10 @@ void QuickArmorRebalance::LoadLootConfig(const Value& jsonLoot) {
         if (jsonGroups.IsObject()) {
             for (const auto& jsonGroup : jsonGroups.GetObj()) {
                 auto& group = g_Data.loot->containerGroups[jsonGroup.name.GetString()];
+
+                if (jsonGroup.value.HasMember("enchPower")) group.ench.enchPower = jsonGroup.value["enchPower"].GetFloat();
+                if (jsonGroup.value.HasMember("enchRate")) group.ench.enchRate = jsonGroup.value["enchRate"].GetFloat();
+
                 if (jsonGroup.value.HasMember("sets")) LoadContainerList(group.large, jsonGroup.value["sets"]);
                 if (jsonGroup.value.HasMember("pieces")) LoadContainerList(group.small, jsonGroup.value["pieces"]);
                 if (jsonGroup.value.HasMember("weapons")) LoadContainerList(group.weapon, jsonGroup.value["weapons"]);
@@ -209,6 +208,8 @@ void QuickArmorRebalance::LoadLootConfig(const Value& jsonLoot) {
                 group.falloff = GetJsonInt(jsonGroup.value, "falloff", 0, 50);
                 group.minw = GetJsonInt(jsonGroup.value, "minw", 0, 20);
                 group.maxw = GetJsonInt(jsonGroup.value, "maxw", 1, 20);
+
+                g_Config.levelMaxDist = std::max(g_Config.levelMaxDist, group.level);
             }
         }
     }
@@ -237,7 +238,7 @@ void QuickArmorRebalance::LoadLootConfig(const Value& jsonLoot) {
 void QuickArmorRebalance::ValidateLootConfig() {
     logger::trace("Validating loot configuration");
 
-    for (const auto& i : g_Data.loot->containerGroups) {
+    for (auto& i : g_Data.loot->containerGroups) {
         if (i.second.small.empty() && i.second.large.empty())
             logger::warn("Loot container group {} has no associated containers", i.first);
     }
@@ -297,7 +298,9 @@ namespace {
     template <class T>
     RE::TESBoundObject* BuildListFrom(T* const* items, size_t count, uint8_t flags, uint8_t chanceNone = 0) {
         if (!count) return nullptr;
-        if (count == 1 && !chanceNone) return const_cast<T*>(*items);
+        if (count == 1 && !chanceNone) {
+            return const_cast<T*>(*items);
+        }
         if (count <= kLLMaxSize) {
             auto list = CreateLeveledList();
             list->llFlags = (RE::TESLeveledList::Flag)flags;
@@ -311,6 +314,7 @@ namespace {
                 e.itemExtra = nullptr;
             }
             //LogListContents(list);
+            return CreateLeveledList();
             return list;
         } else {
             auto split = 1 + count / kLLMaxSize;
@@ -324,7 +328,7 @@ namespace {
             for (int i = 0; i < split; i++) {
                 auto& e = list->entries[i];
                 e.count = 1;
-                e.form = BuildListFrom(front, count > kLLMaxSize ? slice : count, flags);
+                e.form = BuildListFrom(front, count > slice ? slice : count, flags);
                 e.level = 1;
                 e.itemExtra = nullptr;
 
@@ -524,7 +528,7 @@ namespace {
     }
 
     void FillContents(const std::map<RE::TESForm*, QuickArmorRebalance::ContainerChance>& containers,
-                      RE::TESLevItem* curveList) {
+                      RE::TESLevItem* curveList, const EnchantProbability& enchBase) {
         std::map<int, RE::TESBoundObject*> chances;
 
         for (auto& entry : containers) {
@@ -544,7 +548,28 @@ namespace {
 
             if (auto container = entry.first->As<RE::TESContainer>()) {
                 container->AddObjectToContainer(list, entry.second.count, nullptr);
-                g_Data.distContainers.insert(container);
+
+                //Adding 
+                auto& ench = g_Data.distContainers[container];
+
+                //Record the enchantment rates
+                //This is a mess because we need to store defaults, but we can also have multiple entries
+                //Only proper way to ensure a specific enchantment setup is having all container references have the same enchantment rates
+                if (!entry.second.ench.IsDefault()) {
+                    if (ench.IsDefault() || ench==enchBase) {
+                        ench = entry.second.ench;
+                        ench.enchPower *= enchBase.enchPower;
+                        ench.enchRate *= enchBase.enchRate;
+                    }
+                    else { //potentially conflicting entries, just take the more favorable of the two
+                        ench.enchRate = std::max(ench.enchRate, entry.second.ench.enchRate * enchBase.enchRate);
+                        ench.enchPower = std::max(ench.enchPower, entry.second.ench.enchPower * enchBase.enchPower);
+                    }
+                } else if (!enchBase.IsDefault()) {
+                    if (ench.IsDefault())
+                        ench = enchBase;
+                    //Else it is either enchBase, or it's been modified by something else - just leave it alone
+                }
             } else if (auto llist = entry.first->As<RE::TESLevItem>()) {
                 if (llist->numEntries < kLLMaxSize) {
                     llist->entries.resize(llist->entries.size() + 1);
@@ -572,7 +597,7 @@ namespace {
                 }
 
                 if (auto pieceList = BuildCurveList(std::move(contentsLists))) {
-                    FillContents(group.small, pieceList);
+                    FillContents(group.small, pieceList, group.ench);
                 }
             }
 
@@ -583,7 +608,7 @@ namespace {
                 }
 
                 if (auto pieceList = BuildCurveList(std::move(contentsLists))) {
-                    FillContents(group.large, pieceList);
+                    FillContents(group.large, pieceList, group.ench);
                 }
             }
 
@@ -594,7 +619,7 @@ namespace {
                 }
 
                 if (auto pieceList = BuildCurveList(std::move(contentsLists))) {
-                    FillContents(group.weapon, pieceList);
+                    FillContents(group.weapon, pieceList, group.ench);
                 }
             }
         }
@@ -625,4 +650,14 @@ void QuickArmorRebalance::SetupLootLists() {
     logger::trace("Building loot lists");
     BuildSetLists();
     logger::info("Done processing loot, {} lists created", g_nLListsCreated);
+
+    auto dataHandler = RE::TESDataHandler::GetSingleton();
+    auto& ls = dataHandler->GetFormArray<RE::TESLevItem>();
+    for (auto i : ls) {
+        for (auto& obj : i->entries) {
+            if (!obj.form) logger::info("Null entry in {:08x}", i->GetFormID());
+        }
+            
+    }
+
 }

@@ -140,8 +140,8 @@ namespace {
         return 0;
     }
 
-    void AddModification(const char* field, const ArmorChangeParams::SliderPair& pair, rapidjson::Value& changes, MemoryPoolAllocator<>& al) {
-        if (pair.bModify) changes.AddMember(StringRef(field), Value(0.01f * pair.fScale), al);
+    void AddModification(const char* field, const ArmorChangeParams::SliderPair& pair, rapidjson::Value& changes, MemoryPoolAllocator<>& al, bool bIgnoreDefault = false) {
+        if (pair.bModify && !(bIgnoreDefault && pair.fScale == 100.0f)) changes.AddMember(StringRef(field), Value(0.01f * pair.fScale), al);
     }
 
     int AddDynamicVariants(const RE::TESFile* file, const ArmorChangeParams& params, rapidjson::Value& ls, MemoryPoolAllocator<>& al);
@@ -280,6 +280,17 @@ int QuickArmorRebalance::MakeArmorChanges(const ArmorChangeParams& params) {
             AddModification("value", params.value, changes, al);
         }
 
+        AddModification("enchRate", params.ench.rate, changes, al, true);
+        AddModification("enchPower", params.ench.power, changes, al, true);
+
+        if (params.ench.pool) {
+            changes.AddMember("enchPool", Value(params.ench.pool->name.c_str(), al), al);
+            if (params.ench.poolRestrict)
+                changes.AddMember("enchPoolBias", Value(1.0f), al);
+            else
+                changes.AddMember("enchPoolBias", Value(0.01f * params.ench.poolChance), al);
+        }
+
         if (params.bModifyKeywords) changes.AddMember("keywords", Value(true), al);
         if (params.temper.bModify) {
             Value recipe(kObjectType);
@@ -337,8 +348,7 @@ int QuickArmorRebalance::MakeArmorChanges(const ArmorChangeParams& params) {
                     auto& prev = doc[j.name];
                     if (!prev.IsObject()) {
                         doc.RemoveMember(j.name);
-                        if (j.value.HasMember("srcid")) 
-                            doc.AddMember(j.name, j.value, al);
+                        if (j.value.HasMember("srcid")) doc.AddMember(j.name, j.value, al);
                         continue;
                     }
 
@@ -347,8 +357,7 @@ int QuickArmorRebalance::MakeArmorChanges(const ArmorChangeParams& params) {
                         prev.AddMember(m.name, m.value, al);
                     }
                 } else {
-                    if (j.value.HasMember("srcid")) 
-                        doc.AddMember(j.name, j.value, al);
+                    if (j.value.HasMember("srcid")) doc.AddMember(j.name, j.value, al);
                 }
             }
         }
@@ -609,7 +618,7 @@ template <class T, typename V>
 bool ChangeField(bool bAllowed, const char* field, const rapidjson::Value& changes, T* src, T* item, V T::*member, const auto& fn) {
     if (bAllowed && changes.HasMember(field)) {
         auto& jsonScale = changes[field];
-        if (!jsonScale.IsFloat()) return false;
+        if (!jsonScale.IsNumber()) return false;
 
         auto scale = jsonScale.GetFloat();
         if (src->*member && scale > 0.0f)
@@ -688,6 +697,15 @@ bool QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, RE::FormID id, c
         return false;
     }
 
+    ObjEnchantParams* enchParams = nullptr;
+    if (auto as = g_Config.GetArmorSetFor(boSrc)) {
+        if (as->ench.enchPool) {
+            enchParams = &g_Data.enchParams[bo];
+            enchParams->base = as->ench;
+            if (as->loot) enchParams->level = as->loot->level;
+        }
+    }
+
     float weight = 1.0f;
 
     if (&perm == &g_Config.permShared)
@@ -708,7 +726,7 @@ bool QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, RE::FormID id, c
         int baseW = 0;
         int setW = 0;
 
-        if (jsonW.IsFloat())
+        if (jsonW.IsNumber())
             weight = jsonW.GetFloat();
         else if (jsonW.IsObject()) {
             auto wObj = jsonW.GetObj();
@@ -782,7 +800,7 @@ bool QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, RE::FormID id, c
         if (perm.bModifyWarmth && changes.HasMember("warmth") && setW > 0) {
             float warmth = 0.0f;
             auto& jsonScale = changes["warmth"];
-            if (jsonScale.IsFloat()) {
+            if (jsonScale.IsNumber()) {
                 auto scale = warmth = jsonScale.GetFloat();
                 g_Data.modifiedWarmth[armor] = scale * itemW / setW * 150.0f;
             }
@@ -934,6 +952,31 @@ bool QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, RE::FormID id, c
             if (jsonLoot.HasMember("rarity") && jsonLoot["rarity"].IsInt()) rarity = jsonLoot["rarity"].GetInt();
 
             if (g_Data.loot) LoadLootChanges(bo, jsonLoot);
+        }
+    }
+
+    if (enchParams) {
+        if (changes.HasMember("enchRate")) {
+            auto& jsonVal = changes["enchRate"];
+            if (jsonVal.IsNumber()) enchParams->unique.enchRate = std::clamp(jsonVal.GetFloat(), 0.0f, 5.0f);
+        }
+        if (changes.HasMember("enchPower")) {
+            auto& jsonVal = changes["enchPower"];
+            if (jsonVal.IsNumber()) enchParams->unique.enchPower = std::clamp(jsonVal.GetFloat(), 0.1f, 3.0f);
+        }
+
+        if (changes.HasMember("enchPool")) {
+            auto& jsonVal = changes["enchPool"];
+            if (jsonVal.IsString()) {
+                auto hash = std::hash<std::string>{}(MakeLower(jsonVal.GetString()));
+
+                enchParams->unique.enchPool = MapFind(g_Config.mapEnchPools, hash);
+            }
+        }
+
+        if (enchParams->unique.enchPool && changes.HasMember("enchPoolBias")) {
+            auto& jsonVal = changes["enchPoolBias"];
+            if (jsonVal.IsNumber()) enchParams->uniquePoolChance = std::clamp(jsonVal.GetFloat(), 0.0f, 1.0f);
         }
     }
 

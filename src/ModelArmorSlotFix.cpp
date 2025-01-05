@@ -45,7 +45,7 @@ namespace {
                     //First pass - figure out what slots are missing
                     for (int i = 0; i < data.numPartitions; i++) {
                         auto& part = data.partitions[i];
-                        if (part.slot < 30 || part.slot > 62) continue;
+                        if (part.slot < 30 || part.slot >= 62) continue;
                         missing &= ~(1 << (part.slot - 30));
                         if (!missing) return; //Have everything, can abort
                     }
@@ -53,7 +53,7 @@ namespace {
                     //Second pass - update slots for missing parts
                     for (int i = 0; i < data.numPartitions; i++) {
                         auto& part = data.partitions[i];
-                        if (part.slot < 30 || part.slot > 62) continue;
+                        if (part.slot < 30 || part.slot >= 62) continue;
                         if (((1 << (part.slot - 30)) & slots) == 0) { //Mismatched slot - remap
                             unsigned long slot;
                             _BitScanForward(&slot, missing);

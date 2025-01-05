@@ -1,6 +1,6 @@
 #pragma once
 
-std::string& toLowerUTF8(std::string& utf8_str); //In NameParsing.cpp
+std::string& toLowerUTF8(std::string& utf8_str);  // In NameParsing.cpp
 
 namespace QuickArmorRebalance {
     using ArmorSet = std::vector<RE::TESObjectARMO*>;
@@ -26,8 +26,27 @@ namespace QuickArmorRebalance {
     bool ReadJSONFile(std::filesystem::path path, rapidjson::Document& doc, bool bEditing = true);
     bool WriteJSONFile(std::filesystem::path path, rapidjson::Document& doc);
 
+    inline int GetJsonInt(const rapidjson::Value& parent, const char* id, int min = 0, int max = 0, int d = 0) {
+        if (parent.HasMember(id)) {
+            const auto& v = parent[id];
+            if (v.IsInt()) return std::clamp(v.GetInt(), min, max);
+        }
+
+        return std::max(min, d);
+    }
+
+    inline float GetJsonFloat(const rapidjson::Value& parent, const char* id, float min = 0.0f, float max = 0.0f, float d = 0.0f) {
+        if (parent.HasMember(id)) {
+            const auto& v = parent[id];
+            if (v.IsNumber()) return std::clamp(v.GetFloat(), min, max);
+        }
+
+        return std::max(min, d);
+    }
+
+
     inline void ToLower(std::string& str) {
-        //std::transform(str.begin(), str.end(), str.begin(), [](unsigned char c) { return std::tolower(c, std::locale()); });
+        // std::transform(str.begin(), str.end(), str.begin(), [](unsigned char c) { return std::tolower(c, std::locale()); });
         toLowerUTF8(str);
     }
 
@@ -46,6 +65,15 @@ namespace QuickArmorRebalance {
             return it->second;
     }
 
+    template <typename MapType>
+    auto MapFind(const MapType& map, const typename MapType::key_type& key) -> const typename MapType::mapped_type* {
+        auto it = map.find(key);
+        if (it != map.end()) {
+            return &(it->second);  // Return a pointer to the value
+        }
+        return nullptr;  // Return nullptr if not found
+    }
+
     inline rapidjson::Value& EnsureHas(rapidjson::Value& obj, const char* field, rapidjson::Type t, rapidjson::MemoryPoolAllocator<>& al) {
         if (!obj.HasMember(field) || obj[field].GetType() != t) {
             obj.RemoveMember(field);
@@ -54,8 +82,7 @@ namespace QuickArmorRebalance {
         return obj[field];
     }
 
-
-    static RE::TESForm* FindIn(const RE::TESFile* mod, const char* str, bool* pOtherFile = nullptr) {
+    static RE::TESForm* FindIn(const RE::TESFile* mod, const char* str, bool* pOtherFile = nullptr, bool picky = false) {
         if (pOtherFile) *pOtherFile = false;
         if (!strncmp(str, "0x", 2)) {
             RE::FormID id = GetFullId(mod, (RE::FormID)strtol(str + 2, nullptr, 16));
@@ -76,13 +103,13 @@ namespace QuickArmorRebalance {
         }
 
         auto r = RE::TESForm::LookupByEditorID(str);
-        if (!r || r->GetFile(0) != mod) return nullptr;
+        if (!r || (picky && r->GetFile(0) != mod)) return nullptr;
         return r;
     }
 
     template <class T>
-    T* FindIn(const RE::TESFile* mod, const char* str) {
-        if (auto r = FindIn(mod, str)) return r->As<T>();
+    T* FindIn(const RE::TESFile* mod, const char* str, bool picky = true) {
+        if (auto r = FindIn(mod, str, nullptr, picky)) return r->As<T>();
         return nullptr;
     }
 
@@ -115,9 +142,18 @@ namespace QuickArmorRebalance {
         int maxw = 5;
     };
 
+    struct EnchantProbability {
+        float enchRate = 1.0f;
+        float enchPower = 1.0f;
+
+        bool IsDefault() const { return enchRate == 1.0f && enchPower == 1.0f; }
+        bool operator==(const EnchantProbability& other) { return enchRate == other.enchRate && enchPower == other.enchPower; }
+    };
+
     struct ContainerChance {
-        int count;
-        int chance;
+        int count = 1;
+        int chance = 100;
+        EnchantProbability ench;
     };
 
     struct LootContainerGroup {
@@ -128,6 +164,8 @@ namespace QuickArmorRebalance {
         std::map<LootDistGroup*, std::vector<RE::TESBoundObject*>[3]> pieces;
         std::map<LootDistGroup*, std::vector<const ArmorSet*>[3]> sets;
         std::map<LootDistGroup*, std::vector<RE::TESBoundObject*>[3]> weapons;
+
+        EnchantProbability ench;
     };
 
     struct LootDistProfile {
@@ -163,6 +201,29 @@ namespace QuickArmorRebalance {
 
     using KeywordChangeMap = std::unordered_map<RE::BGSKeyword*, KeywordChanges>;
 
+    struct EnchantmentPool {
+        std::string name;
+        std::string strContents;
+        std::map<RE::EnchantmentItem*, float> enchs;
+    };
+
+    struct EnchantParams : public EnchantProbability {
+        const EnchantmentPool* enchPool = nullptr;
+    };
+
+    struct EnchantmentRanks {
+        std::vector<RE::EnchantmentItem*> ranks;
+        int levelMin = 1;
+        int levelMax = INT_MAX;
+    };
+
+    struct ObjEnchantParams {
+        EnchantParams base;
+        EnchantParams unique;
+        int level = 1;
+        float uniquePoolChance = 0.5f;
+    };
+
     struct ProcessedData {
         std::map<const RE::TESFile*, std::unique_ptr<ModData>> modData;
         std::vector<ModData*> sortedMods;
@@ -186,8 +247,10 @@ namespace QuickArmorRebalance {
         std::unique_ptr<ModLootData> loot;
         std::map<std::string, LootDistGroup> distGroups;
 
-        std::unordered_set<RE::TESContainer*> distContainers;
+        std::unordered_map<RE::TESContainer*, EnchantProbability> distContainers;
         std::unordered_set<RE::TESBoundObject*> distItems;
+
+        std::unordered_map<RE::TESBoundObject*, ObjEnchantParams> enchParams;
     };
 
     bool IsValidItem(RE::TESBoundObject* i);

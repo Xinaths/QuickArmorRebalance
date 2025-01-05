@@ -10,6 +10,8 @@
 #include "Enchantments.h"
 
 namespace QuickArmorRebalance {
+    std::mt19937 RNG;
+
     void OnDataLoaded();
     bool BindPapyrusFunctions(RE::BSScript::IVirtualMachine* vm);
     
@@ -31,6 +33,8 @@ namespace QuickArmorRebalance {
                     break;
             }
         });
+
+        RNG.seed((unsigned int)std::time(0));
 
         return true;
     }

@@ -50,4 +50,8 @@ namespace QuickArmorRebalance {
         T::func = vtbl[T::offset.offset()];
         REL::safe_write((std::uintptr_t)&vtbl[T::offset.offset()], (std::uintptr_t)T::thunk);
     }
+
+    extern std::mt19937 RNG;
+
+    inline float RNG_f() { return (float)((double)RNG() / (double)RNG.max()); }
 }

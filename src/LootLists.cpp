@@ -314,7 +314,6 @@ namespace {
                 e.itemExtra = nullptr;
             }
             //LogListContents(list);
-            return CreateLeveledList();
             return list;
         } else {
             auto split = 1 + count / kLLMaxSize;
@@ -650,14 +649,4 @@ void QuickArmorRebalance::SetupLootLists() {
     logger::trace("Building loot lists");
     BuildSetLists();
     logger::info("Done processing loot, {} lists created", g_nLListsCreated);
-
-    auto dataHandler = RE::TESDataHandler::GetSingleton();
-    auto& ls = dataHandler->GetFormArray<RE::TESLevItem>();
-    for (auto i : ls) {
-        for (auto& obj : i->entries) {
-            if (!obj.form) logger::info("Null entry in {:08x}", i->GetFormID());
-        }
-            
-    }
-
 }

@@ -84,10 +84,14 @@ struct D3DInitHook {
 
         IDXGISwapChain* swapchain = nullptr;
 
-        auto& render_data = RE::BSGraphics::Renderer::GetSingleton()->data;
+        
+        auto& render_data = RE::BSRenderManager::GetSingleton()->GetRuntimeData(); //RE::BSGraphics::Renderer::GetSingleton()->data;
         auto device = render_data.forwarder;
         auto context = render_data.context;
 
+        swapchain = render_data.swapChain;
+
+        /*
         logger::debug("Getting swapchain");
         if (REL::Module::GetRuntime() != REL::Module::Runtime::VR) {
             auto renderWindow = *REL::Relocation<RE::BSGraphics::RendererWindow**>{
@@ -96,6 +100,7 @@ struct D3DInitHook {
         } else {
             swapchain = render_data.renderWindows[0].swapChain;
         }
+        */
 
         logger::debug("Getting swapchain desc...");
         DXGI_SWAP_CHAIN_DESC sd{};

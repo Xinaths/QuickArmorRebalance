@@ -618,17 +618,41 @@ bool QuickArmorRebalance::Config::LoadFile(std::filesystem::path path) {
                 if (auto file = dataHandler->LookupModByName(jsonMod.name.GetString())) {
                     if (jsonMod.value.IsArray()) {
                         for (const auto& i : jsonMod.value.GetArray()) {
-                            if (!i.IsString()) continue;
+                            if (i.IsString()) {
+                                if (auto ench = QuickArmorRebalance::FindIn<RE::EnchantmentItem>(file, i.GetString(), false)) {
+                                    if (ench->data.baseEnchantment) {
+                                        g_Config.mapEnchantments[ench->data.baseEnchantment].ranks.push_back(ench);
+                                    } else {
+                                        logger::warn("{}: Enchantment '{}' has no base enchantment", path.filename().generic_string(), i.GetString());
+                                    }
 
-                            if (auto ench = QuickArmorRebalance::FindIn<RE::EnchantmentItem>(file, i.GetString(), false)) {
-                                if (ench->data.baseEnchantment) {
-                                    g_Config.mapEnchantments[ench->data.baseEnchantment].ranks.push_back(ench);
-                                } else {
-                                    logger::warn("{}: Enchantment '{}' has no base enchantment", path.filename().generic_string(), i.GetString());
+                                } else
+                                    logger::warn("{}: Enchantment '{}' not found", path.filename().generic_string(), i.GetString());
+                            } else if (i.IsObject()) {
+                                for (auto& group : i.GetObj()) {
+                                    auto baseEnch = QuickArmorRebalance::FindIn<RE::EnchantmentItem>(file, group.name.GetString(), false);
+                                    if (!baseEnch) {
+                                        logger::warn("{}: Enchantment '{}' not found", path.filename().generic_string(), group.name.GetString());
+                                        continue;
+                                    }
+
+                                    if (group.value.IsString()) {
+                                        if (auto ench = QuickArmorRebalance::FindIn<RE::EnchantmentItem>(file, group.value.GetString(), false)) {
+                                            g_Config.mapEnchantments[baseEnch].ranks.push_back(ench);
+                                        } else
+                                            logger::warn("{}: Enchantment '{}' not found", path.filename().generic_string(), group.value.GetString());                                        
+                                    } else if (group.value.IsArray()) {
+                                        for (const auto& id : group.value.GetArray()) {
+                                            if (id.IsString()) {
+                                                if (auto ench = QuickArmorRebalance::FindIn<RE::EnchantmentItem>(file, id.GetString(), false)) {
+                                                    g_Config.mapEnchantments[baseEnch].ranks.push_back(ench);
+                                                } else
+                                                    logger::warn("{}: Enchantment '{}' not found", path.filename().generic_string(), id.GetString());
+                                            }
+                                        }                                        
+                                    }
                                 }
-
-                            } else
-                                logger::warn("{}: Enchantment '{}' not found", path.filename().generic_string(), i.GetString());
+                            }
                         }
                     }
                 }

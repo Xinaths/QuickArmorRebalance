@@ -327,7 +327,7 @@ namespace {
             for (int i = 0; i < split; i++) {
                 auto& e = list->entries[i];
                 e.count = 1;
-                e.form = BuildListFrom(front, count > slice ? slice : count, flags);
+                e.form = BuildListFrom(front, count > kLLMaxSize ? slice : count, flags);
                 e.level = 1;
                 e.itemExtra = nullptr;
 

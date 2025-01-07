@@ -166,6 +166,7 @@ namespace QuickArmorRebalance {
         std::map<LootDistGroup*, std::vector<RE::TESBoundObject*>[3]> weapons;
 
         EnchantProbability ench;
+        bool bLeveled = true;
     };
 
     struct LootDistProfile {

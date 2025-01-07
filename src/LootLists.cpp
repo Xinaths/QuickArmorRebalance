@@ -185,6 +185,7 @@ void QuickArmorRebalance::LoadLootConfig(const Value& jsonLoot) {
             for (const auto& jsonGroup : jsonGroups.GetObj()) {
                 auto& group = g_Data.loot->containerGroups[jsonGroup.name.GetString()];
 
+                if (jsonGroup.value.HasMember("leveled")) group.bLeveled = jsonGroup.value["leveled"].GetBool();
                 if (jsonGroup.value.HasMember("enchPower")) group.ench.enchPower = jsonGroup.value["enchPower"].GetFloat();
                 if (jsonGroup.value.HasMember("enchRate")) group.ench.enchRate = jsonGroup.value["enchRate"].GetFloat();
 
@@ -489,8 +490,14 @@ namespace {
         return BuildListFrom(entries, 0);
     }
 
-    RE::TESLevItem* BuildCurveList(std::map<QuickArmorRebalance::LootDistGroup*, RE::TESBoundObject*> lists) {
+    RE::TESBoundObject* BuildCurveList(std::map<QuickArmorRebalance::LootDistGroup*, RE::TESBoundObject*> lists) {
         if (lists.empty()) return nullptr;
+        if (lists.size() == 1) {
+            if (lists.begin()->first == nullptr)  // Only want to return the list directly if its unleveled - otherwise, we need a list just to have a min level
+                return lists.begin()->second;
+        }
+
+        assert(!lists.contains(nullptr));
 
         std::vector<std::pair<uint16_t, RE::TESForm*>> curves;
 
@@ -526,8 +533,7 @@ namespace {
         return list;
     }
 
-    void FillContents(const std::map<RE::TESForm*, QuickArmorRebalance::ContainerChance>& containers,
-                      RE::TESLevItem* curveList, const EnchantProbability& enchBase) {
+    void FillContents(const std::map<RE::TESForm*, QuickArmorRebalance::ContainerChance>& containers, RE::TESBoundObject* curveList, const EnchantProbability& enchBase) {
         std::map<int, RE::TESBoundObject*> chances;
 
         for (auto& entry : containers) {
@@ -637,12 +643,13 @@ void QuickArmorRebalance::SetupLootLists() {
     for (const auto& i : g_Data.loot->mapItemDist) {
         auto& data = i.second;
         for (auto c : data.profile->containerGroups) {
+            auto group = c->bLeveled ? data.group : nullptr;
             if (data.piece) {
-                if (auto armor = data.piece->As<RE::TESObjectARMO>()) c->pieces[data.group][data.rarity].push_back(armor);
+                if (auto armor = data.piece->As<RE::TESObjectARMO>()) c->pieces[group][data.rarity].push_back(armor);
                 else if (auto weap = data.piece->As<RE::TESObjectWEAP>())
-                    c->weapons[data.group][data.rarity].push_back(weap);
+                    c->weapons[group][data.rarity].push_back(weap);
             }
-            if (!data.set.empty()) c->sets[data.group][data.rarity].push_back(&data.set);
+            if (!data.set.empty()) c->sets[group][data.rarity].push_back(&data.set);
         }
     }
 

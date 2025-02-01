@@ -3,6 +3,7 @@
 #include "ArmorChanger.h"
 #include "ArmorSetBuilder.h"
 #include "Config.h"
+#include "ConsoleCommands.h"
 #include "Data.h"
 #include "Enchantments.h"
 #include "ImGui/imgui_impl_dx11.h"
@@ -708,6 +709,8 @@ void QuickArmorRebalance::RenderUI() {
 
     ImGui::SetNextWindowSizeConstraints({700, 250}, {1600, 1000});
     if (ImGui::Begin("Quick Armor Rebalance", &isActive, wndFlags)) {
+        if (g_Config.bShortcutEscCloseWindow && ImGui::Shortcut(ImGuiKey_Escape)) isActive = false;
+
         if (g_Config.strCriticalError.empty()) {
             static int nModFilter = 0;
             const char* modFilterDesc[] = {LZ("No filter"), LZ("Unmodified"), LZ("Modified"), LZ("Has possible dynamic variants")};
@@ -1864,6 +1867,11 @@ void QuickArmorRebalance::RenderUI() {
 
         bool bPopupActive = true;
         if (ImGui::BeginPopupModal("Settings", &bPopupActive, ImGuiWindowFlags_AlwaysAutoResize)) {
+            if (g_Config.bShortcutEscCloseWindow && ImGui::Shortcut(ImGuiKey_Escape)) {
+                bPopupActive = false;
+                ImGui::CloseCurrentPopup();
+            }
+
             ImGui::Text(LZ("NOTE: Many changes require restarting Skyrim to take full effect."));
             if (ImGui::BeginTabBar(LZ("Settings Tabs"))) {
                 if (ImGui::BeginTabItem(LZ("General"))) {
@@ -2141,7 +2149,17 @@ void QuickArmorRebalance::RenderUI() {
                     ImGui::EndTabItem();
                 }
 
+                if (ImGui::BeginTabItem(LZ("Shortcuts"))) {
+                    ImGui::Checkbox(LZ("Escape closes windows"), &g_Config.bShortcutEscCloseWindow);
+
+                    ImGui::EndTabItem();
+                }
+
                 if (ImGui::BeginTabItem(LZ("Hooks"))) {
+                    if (ImGui::Checkbox(LZ("Enale console command hook"), &g_Config.bEnableConsoleHook)) {
+                        if (g_Config.bEnableConsoleHook) InstallConsoleCommands();
+                    }
+
                     ImGui::Checkbox(LZ("Enable NIF armor slot remapping hook"), &g_Config.bEnableArmorSlotModelFixHook);
                     MakeTooltip(LZ("Fixes armor pieces not rendering when remapping their armor slots"));
 
@@ -2181,6 +2199,11 @@ void QuickArmorRebalance::RenderUI() {
         ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
         bPopupActive = true;
         if (ImGui::BeginPopupModal(LZ("Remap Slots"), &bPopupActive, ImGuiWindowFlags_NoScrollbar)) {
+            if (g_Config.bShortcutEscCloseWindow && ImGui::Shortcut(ImGuiKey_Escape)) {
+                bPopupActive = false;
+                ImGui::CloseCurrentPopup();
+            }
+
             static int nSlotView = 33;
             uint64_t slotsUsed = 0;
             ArmorSlots slotsProtected = g_Config.bEnableProtectedSlotRemapping ? 0 : kProtectedSlotMask;
@@ -2397,6 +2420,11 @@ void QuickArmorRebalance::RenderUI() {
         static bool dvWndWasOpen = false;
 
         if (ImGui::BeginPopupModal(LZ("Dynamic Variants"), &bPopupActive, ImGuiWindowFlags_NoScrollbar)) {
+            if (g_Config.bShortcutEscCloseWindow && ImGui::Shortcut(ImGuiKey_Escape)) {
+                bPopupActive = false;
+                ImGui::CloseCurrentPopup();
+            }
+
             dvWndWasOpen = true;
             ImGui::Text(LZ("Drag the appropriate words (if any) to their associated dynamic type on the right side."));
 
@@ -2744,6 +2772,11 @@ void QuickArmorRebalance::RenderUI() {
         static bool bPopupKeywordsWasOpen = false;
 
         if (ImGui::BeginPopupModal(LZ("Custom Keywords"), &bPopupActive, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_MenuBar)) {
+            if (g_Config.bShortcutEscCloseWindow && ImGui::Shortcut(ImGuiKey_Escape)) {
+                bPopupActive = false;
+                ImGui::CloseCurrentPopup();
+            }
+
             bPopupKeywordsWasOpen = true;
             itemsCustomTemp.recentEquipSlots = 0;
 

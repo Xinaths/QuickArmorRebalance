@@ -45,16 +45,18 @@ void CompileAndRun(RE::Script* a_script, RE::ScriptCompiler* a_compiler, RE::COM
 }
 
 bool QuickArmorRebalance::InstallConsoleCommands() {
+    if (!g_Config.bEnableConsoleHook) return true;
+
+    static bool bOnce = false;
+    if (bOnce) return true;
+    bOnce = true;
+
     SKSE::AllocTrampoline(1 << 4);
 
     logger::trace("Adding console command hook");
     REL::Relocation<std::uintptr_t> hookPoint;
 
-    if (REL::Module::GetRuntime() != REL::Module::Runtime::VR)
-        hookPoint = decltype(hookPoint){REL::RelocationID(52065, 52952), REL::VariantOffset(0xE2, 0x52, 0xE2)};
-    else
-        return true;
-        //hookPoint = 0x90E1F0 + 0xE2;
+    hookPoint = decltype(hookPoint){REL::VariantID(52065, 52952, 0x90E1F0), REL::VariantOffset(0xE2, 0x52, 0xE2)};
 
     auto& trampoline = SKSE::GetTrampoline();
     _CompileAndRun = trampoline.write_call<5>(hookPoint.address(), CompileAndRun);

@@ -21,7 +21,6 @@ namespace QuickArmorRebalance {
         SetupLog(REL::Module::GetRuntime() == REL::Module::Runtime::VR ? spdlog::level::trace : spdlog::level::info);
 
         ImGuiIntegration::Start(RenderUI);
-        InstallConsoleCommands();
 
         SKSE::GetMessagingInterface()->RegisterListener([](SKSE::MessagingInterface::Message* message) {
             switch (message->type) {
@@ -62,6 +61,8 @@ namespace QuickArmorRebalance {
         std::erase_if(g_Config.mapPrefVariants, [](auto& v) { return !v.second.hash; });
 
         g_Data.loot.release();
+
+        InstallConsoleCommands();
 
         if (g_Config.bEnableSkyrimWarmthHook) {
             logger::trace("Installing warmth hook");

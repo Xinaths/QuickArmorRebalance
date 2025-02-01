@@ -255,6 +255,9 @@ namespace QuickArmorRebalance {
         bool bEnableProtectedSlotRemapping = false;
         bool bEnableArmorSlotModelFixHook = true;
         bool bPreventDistributionOfDynamicVariants = true;
+        bool bEnableConsoleHook = true;
+
+        bool bShortcutEscCloseWindow = true;
 
         bool bEnableEnchantmentDistrib = false;
 

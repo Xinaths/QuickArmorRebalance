@@ -16,9 +16,9 @@
 
 #define USER_BLACKLIST_FILE "User Blacklist.json"
 
+#include "Enchantments.h"
 #include "Localization.h"
 #include "LootLists.h"
-#include "Enchantments.h"
 
 using namespace rapidjson;
 using namespace QuickArmorRebalance;
@@ -141,6 +141,10 @@ void LoadPermissions(QuickArmorRebalance::Permissions& p, toml::node_view<toml::
 }
 
 bool QuickArmorRebalance::Config::Load() {
+    bEnableConsoleHook = !REL::Module::IsVR();
+    bEnableSkyrimWarmthHook = !REL::Module::IsVR();
+    g_Config.verbosity = !REL::Module::IsVR() ? spdlog::level::info : spdlog::level::trace;
+
     {
         /*
         boost::locale::generator gen;
@@ -167,7 +171,6 @@ bool QuickArmorRebalance::Config::Load() {
     bool bSuccess = false;
     auto pathConfig = std::filesystem::current_path() / PATH_ROOT PATH_CONFIGS;
 
-    bEnableSkyrimWarmthHook = !REL::Module::IsVR();
 
     if (!std::filesystem::exists(pathConfig) || !std::filesystem::is_directory(pathConfig)) {
         logger::error("Config file directory missing ({})", pathConfig.generic_string());
@@ -249,7 +252,7 @@ bool QuickArmorRebalance::Config::Load() {
             g_Config.acParams.craft.bFree = config["craft"]["free"].value_or(false);
 
             g_Config.nFontSize = config["settings"]["fontsize"].value_or(13);
-            g_Config.verbosity = std::clamp(config["settings"]["verbosity"].value_or((int)spdlog::level::info), 0, spdlog::level::n_levels - 1);
+            g_Config.verbosity = std::clamp(config["settings"]["verbosity"].value_or((int)g_Config.verbosity), 0, spdlog::level::n_levels - 1);
             g_Config.bCloseConsole = config["settings"]["closeconsole"].value_or(true);
             g_Config.bAutoDeleteGiven = config["settings"]["autodelete"].value_or(false);
             g_Config.bRoundWeight = config["settings"]["roundweights"].value_or(false);
@@ -269,7 +272,8 @@ bool QuickArmorRebalance::Config::Load() {
             g_Config.fTemperGoldCostRatio = std::clamp(config["settings"]["goldcosttemper"].value_or(20.f), 0.0f, 200.0f);
             g_Config.fCraftGoldCostRatio = std::clamp(config["settings"]["goldcostcraft"].value_or(70.f), 0.0f, 200.0f);
             g_Config.bEnableSmeltingRecipes = config["settings"]["enablesmeltingrecipes"].value_or(false);
-            g_Config.bEnableSkyrimWarmthHook = config["settings"]["enablewarmthhook"].value_or(!REL::Module::IsVR());
+            g_Config.bEnableConsoleHook = config["settings"]["enableconsolehook"].value_or(bEnableConsoleHook);
+            g_Config.bEnableSkyrimWarmthHook = config["settings"]["enablewarmthhook"].value_or(bEnableSkyrimWarmthHook);
             g_Config.bShowFrostfallCoverage = config["settings"]["showffcoverage"].value_or(false);
             g_Config.bEnableProtectedSlotRemapping = config["settings"]["enableprotectedslotremapping"].value_or(false);
             g_Config.bEnableArmorSlotModelFixHook = config["settings"]["enablearmorslotmodelfixhook"].value_or(true);
@@ -292,6 +296,8 @@ bool QuickArmorRebalance::Config::Load() {
                         if (!str->get().empty()) g_Config.lsDisableWords.push_back(str->get());
                 });
             }
+
+            g_Config.bShortcutEscCloseWindow = config["shortcuts"]["escCloseWindow"].value_or(true);
 
             g_Config.bEnableDAVExports = config["integrations"]["enableDAVexports"].value_or(true);
             g_Config.bEnableDAVExportsAlways = config["integrations"]["enableDAVexportsalways"].value_or(false);
@@ -394,11 +400,10 @@ bool QuickArmorRebalance::Config::Load() {
     for (auto& as : armorSets) {
         if (!as.ench.enchPool) continue;
 
-        for (auto i : as.items) {            
+        for (auto i : as.items) {
             mapObjToSet[i] = &as;
         }
     }
-
 
     if (bSuccess)
         strCriticalError.clear();
@@ -502,9 +507,9 @@ bool QuickArmorRebalance::Config::LoadFile(std::filesystem::path path) {
     if (d.HasMember("settings")) {
         const auto& jsonSettings = d["settings"];
 
-        levelEnchDelay = GetJsonInt(jsonSettings, "enchLevelDelay", 0, 10, levelEnchDelay );
+        levelEnchDelay = GetJsonInt(jsonSettings, "enchLevelDelay", 0, 10, levelEnchDelay);
         enchChanceBase = GetJsonFloat(jsonSettings, "enchChanceBase", 0.0f, 1.0f, enchChanceBase);
-        enchChanceBonus = GetJsonFloat(jsonSettings, "enchChanceBonus", 0.0f, 1.0f, enchChanceBonus);        
+        enchChanceBonus = GetJsonFloat(jsonSettings, "enchChanceBonus", 0.0f, 1.0f, enchChanceBonus);
         enchChanceBonusMax = GetJsonFloat(jsonSettings, "enchChanceBonusMax", 0.0f, 1.0f, enchChanceBonusMax);
     }
 
@@ -640,7 +645,7 @@ bool QuickArmorRebalance::Config::LoadFile(std::filesystem::path path) {
                                         if (auto ench = QuickArmorRebalance::FindIn<RE::EnchantmentItem>(file, group.value.GetString(), false)) {
                                             g_Config.mapEnchantments[baseEnch].ranks.push_back(ench);
                                         } else
-                                            logger::warn("{}: Enchantment '{}' not found", path.filename().generic_string(), group.value.GetString());                                        
+                                            logger::warn("{}: Enchantment '{}' not found", path.filename().generic_string(), group.value.GetString());
                                     } else if (group.value.IsArray()) {
                                         for (const auto& id : group.value.GetArray()) {
                                             if (id.IsString()) {
@@ -649,7 +654,7 @@ bool QuickArmorRebalance::Config::LoadFile(std::filesystem::path path) {
                                                 } else
                                                     logger::warn("{}: Enchantment '{}' not found", path.filename().generic_string(), id.GetString());
                                             }
-                                        }                                        
+                                        }
                                     }
                                 }
                             }
@@ -678,7 +683,6 @@ bool QuickArmorRebalance::Config::LoadFile(std::filesystem::path path) {
                     }
                 } else
                     logger::warn("{}: Enchantment '{}' not found", path.filename().generic_string(), i.name.GetString());
-
             }
         }
     }
@@ -947,6 +951,7 @@ void QuickArmorRebalance::Config::Save() {
                                  {"goldcosttemper", g_Config.fTemperGoldCostRatio},
                                  {"goldcostcraft", g_Config.fCraftGoldCostRatio},
                                  {"enablesmeltingrecipes", g_Config.bEnableSmeltingRecipes},
+                                 {"enableconsolehook", g_Config.bEnableConsoleHook},
                                  {"enablewarmthhook", g_Config.bEnableSkyrimWarmthHook},
                                  {"showffcoverage", g_Config.bShowFrostfallCoverage},
                                  {"enableprotectedslotremapping", g_Config.bEnableProtectedSlotRemapping},
@@ -958,6 +963,10 @@ void QuickArmorRebalance::Config::Save() {
                                  {"autodisablewords", tomlDisableWords},
                                  {"language", WStringToString(Localization::Get()->language)},
                                  {"exportuntranslated", g_Config.bExportUntranslated}}},
+        {"shortcuts",
+         toml::table{
+             {"escCloseWindow", g_Config.bShortcutEscCloseWindow}
+         }},
         {"integrations",
          toml::table{
              {"enableDAVexports", g_Config.bEnableDAVExports},

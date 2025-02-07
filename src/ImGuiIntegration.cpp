@@ -84,8 +84,7 @@ struct D3DInitHook {
 
         IDXGISwapChain* swapchain = nullptr;
 
-        
-        auto& render_data = RE::BSRenderManager::GetSingleton()->GetRuntimeData(); //RE::BSGraphics::Renderer::GetSingleton()->data;
+        auto& render_data = RE::BSRenderManager::GetSingleton()->GetRuntimeData();  // RE::BSGraphics::Renderer::GetSingleton()->data;
         auto device = render_data.forwarder;
         auto context = render_data.context;
 
@@ -392,6 +391,8 @@ public:
 };
 
 RE::BSEventNotifyControl InputListener::ProcessEvent(RE::InputEvent* const* a_event, RE::BSTEventSource<RE::InputEvent*>*) {
+    //logger::trace("ProcessEvent: show={}, events={}", g_showImGui, fmt::ptr(*a_event));
+
     if (!a_event) return RE::BSEventNotifyControl::kContinue;
     if (!g_showImGui) return RE::BSEventNotifyControl::kContinue;
 
@@ -399,24 +400,28 @@ RE::BSEventNotifyControl InputListener::ProcessEvent(RE::InputEvent* const* a_ev
 
     for (auto event = *a_event; event; event = event->next) {
         if (event->eventType == RE::INPUT_EVENT_TYPE::kChar) {
-            io.AddInputCharacter(static_cast<CharEvent*>(event)->keyCode);
+            const auto chr = static_cast<CharEvent*>(event);
+            //logger::trace("Char event: device={}, code={}", (int)chr->device.get(), chr->keyCode);
+
+            io.AddInputCharacter(chr->keyCode);
         } else if (event->eventType == RE::INPUT_EVENT_TYPE::kButton) {
             const auto button = static_cast<RE::ButtonEvent*>(event);
-            //if (!button || (button->IsPressed() && !button->IsDown())) continue;
+            // if (!button || (button->IsPressed() && !button->IsDown())) continue;
+
+            //logger::trace("Button event: device={}, code={}, value={} duration={}, pressed={}, down={}", (int)button->device.get(), button->GetIDCode(), button->Value(), button->HeldDuration(), button->IsPressed(), button->IsDown());
 
             auto scan_code = button->GetIDCode();
- 
+
+            float buttonValue = !REL::Module::IsVR() ? button->value : *((float*)(0x08 + (char*)&button->value));
+            bool isPressed = buttonValue > 0.0f;
+
             switch (button->device.get()) {
                 case RE::INPUT_DEVICE::kMouse:
-                    if (REL::Module::IsVR())
-                        logger::trace("Mouse button event: code={}, value={} duration={}, pressed={}, down={}", button->GetIDCode(), button->Value(), button->HeldDuration(),
-                                      button->IsPressed(), button->IsDown());
-
                     if (scan_code > 7)  // middle scroll
-                        io.AddMouseWheelEvent(0, button->Value() * (scan_code == 8 ? 1 : -1));
+                        io.AddMouseWheelEvent(0, buttonValue * (scan_code == 8 ? 1 : -1));
                     else {
                         if (scan_code > 5) scan_code = 5;
-                        io.AddMouseButtonEvent(scan_code, button->IsPressed());
+                        io.AddMouseButtonEvent(scan_code, isPressed);
                     }
                     break;
                 case RE::INPUT_DEVICE::kKeyboard: {
@@ -507,9 +512,8 @@ RE::BSEventNotifyControl InputListener::ProcessEvent(RE::InputEvent* const* a_ev
                             key = MapVirtualKeyEx(scan_code, MAPVK_VSC_TO_VK_EX, GetKeyboardLayout(0));
                             break;
                     }
-                    io.AddKeyEvent(ImGui_ImplWin32_VirtualKeyToImGuiKey(key), button->IsPressed());
-                }
-                    break;
+                    io.AddKeyEvent(ImGui_ImplWin32_VirtualKeyToImGuiKey(key), isPressed);
+                } break;
                 case RE::INPUT_DEVICE::kGamepad:
                     // not implemented yet
                     // key = GetGamepadIndex((RE::BSWin32GamepadDevice::Key)key);
@@ -517,6 +521,8 @@ RE::BSEventNotifyControl InputListener::ProcessEvent(RE::InputEvent* const* a_ev
                 default:
                     continue;
             }
+        } else {
+            //logger::trace("Other event: device={}, type={}", (int)event->device.get(), (int)event->eventType.get());
         }
     }
 
@@ -567,6 +573,8 @@ struct InputFunc {
         }
 
         if (block) {
+            //logger::trace("Blocking input: show={}", g_showImGui);
+
             constexpr RE::InputEvent* const dummy[] = {nullptr};
             func(a_dispatcher, dummy);
 

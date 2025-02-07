@@ -2043,6 +2043,7 @@ void QuickArmorRebalance::RenderUI() {
                                          "Other factors may modify this rate further.",
                                          100.0f * g_Config.enchChanceBase, 100.0f * (g_Config.enchChanceBase + g_Config.enchChanceBonusMax))
                                     .c_str());
+                    ImGui::Checkbox(LZ("Randomize remaining charge on weapon enchantments"), &g_Config.bEnchantRandomCharge);
 
                     ImGui::SeparatorText(LZ("Preferred Variants"));
                     MakeTooltip(

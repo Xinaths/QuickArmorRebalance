@@ -171,7 +171,6 @@ bool QuickArmorRebalance::Config::Load() {
     bool bSuccess = false;
     auto pathConfig = std::filesystem::current_path() / PATH_ROOT PATH_CONFIGS;
 
-
     if (!std::filesystem::exists(pathConfig) || !std::filesystem::is_directory(pathConfig)) {
         logger::error("Config file directory missing ({})", pathConfig.generic_string());
         return false;
@@ -283,6 +282,7 @@ bool QuickArmorRebalance::Config::Load() {
             g_Config.bEquipPreviewForKeywords = config["settings"]["equipkeywordpreview"].value_or(true);
             g_Config.bExportUntranslated = config["settings"]["exportuntranslated"].value_or(false);
             g_Config.bEnableEnchantmentDistrib = config["settings"]["distribenchants"].value_or(false);
+            g_Config.bEnchantRandomCharge = config["settings"]["enchantrandomcharge"].value_or(true);
             g_Config.fEnchantRates = config["settings"]["enchantrate"].value_or(100.0f);
 
             if (auto code = config["settings"]["language"].as_string()) {
@@ -403,6 +403,9 @@ bool QuickArmorRebalance::Config::Load() {
         for (auto i : as.items) {
             mapObjToSet[i] = &as;
         }
+        for (auto i : as.weaps) {
+            mapObjToSet[i] = &as;
+        }
     }
 
     if (bSuccess)
@@ -511,6 +514,8 @@ bool QuickArmorRebalance::Config::LoadFile(std::filesystem::path path) {
         enchChanceBase = GetJsonFloat(jsonSettings, "enchChanceBase", 0.0f, 1.0f, enchChanceBase);
         enchChanceBonus = GetJsonFloat(jsonSettings, "enchChanceBonus", 0.0f, 1.0f, enchChanceBonus);
         enchChanceBonusMax = GetJsonFloat(jsonSettings, "enchChanceBonusMax", 0.0f, 1.0f, enchChanceBonusMax);
+        enchWeapChargeMin = GetJsonInt(jsonSettings, "enchWeapChargeMin", 1, 10000, enchWeapChargeMin);
+        enchWeapChargeMax = GetJsonInt(jsonSettings, "enchWeapChargeMax", 1, 10000, enchWeapChargeMax);
     }
 
     if (d.HasMember("keywords")) {
@@ -703,6 +708,12 @@ bool QuickArmorRebalance::Config::LoadFile(std::filesystem::path path) {
                         if (auto ench = QuickArmorRebalance::FindIn<RE::EnchantmentItem>(file, i.name.GetString(), false)) {
                             if (pool.enchs.contains(ench))
                                 logger::warn("{}: Enchantment '{}' duplicated in pool '{}'", path.filename().generic_string(), i.name.GetString(), jsonPool.name.GetString());
+
+                            if (!((ench->data.castingType == RE::MagicSystem::CastingType::kConstantEffect && ench->data.delivery == RE::MagicSystem::Delivery::kSelf) ||
+                                  (ench->data.castingType == RE::MagicSystem::CastingType::kFireAndForget && ench->data.delivery == RE::MagicSystem::Delivery::kTouch))) {
+                                logger::warn("{}: Enchantment '{}' has unknown configuration (will not match armor or weapons)", path.filename().generic_string(),
+                                             i.name.GetString());
+                            }
 
                             if (i.value.IsFloat())
                                 pool.enchs[ench] = i.value.GetFloat();
@@ -940,6 +951,7 @@ void QuickArmorRebalance::Config::Save() {
                                  {"levelgranularity", g_Config.levelGranularity},
                                  {"distribenchants", g_Config.bEnableEnchantmentDistrib},
                                  {"enchantrate", g_Config.fEnchantRates},
+                                 {"enchantrandomcharge", g_Config.bEnchantRandomCharge},
                                  {"craftingraritymax", g_Config.craftingRarityMax},
                                  {"craftingraritydisable", g_Config.bDisableCraftingRecipesOnRarity},
                                  {"keepcraftingbooks", g_Config.bKeepCraftingBooks},
@@ -963,10 +975,7 @@ void QuickArmorRebalance::Config::Save() {
                                  {"autodisablewords", tomlDisableWords},
                                  {"language", WStringToString(Localization::Get()->language)},
                                  {"exportuntranslated", g_Config.bExportUntranslated}}},
-        {"shortcuts",
-         toml::table{
-             {"escCloseWindow", g_Config.bShortcutEscCloseWindow}
-         }},
+        {"shortcuts", toml::table{{"escCloseWindow", g_Config.bShortcutEscCloseWindow}}},
         {"integrations",
          toml::table{
              {"enableDAVexports", g_Config.bEnableDAVExports},

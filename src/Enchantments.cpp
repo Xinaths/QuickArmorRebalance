@@ -8,11 +8,18 @@ namespace {
 
     bool ShouldEnchant(RE::TESBoundObject* obj, const EnchantProbability* contParams, int level) {
         auto params = MapFind(g_Data.enchParams, obj);
-        if (!params) 
-            return false;     
+        if (!params) {
+            // logger::info("No ench params: {}", obj->GetName());
+            return false;
+        }
 
-        if (!obj->IsArmor()) {
-            // logger::info("{}: Not Armor", obj->GetName());
+        if (obj->IsArmor()) {
+            auto armor = obj->As<RE::TESObjectARMO>();
+            if (armor->formEnchanting) return false;
+        } else if (obj->IsWeapon()) {
+            auto weapon = obj->As<RE::TESObjectWEAP>();
+            if (weapon->formEnchanting) return false;
+        } else {
             return false;
         }
 
@@ -22,26 +29,31 @@ namespace {
         return RNG_f() < chance;
     }
 
-    RE::EnchantmentItem* PickEnchantStrength(RE::EnchantmentItem* ench, const ObjEnchantParams* params, const EnchantProbability* contParams, int level) {
+    inline float PowerCalc(const ObjEnchantParams* params, const EnchantProbability* contParams, int level) {
+        return contParams->enchPower * params->base.enchPower * params->unique.enchPower * std::lerp((float)params->level, (float)level, RNG_f()) *
+               std::normal_distribution<float>(1.0f, 0.25f)(RNG);
+    }
+
+    RE::EnchantmentItem* PickEnchantStrength(RE::EnchantmentItem* ench, const ObjEnchantParams* params, const EnchantProbability* contParams, int level, int& charge) {
+        charge = (int)std::lerp(g_Config.enchWeapChargeMin, g_Config.enchWeapChargeMax, std::clamp(PowerCalc(params, contParams, level) / g_Config.levelMaxDist, 0.0f, 1.0f));
+
         const auto& ranks = g_Config.mapEnchantments[ench];
         if (ranks.ranks.empty()) return nullptr;
         if (ranks.ranks.size() == 1) return ranks.ranks.front();
 
-        float power = contParams->enchPower * params->base.enchPower * params->unique.enchPower * std::lerp((float)params->level, (float)level, RNG_f()) *
-                      std::normal_distribution<float>(1.0f, 0.25f)(RNG);
+        float power = PowerCalc(params, contParams, level);
 
         power = (power - ranks.levelMin) / (std::min(g_Config.levelMaxDist, ranks.levelMax) - ranks.levelMin);
         if (power <= 0) return ranks.ranks.front();
         if (power >= 1.0f) return ranks.ranks.back();
 
-        return ranks.ranks[(int)(power * (ranks.ranks.size() - 1))]; //-1 because max rank is handled at power>=1.0
+        return ranks.ranks[(int)(power * (ranks.ranks.size() - 1))];  //-1 because max rank is handled at power>=1.0
     }
 
-    RE::EnchantmentItem* PickEnchant(RE::TESBoundObject* obj, const EnchantProbability* contParams, int level) {
+    RE::EnchantmentItem* PickEnchant(RE::TESBoundObject* obj, const EnchantProbability* contParams, int level, int& charge) {
         auto params = MapFind(g_Data.enchParams, obj);
         if (!params) {
             // logger::info("{}: No params found", obj->GetName());
-
             return nullptr;
         }
 
@@ -56,15 +68,34 @@ namespace {
         std::vector<std::pair<RE::EnchantmentItem*, float>> mapWeights;
         mapWeights.reserve(pool->enchs.size());
 
-        for (auto& i : pool->enchs) {
-            auto& ranks = g_Config.mapEnchantments[i.first];
-            if (level < ranks.levelMin) continue;
+        if (obj->IsArmor()) {
+            for (auto& i : pool->enchs) {
+                auto& ranks = g_Config.mapEnchantments[i.first];
+                if (level < ranks.levelMin) continue;
 
-            if (i.first->data.wornRestrictions) {
-                if (!obj->HasKeywordInList(i.first->data.wornRestrictions, false)) continue;
+                auto e = i.first;
+                if (e->data.castingType != RE::MagicSystem::CastingType::kConstantEffect || e->data.delivery != RE::MagicSystem::Delivery::kSelf) {
+                    continue;
+                }
+
+                if (e->data.wornRestrictions) {
+                    if (!obj->HasKeywordInList(e->data.wornRestrictions, false)) continue;
+                }
+
+                mapWeights.emplace_back(i.first, i.second);
             }
+        } else if (obj->IsWeapon()) {
+            for (auto& i : pool->enchs) {
+                auto& ranks = g_Config.mapEnchantments[i.first];
+                if (level < ranks.levelMin) continue;
 
-            mapWeights.emplace_back(i.first, i.second);
+                auto e = i.first;
+                if (e->data.castingType != RE::MagicSystem::CastingType::kFireAndForget || e->data.delivery != RE::MagicSystem::Delivery::kTouch) {
+                    continue;
+                }
+
+                mapWeights.emplace_back(i.first, i.second);
+            }
         }
 
         if (mapWeights.empty()) {
@@ -82,7 +113,7 @@ namespace {
         for (auto& i : mapWeights) {
             pick -= i.second;
             if (pick <= 0) {
-                return PickEnchantStrength(i.first, params, contParams, level);
+                return PickEnchantStrength(i.first, params, contParams, level, charge);
             }
         }
 
@@ -116,9 +147,21 @@ namespace {
                             if (ls->HasType(RE::ExtraEnchantment::EXTRADATATYPE)) continue;
 
                             if (ShouldEnchant(entry->object, contEnchChance, level)) {
-                                auto ench = PickEnchant(entry->object, contEnchChance, level);
+                                int charge = 0;
+                                auto ench = PickEnchant(entry->object, contEnchChance, level, charge);
 
-                                if (ench) ls->Add(new RE::ExtraEnchantment(ench, 0));
+                                if (ench) {
+                                    // logger::info("Adding {} to {}", ench->GetName(), item.first->GetName());
+
+                                    ls->Add(new RE::ExtraEnchantment(ench, item.first->IsWeapon() ? (uint16_t)charge : 0));
+                                    if (item.first->IsWeapon() && g_Config.bEnchantRandomCharge) {
+                                        if (!ls->HasType(RE::ExtraCharge::EXTRADATATYPE)) {
+                                            auto pExtra = new RE::ExtraCharge();
+                                            pExtra->charge = charge * std::powf(RNG_f(), 0.33f);
+                                            ls->Add(pExtra);                                     
+                                        }
+                                    }
+                                }
                             }
 
                             /*
@@ -132,6 +175,8 @@ namespace {
                             */
                         }
                     }
+                } else {
+                    // logger::info("No extra list: {}", item.first->GetName());
                 }
             }
         }
@@ -142,12 +187,12 @@ namespace {
     //  https://github.com/SeaSparrowOG/DynamicContainerInventoryFramework
 
     struct TESObjectREFR_Initialize {
-        //Might be able to use TESObjectREFR::InitItemImpl virtual func instead
+        // Might be able to use TESObjectREFR::InitItemImpl virtual func instead
         static constexpr auto id = REL::VariantID(19105, 19507, 19105);
         static constexpr auto offset = REL::VariantOffset(0x69A, 0x78C, 0x69A);
 
         static void thunk(RE::TESObjectREFR* a_this, bool a3) {
-            //logger::info("TESObjectREFR_Initialize");
+            // logger::info("TESObjectREFR_Initialize");
 
             func(a_this, a3);
 
@@ -162,7 +207,7 @@ namespace {
         static constexpr auto offset = REL::VariantOffset(0x145, 0x12B, 0x145);
 
         static void thunk(RE::TESObjectREFR* a_this, bool a3) {
-            //logger::info("TESObjectREFR_Reset");
+            // logger::info("TESObjectREFR_Reset");
 
             func(a_this, a3);
 
@@ -224,7 +269,6 @@ void QuickArmorRebalance::FinalizeEnchantmentConfig() {
             if (!pool.second.strContents.empty()) pool.second.strContents.append("\n");
             pool.second.strContents.append(i);
         }
-
     }
 
     // Sort by power & remove any duplicates

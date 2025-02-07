@@ -260,6 +260,7 @@ namespace QuickArmorRebalance {
         bool bShortcutEscCloseWindow = true;
 
         bool bEnableEnchantmentDistrib = false;
+        bool bEnchantRandomCharge = true;
 
         bool bExportUntranslated = false;
 
@@ -283,6 +284,8 @@ namespace QuickArmorRebalance {
         float enchChanceBase = 0.1f;
         float enchChanceBonus = 0.01f;
         float enchChanceBonusMax = 0.15f;
+        int enchWeapChargeMin = 500;
+        int enchWeapChargeMax = 3000;
 
         float fTemperGoldCostRatio = 20.0f;
         float fCraftGoldCostRatio = 70.0f;

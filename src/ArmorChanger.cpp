@@ -10,6 +10,8 @@
 
 using namespace rapidjson;
 
+const int kFlatWeightStore = 10;
+
 namespace {
     using namespace QuickArmorRebalance;
 
@@ -63,13 +65,17 @@ namespace {
     void ReplaceRecipe(RE::BGSConstructibleObject* tar, const RE::BGSConstructibleObject* src, float w, float fCost);
 
     ArmorSlots RemapSlots(ArmorSlots slots, const ArmorChangeParams& params) {
-        ArmorSlots slotsRemapped = slots;
         if (slots & params.remapMask) {
+            ArmorSlots removed = 0;
+            ArmorSlots added = 0;
             for (auto s : params.mapArmorSlots) {
-                if (slots & (1 << s.first))  // Test on different data then the changes, so that changes aren't chained together
-                    slotsRemapped = (slotsRemapped & ~(1 << s.first)) | (s.second < 32 ? (1 << s.second) : 0);
+                if (slots & (1 << s.first)) {
+                    // slotsRemapped = (slotsRemapped & ~(1 << s.first)) | (s.second < 32 ? (1 << s.second) : 0);
+                    removed |= (1 << s.first);
+                    if (s.second < 32) added |= (1 << s.second);
+                }
             }
-            slots = slotsRemapped;
+            slots = added | (slots & ~removed);
         }
         return slots;
     }
@@ -140,8 +146,13 @@ namespace {
         return 0;
     }
 
-    void AddModification(const char* field, const ArmorChangeParams::SliderPair& pair, rapidjson::Value& changes, MemoryPoolAllocator<>& al, bool bIgnoreDefault = false) {
-        if (pair.bModify && !(bIgnoreDefault && pair.fScale == 100.0f)) changes.AddMember(StringRef(field), Value(0.01f * pair.fScale), al);
+    void AddModification(const char* field, const ArmorChangeParams::SliderPair& pair, rapidjson::Value& changes, MemoryPoolAllocator<>& al, bool bIgnoreDefault = false, int flatStore = 1) {
+        if (pair.bModify && !(bIgnoreDefault && pair.IsDefault())) {
+            if (!pair.bFlat)
+                changes.AddMember(StringRef(field), Value(0.01f * pair.fScale), al);
+            else
+                changes.AddMember(StringRef(field), Value((int)(flatStore * pair.fScale)), al);
+        }
     }
 
     int AddDynamicVariants(const RE::TESFile* file, const ArmorChangeParams& params, rapidjson::Value& ls, MemoryPoolAllocator<>& al);
@@ -258,7 +269,7 @@ int QuickArmorRebalance::MakeArmorChanges(const ArmorChangeParams& params) {
 
         if (auto armor = i->As<RE::TESObjectARMO>()) {
             AddModification("armor", params.armor.rating, changes, al);
-            AddModification("weight", params.armor.weight, changes, al);
+            AddModification("weight", params.armor.weight, changes, al, false, kFlatWeightStore);
             AddModification("warmth", params.armor.warmth, changes, al);
             if (g_Config.isFrostfallInstalled || g_Config.bShowFrostfallCoverage) changes.AddMember("coverage", Value(0.01f * params.armor.coverage), al);
             AddModification("value", params.value, changes, al);
@@ -269,14 +280,14 @@ int QuickArmorRebalance::MakeArmorChanges(const ArmorChangeParams& params) {
 
         } else if (auto weap = i->As<RE::TESObjectWEAP>()) {
             AddModification("damage", params.weapon.damage, changes, al);
-            AddModification("weight", params.weapon.weight, changes, al);
+            AddModification("weight", params.weapon.weight, changes, al, false, kFlatWeightStore);
             AddModification("speed", params.weapon.speed, changes, al);
             AddModification("stagger", params.weapon.stagger, changes, al);
             AddModification("value", params.value, changes, al);
 
         } else if (auto ammo = i->As<RE::TESAmmo>()) {
             AddModification("damage", params.weapon.damage, changes, al);
-            AddModification("weight", params.weapon.weight, changes, al);
+            AddModification("weight", params.weapon.weight, changes, al, false, kFlatWeightStore);
             AddModification("value", params.value, changes, al);
         }
 
@@ -615,16 +626,23 @@ int QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, const rapidjson::
 }
 
 template <class T, typename V>
-bool ChangeField(bool bAllowed, const char* field, const rapidjson::Value& changes, T* src, T* item, V T::*member, const auto& fn) {
+bool ChangeField(bool bAllowed, const char* field, const rapidjson::Value& changes, T* src, T* item, V T::*member, const auto& fn, float wFlat = 1.0f, float wSrc = 1.0f) {
     if (bAllowed && changes.HasMember(field)) {
         auto& jsonScale = changes[field];
-        if (!jsonScale.IsNumber()) return false;
 
-        auto scale = jsonScale.GetFloat();
-        if (src->*member && scale > 0.0f)
-            item->*member = fn(scale * src->*member);
-        else
-            item->*member = 0;
+        assert(jsonScale.IsInt() != jsonScale.IsFloat());//logger::info("Both int and float!");
+
+        if (jsonScale.IsFloat()) {
+            auto scale = jsonScale.GetFloat();
+            if (src->*member && scale > 0.0f)
+                item->*member = fn(wSrc * scale * src->*member);
+            else
+                item->*member = 0;
+        } else if (jsonScale.IsInt()) {
+            auto flat = jsonScale.GetInt();
+            item->*member = fn(std::max(wFlat * flat + wSrc * src->*member, 0.0f));
+        } else
+            return false;
     }
 
     return true;
@@ -725,6 +743,7 @@ bool QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, RE::FormID id, c
         int itemW = 0;
         int baseW = 0;
         int setW = 0;
+        float wFlat = 0.0f;
 
         if (jsonW.IsNumber())
             weight = jsonW.GetFloat();
@@ -736,21 +755,25 @@ bool QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, RE::FormID id, c
             setW = wObj["set"].GetInt();
 
             weight = baseW > 0 ? (float)itemW / baseW : 0.0f;
+            wFlat = setW > 0 ? (float)itemW / setW : 0.0f;
         } else
             return false;
 
-        if (!ChangeField<RE::TESObjectARMO>(perm.bModifyArmorRating, "armor", changes, src, armor, &RE::TESObjectARMO::armorRating,
-                                            [=](float f) { return std::max(1, (int)(weight * f)); }))
+        if (!ChangeField<RE::TESObjectARMO>(
+                perm.bModifyArmorRating, "armor", changes, src, armor, &RE::TESObjectARMO::armorRating, [=](float f) { return std::max(1, (int)f); }, 100 * wFlat, weight))
             return false;
 
-        if (!ChangeField<RE::TESObjectARMO>(perm.bModifyWeight, "weight", changes, src, armor, &RE::TESObjectARMO::weight, [=](float f) {
-                f *= weight;
-                if (g_Config.bRoundWeight) f = std::max(0.1f, 0.1f * std::round(10.0f * f));
-                return f;
-            }))
+        if (!ChangeField<RE::TESObjectARMO>(
+                perm.bModifyWeight, "weight", changes, src, armor, &RE::TESObjectARMO::weight,
+                [=](float f) {
+                    if (g_Config.bRoundWeight) f = std::max(0.1f, 0.1f * std::round(10.0f * f));
+                    return f;
+                },
+                wFlat / kFlatWeightStore, weight))
             return false;
 
-        if (!ChangeField<RE::TESObjectARMO>(perm.bModifyValue, "value", changes, src, armor, &RE::TESObjectARMO::value, [=](float f) { return std::max(1, (int)(weight * f)); }))
+        if (!ChangeField<RE::TESObjectARMO>(
+                perm.bModifyValue, "value", changes, src, armor, &RE::TESObjectARMO::value, [=](float f) { return std::max(1, (int)f); }, wFlat, weight))
             return false;
 
         if (perm.bModifySlots && changes.HasMember("slots")) {
@@ -888,11 +911,14 @@ bool QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, RE::FormID id, c
             return false;
         if (perm.bModifyWeapDamage) weap->criticalData.prcntMult = src->criticalData.prcntMult;
 
-        if (!ChangeField<RE::TESObjectWEAP>(perm.bModifyWeapWeight, "weight", changes, src, weap, &RE::TESObjectWEAP::weight, [=](float f) {
-                f *= weight;
-                if (g_Config.bRoundWeight) f = std::max(0.1f, 0.1f * std::round(10.0f * f));
-                return f;
-            }))
+        if (!ChangeField<RE::TESObjectWEAP>(
+                perm.bModifyWeapWeight, "weight", changes, src, weap, &RE::TESObjectWEAP::weight,
+                [=](float f) {
+                    f *= weight;
+                    if (g_Config.bRoundWeight) f = std::max(0.1f, 0.1f * std::round(10.0f * f));
+                    return f;
+                },
+                1.0f / kFlatWeightStore))
             return false;
 
         if (!ChangeField<RE::TESObjectWEAP::Data>(perm.bModifyWeapSpeed, "speed", changes, &src->weaponData, &weap->weaponData, &RE::TESObjectWEAP::Data::speed,

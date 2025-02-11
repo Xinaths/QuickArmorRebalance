@@ -73,19 +73,19 @@ namespace QuickArmorRebalance {
         mapKeywordChanges.clear();
 
         if (bForce || g_Config.bResetSliders) {
-            armor.rating.fScale = 100.0f;
-            armor.weight.fScale = 100.0f;
-            armor.warmth.fScale = 50.0f;
-            weapon.damage.fScale = 100.0f;
-            weapon.speed.fScale = 100;
-            weapon.weight.fScale = 100.0f;
-            weapon.stagger.fScale = 100.0f;
-            ench.power.fScale = 100.0f;
-            ench.rate.fScale = 100.0f;
+            armor.rating.Reset(100.0f);
+            armor.weight.Reset(100.0f);
+            armor.warmth.Reset(50.0f);
+            weapon.damage.Reset(100.0f);
+            weapon.speed.Reset(100);
+            weapon.weight.Reset(100.0f);
+            weapon.stagger.Reset(100.0f);
+            ench.power.Reset(100.0f);
+            ench.rate.Reset(100.0f);
             ench.pool = nullptr;
             ench.poolChance = 50.0f;
             ench.poolRestrict = false;
-            value.fScale = 100.0f;
+            value.Reset(100.0f);
         }
         if (bForce || g_Config.bResetSlotRemap) {
             mapArmorSlots.clear();
@@ -516,6 +516,10 @@ bool QuickArmorRebalance::Config::LoadFile(std::filesystem::path path) {
         enchChanceBonusMax = GetJsonFloat(jsonSettings, "enchChanceBonusMax", 0.0f, 1.0f, enchChanceBonusMax);
         enchWeapChargeMin = GetJsonInt(jsonSettings, "enchWeapChargeMin", 1, 10000, enchWeapChargeMin);
         enchWeapChargeMax = GetJsonInt(jsonSettings, "enchWeapChargeMax", 1, 10000, enchWeapChargeMax);
+        flatArmorMod = GetJsonInt(jsonSettings, "flatArmorMod", 1, 10000, flatArmorMod);
+        flatValueMod = GetJsonInt(jsonSettings, "flatValueMod", 1, 10000, flatValueMod);
+        flatWeightMod = GetJsonInt(jsonSettings, "flatWeightMod", 1, 10000, flatWeightMod);
+        flatWeapDamageMod = GetJsonInt(jsonSettings, "flatWeapDamageMod", 1, 10000, flatWeapDamageMod);
     }
 
     if (d.HasMember("keywords")) {

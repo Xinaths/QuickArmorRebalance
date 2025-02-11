@@ -348,7 +348,7 @@ bool SliderTable() {
     return false;
 }
 
-void SliderRow(const char* field, ArmorChangeParams::SliderPair& pair, float min = 0.0f, float max = 300.0f, float def = 100.0f) {
+void SliderRow(const char* field, ArmorChangeParams::SliderPair& pair, int flatLimit = 0, int flatPrecision = 0, float min = 0.0f, float max = 300.0f, float def = 100.0f) {
     ImGui::TableNextRow();
     ImGui::TableNextColumn();
     ImGui::PushID(field);
@@ -356,9 +356,19 @@ void SliderRow(const char* field, ArmorChangeParams::SliderPair& pair, float min
     ImGui::BeginDisabled(!pair.bModify);
     ImGui::TableNextColumn();
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
-    ImGui::SliderFloat("##Scale", &pair.fScale, min, max, "%.0f%%", ImGuiSliderFlags_AlwaysClamp);
+    if (!flatLimit || !pair.bFlat)
+        ImGui::SliderFloat("##Scale", &pair.fScale, min, max, "%.0f%%", ImGuiSliderFlags_AlwaysClamp);
+    else {
+        const char* strFormat[] = {"%+.0f", "%+.1f", "%+.2f"};
+        ImGui::SliderFloat("##Scale", &pair.fScale, (float)-flatLimit, 2.0f * flatLimit, strFormat[flatPrecision], ImGuiSliderFlags_AlwaysClamp);
+    }
+
+    if (flatLimit && ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiPopupFlags_MouseButtonRight)) {
+        pair.bFlat = !pair.bFlat;
+        pair.Reset(def);
+    }
     ImGui::TableNextColumn();
-    if (ImGui::Button(LZ("Reset"))) pair.fScale = def;
+    if (ImGui::Button(LZ("Reset"))) pair.Reset(def);
     ImGui::EndDisabled();
     ImGui::PopID();
 }
@@ -1181,13 +1191,13 @@ void QuickArmorRebalance::RenderUI() {
 
                             iTabSelected = iTabOpen;
 
-                            // Amor tab
+                            // Armor tab
                             ImGui::BeginDisabled(!bTabEnabled[iTab]);
                             if (ImGui::BeginTabItem(tabLabels[iTab], nullptr, bForceSelect && iTabOpen == iTab ? ImGuiTabItemFlags_SetSelected : 0)) {
                                 iTabSelected = iTab;
                                 if (SliderTable()) {
-                                    SliderRow(LZ("Armor Rating"), params.armor.rating);
-                                    SliderRow(LZ("Weight"), params.armor.weight);
+                                    SliderRow(LZ("Armor Rating"), params.armor.rating, g_Config.flatArmorMod);
+                                    SliderRow(LZ("Weight"), params.armor.weight, g_Config.flatWeightMod ,1);
 
                                     // Warmth
                                     {
@@ -1291,8 +1301,8 @@ void QuickArmorRebalance::RenderUI() {
                             if (ImGui::BeginTabItem(tabLabels[iTab], nullptr, bForceSelect && iTabOpen == iTab ? ImGuiTabItemFlags_SetSelected : 0)) {
                                 iTabSelected = iTab;
                                 if (SliderTable()) {
-                                    SliderRow(LZ("Damage"), params.weapon.damage);
-                                    SliderRow(LZ("Weight"), params.weapon.weight);
+                                    SliderRow(LZ("Damage"), params.weapon.damage, g_Config.flatWeapDamageMod);
+                                    SliderRow(LZ("Weight"), params.weapon.weight, g_Config.flatWeightMod, 1);
                                     SliderRow(LZ("Speed"), params.weapon.speed);
                                     SliderRow(LZ("Stagger"), params.weapon.stagger);
 
@@ -1353,8 +1363,8 @@ void QuickArmorRebalance::RenderUI() {
                                 ImGui::EndDisabled();
 
                                 if (SliderTable()) {
-                                    SliderRow(LZ("Chance"), params.ench.rate, 0.0f, 500.0f);
-                                    SliderRow(LZ("Power"), params.ench.power, 10.0f, 300.0f);
+                                    SliderRow(LZ("Chance"), params.ench.rate, 0, 0, 0.0f, 500.0f);
+                                    SliderRow(LZ("Power"), params.ench.power, 0, 0, 10.0f, 300.0f);
 
                                     ImGui::EndTable();
                                 }
@@ -1371,7 +1381,7 @@ void QuickArmorRebalance::RenderUI() {
                     ImGui::EndChild();
 
                     if (SliderTable()) {
-                        SliderRow(LZ("Gold Value"), params.value);
+                        SliderRow(LZ("Gold Value"), params.value, g_Config.flatValueMod);
 
                         ImGui::EndTable();
                     }

@@ -77,8 +77,12 @@ namespace QuickArmorRebalance {
         static const char* distProfile;
 
         struct SliderPair {
+            void Reset(float def) { fScale = bFlat ? 0.0f : def; }
+            bool IsDefault(float def = 100.0f) const { return fScale == (bFlat ? 0.0f : def); }
+
             float fScale = 100.0f;
             bool bModify = true;
+            bool bFlat = false;
         };
 
         bool bModifyKeywords = true;
@@ -286,6 +290,11 @@ namespace QuickArmorRebalance {
         float enchChanceBonusMax = 0.15f;
         int enchWeapChargeMin = 500;
         int enchWeapChargeMax = 3000;
+
+        int flatArmorMod = 100;
+        int flatValueMod = 1000;
+        int flatWeapDamageMod = 30;
+        int flatWeightMod = 60;
 
         float fTemperGoldCostRatio = 20.0f;
         float fCraftGoldCostRatio = 70.0f;

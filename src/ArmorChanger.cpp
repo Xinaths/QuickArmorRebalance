@@ -146,7 +146,8 @@ namespace {
         return 0;
     }
 
-    void AddModification(const char* field, const ArmorChangeParams::SliderPair& pair, rapidjson::Value& changes, MemoryPoolAllocator<>& al, bool bIgnoreDefault = false, int flatStore = 1) {
+    void AddModification(const char* field, const ArmorChangeParams::SliderPair& pair, rapidjson::Value& changes, MemoryPoolAllocator<>& al, bool bIgnoreDefault = false,
+                         int flatStore = 1) {
         if (pair.bModify && !(bIgnoreDefault && pair.IsDefault())) {
             if (!pair.bFlat)
                 changes.AddMember(StringRef(field), Value(0.01f * pair.fScale), al);
@@ -305,14 +306,28 @@ int QuickArmorRebalance::MakeArmorChanges(const ArmorChangeParams& params) {
         if (params.bModifyKeywords) changes.AddMember("keywords", Value(true), al);
         if (params.temper.bModify) {
             Value recipe(kObjectType);
-            if (params.temper.bNew) recipe.AddMember("new", Value(true), al);
-            if (params.temper.bFree) recipe.AddMember("free", Value(true), al);
+            switch (params.temper.action) {
+                case ArmorChangeParams::eRecipeModify:
+                    if (params.temper.bNew) recipe.AddMember("new", Value(true), al);
+                    if (params.temper.bFree) recipe.AddMember("free", Value(true), al);
+                    break;
+                case ArmorChangeParams::eRecipeRemove:
+                    recipe.AddMember("remove", Value(true), al);
+                    break;
+            }
             changes.AddMember("temper", recipe, al);
         }
         if (params.craft.bModify) {
             Value recipe(kObjectType);
-            if (params.craft.bNew) recipe.AddMember("new", Value(true), al);
-            if (params.craft.bFree) recipe.AddMember("free", Value(true), al);
+            switch (params.craft.action) {
+                case ArmorChangeParams::eRecipeModify:
+                    if (params.craft.bNew) recipe.AddMember("new", Value(true), al);
+                    if (params.craft.bFree) recipe.AddMember("free", Value(true), al);
+                    break;
+                case ArmorChangeParams::eRecipeRemove:
+                    recipe.AddMember("remove", Value(true), al);
+                    break;
+            }
             changes.AddMember("craft", recipe, al);
         }
 
@@ -630,7 +645,7 @@ bool ChangeField(bool bAllowed, const char* field, const rapidjson::Value& chang
     if (bAllowed && changes.HasMember(field)) {
         auto& jsonScale = changes[field];
 
-        assert(jsonScale.IsInt() != jsonScale.IsFloat());//logger::info("Both int and float!");
+        assert(jsonScale.IsInt() != jsonScale.IsFloat());  // logger::info("Both int and float!");
 
         if (jsonScale.IsFloat()) {
             auto scale = jsonScale.GetFloat();
@@ -1012,39 +1027,50 @@ bool QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, RE::FormID id, c
 
         auto opts = jsonOpts.GetObj();
 
-        bool bNew = false;
-        bool bFree = false;
+        bool bRemove = false;
+        if (opts.HasMember("remove")) bRemove = opts["remove"].GetBool();
 
-        if (opts.HasMember("new")) bNew = opts["new"].GetBool();
-        if (opts.HasMember("free")) bFree = opts["free"].GetBool();
+        if (!bRemove) {
+            bool bNew = false;
+            bool bFree = false;
 
-        RE::BGSConstructibleObject *recipeItem = nullptr, *recipeSrc = nullptr;
+            if (opts.HasMember("new")) bNew = opts["new"].GetBool();
+            if (opts.HasMember("free")) bFree = opts["free"].GetBool();
 
-        auto it = g_Data.temperRecipe.find(bo);
-        if (it != g_Data.temperRecipe.end()) recipeItem = it->second;
+            RE::BGSConstructibleObject *recipeItem = nullptr, *recipeSrc = nullptr;
 
-        it = g_Data.temperRecipe.find(boSrc);
-        if (it != g_Data.temperRecipe.end()) recipeSrc = it->second;
+            auto it = g_Data.temperRecipe.find(bo);
+            if (it != g_Data.temperRecipe.end()) recipeItem = it->second;
 
-        bFree = (bFree && perm.crafting.bFree) || recipeSrc;  // If recipe source, free doesn't matter
+            it = g_Data.temperRecipe.find(boSrc);
+            if (it != g_Data.temperRecipe.end()) recipeSrc = it->second;
 
-        if (!recipeItem && bNew && perm.temper.bCreate && bFree) {
-            auto newForm = static_cast<RE::BGSConstructibleObject*>(RE::IFormFactory::GetFormFactoryByType(RE::FormType::ConstructibleObject)->Create());
+            bFree = (bFree && perm.crafting.bFree) || recipeSrc;  // If recipe source, free doesn't matter
 
-            if (newForm) {
-                newForm->benchKeyword = recipeSrc ? recipeSrc->benchKeyword
-                                                  : (item->As<RE::TESObjectARMO>() ? RE::TESForm::LookupByEditorID<RE::BGSKeyword>("CraftingSmithingArmorTable")
-                                                                                   : RE::TESForm::LookupByEditorID<RE::BGSKeyword>("CraftingSmithingSharpeningWheel"));
-                newForm->createdItem = item;
-                newForm->data.numConstructed = 1;
+            if (!recipeItem && bNew && perm.temper.bCreate && bFree) {
+                auto newForm = static_cast<RE::BGSConstructibleObject*>(RE::IFormFactory::GetFormFactoryByType(RE::FormType::ConstructibleObject)->Create());
 
-                dataHandler->GetFormArray<RE::BGSConstructibleObject>().push_back(newForm);  // For whatever reason, it's not added automatically and thus won't show up in game
-                g_Data.temperRecipe.insert({bo, recipeItem});
-                recipeItem = newForm;
+                if (newForm) {
+                    newForm->benchKeyword = recipeSrc ? recipeSrc->benchKeyword
+                                                      : (item->As<RE::TESObjectARMO>() ? RE::TESForm::LookupByEditorID<RE::BGSKeyword>("CraftingSmithingArmorTable")
+                                                                                       : RE::TESForm::LookupByEditorID<RE::BGSKeyword>("CraftingSmithingSharpeningWheel"));
+                    newForm->createdItem = item;
+                    newForm->data.numConstructed = 1;
+
+                    dataHandler->GetFormArray<RE::BGSConstructibleObject>().push_back(newForm);  // For whatever reason, it's not added automatically and thus won't show up in game
+                    g_Data.temperRecipe.insert({bo, recipeItem});
+                    recipeItem = newForm;
+                }
+            }
+
+            if (recipeItem && bFree) ::ReplaceRecipe(recipeItem, recipeSrc, weight, g_Config.fTemperGoldCostRatio);
+        } else {
+            if (perm.temper.bRemove) {
+                if (auto recipeItem = MapFindOrNull(g_Data.temperRecipe, bo)) {
+                    recipeItem->benchKeyword = nullptr;
+                }
             }
         }
-
-        if (recipeItem && bFree) ::ReplaceRecipe(recipeItem, recipeSrc, weight, g_Config.fTemperGoldCostRatio);
     }
 
     if (perm.crafting.bModify && changes.HasMember("craft")) {
@@ -1053,41 +1079,53 @@ bool QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, RE::FormID id, c
 
         auto opts = jsonOpts.GetObj();
 
-        bool bNew = false;
-        bool bFree = false;
+        bool bRemove = false;
+        if (opts.HasMember("remove")) bRemove = opts["remove"].GetBool();
 
-        if (opts.HasMember("new")) bNew = opts["new"].GetBool();
-        if (opts.HasMember("free")) bFree = opts["free"].GetBool();
+        if (!bRemove) {
+            bool bNew = false;
+            bool bFree = false;
 
-        RE::BGSConstructibleObject *recipeItem = nullptr, *recipeSrc = nullptr;
+            if (opts.HasMember("new")) bNew = opts["new"].GetBool();
+            if (opts.HasMember("free")) bFree = opts["free"].GetBool();
 
-        auto it = g_Data.craftRecipe.find(bo);
-        if (it != g_Data.craftRecipe.end()) recipeItem = it->second;
+            RE::BGSConstructibleObject *recipeItem = nullptr, *recipeSrc = nullptr;
 
-        it = g_Data.craftRecipe.find(boSrc);
-        if (it != g_Data.craftRecipe.end()) recipeSrc = it->second;
+            auto it = g_Data.craftRecipe.find(bo);
+            if (it != g_Data.craftRecipe.end()) recipeItem = it->second;
 
-        bFree = (bFree && perm.crafting.bFree) || recipeSrc;  // If recipe source, free doesn't matter
+            it = g_Data.craftRecipe.find(boSrc);
+            if (it != g_Data.craftRecipe.end()) recipeSrc = it->second;
 
-        if (rarity <= g_Config.craftingRarityMax) {
-            if (!recipeItem && bNew && perm.crafting.bCreate && bFree) {
-                auto newForm = static_cast<RE::BGSConstructibleObject*>(RE::IFormFactory::GetFormFactoryByType(RE::FormType::ConstructibleObject)->Create());
+            bFree = (bFree && perm.crafting.bFree) || recipeSrc;  // If recipe source, free doesn't matter
 
-                if (newForm) {
-                    newForm->benchKeyword = recipeSrc ? recipeSrc->benchKeyword : RE::TESForm::LookupByEditorID<RE::BGSKeyword>("CraftingSmithingForge");
-                    newForm->createdItem = item;
-                    newForm->data.numConstructed = item->As<RE::TESAmmo>() ? 24 : 1;
+            if (rarity <= g_Config.craftingRarityMax) {
+                if (!recipeItem && bNew && perm.crafting.bCreate && bFree) {
+                    auto newForm = static_cast<RE::BGSConstructibleObject*>(RE::IFormFactory::GetFormFactoryByType(RE::FormType::ConstructibleObject)->Create());
 
-                    dataHandler->GetFormArray<RE::BGSConstructibleObject>().push_back(newForm);  // For whatever reason, it's not added automatically and thus won't show up in game
-                    g_Data.craftRecipe.insert({bo, recipeItem});
-                    recipeItem = newForm;
+                    if (newForm) {
+                        newForm->benchKeyword = recipeSrc ? recipeSrc->benchKeyword : RE::TESForm::LookupByEditorID<RE::BGSKeyword>("CraftingSmithingForge");
+                        newForm->createdItem = item;
+                        newForm->data.numConstructed = item->As<RE::TESAmmo>() ? 24 : 1;
+
+                        dataHandler->GetFormArray<RE::BGSConstructibleObject>().push_back(
+                            newForm);  // For whatever reason, it's not added automatically and thus won't show up in game
+                        g_Data.craftRecipe.insert({bo, recipeItem});
+                        recipeItem = newForm;
+                    }
+                }
+
+                if (recipeItem && bFree) ::ReplaceRecipe(recipeItem, recipeSrc, weight, g_Config.fCraftGoldCostRatio);
+            } else if (g_Config.bDisableCraftingRecipesOnRarity && recipeItem) {
+                logger::trace("Disabling recipe for {}", item->GetName());
+                recipeItem->benchKeyword = nullptr;
+            }
+        } else {
+            if (perm.crafting.bRemove) {
+                if (auto recipeItem = MapFindOrNull(g_Data.craftRecipe, bo)) {
+                    recipeItem->benchKeyword = nullptr;
                 }
             }
-
-            if (recipeItem && bFree) ::ReplaceRecipe(recipeItem, recipeSrc, weight, g_Config.fCraftGoldCostRatio);
-        } else if (g_Config.bDisableCraftingRecipesOnRarity && recipeItem) {
-            logger::trace("Disabling recipe for {}", item->GetName());
-            recipeItem->benchKeyword = nullptr;
         }
     }
 

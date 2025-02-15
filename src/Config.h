@@ -111,7 +111,14 @@ namespace QuickArmorRebalance {
 
         SliderPair value;
 
+        enum RecipeAction {
+            eRecipeModify,
+            eRecipeRemove,
+            RecipeActionCount
+        };
+
         struct RecipeOptions {
+            int action = eRecipeModify;
             bool bModify = true;
             bool bNew = false;
             bool bFree = false;
@@ -139,6 +146,7 @@ namespace QuickArmorRebalance {
     struct Permissions {
         struct RecipePermissions {
             bool bModify = true;
+            bool bRemove = true;
             bool bCreate = true;
             bool bFree = true;
         };

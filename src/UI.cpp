@@ -390,9 +390,11 @@ void PermissionsChecklist(const char* id, Permissions& p) {
     ImGui::Checkbox(LZ("Modify crafting recipes"), &p.crafting.bModify);
     ImGui::Checkbox(LZ("Create crafting recipes"), &p.crafting.bCreate);
     ImGui::Checkbox(LZ("Free crafting recipes"), &p.crafting.bFree);
+    ImGui::Checkbox(LZ("Remove crafting recipes"), &p.crafting.bRemove);
     ImGui::Checkbox(LZ("Modify temper recipes"), &p.temper.bModify);
     ImGui::Checkbox(LZ("Create temper recipes"), &p.temper.bCreate);
     ImGui::Checkbox(LZ("Free temper recipes"), &p.temper.bFree);
+    ImGui::Checkbox(LZ("Remove temper recipes"), &p.temper.bRemove);
     ImGui::PopID();
 }
 
@@ -1405,38 +1407,71 @@ void QuickArmorRebalance::RenderUI() {
 
                         ImGui::TableNextRow();
                         ImGui::TableNextColumn();
-                        ImGui::Checkbox(LZ("Modify Temper Recipe"), &params.temper.bModify);
+                        ImGui::Checkbox("##Modify Temper Recipe", &params.temper.bModify);
                         ImGui::BeginDisabled(!params.temper.bModify);
-                        ImGui::TableNextColumn();
-                        ImGui::Checkbox(LZ("Create recipe if missing##Temper"), &params.temper.bNew);
-                        MakeTooltip(
-                            LZ("If an item being modified lacks an existing temper recipe to modify, checking\n"
-                               "this will create one automatically"));
-                        ImGui::TableNextColumn();
-                        ImGui::Checkbox(g_Config.fTemperGoldCostRatio > 0 ? LZ("Cost gold if no recipe to copy##Temper") : LZ("Make free if no recipe to copy##Temper"),
-                                        &params.temper.bFree);
-                        MakeTooltip(
-                            LZ("If the item being copied lacks a tempering recipe, checking will remove all\n"
-                               "components and conditions to temper the modified item"));
+
+                        const char* descTemperAction[] = {"Modify Temper Recipe", "Remove Temper Recipe"};
+
+                        ImGui::SameLine();
+                        ImGui::SetNextItemWidth(150.0f);
+                        if (ImGui::BeginCombo("##TemperAction", LZ(descTemperAction[params.temper.action]))) {
+                            for (int i = 0; i < ArmorChangeParams::RecipeActionCount; i++) {
+                                bool selected = params.temper.action == i;
+                                if (ImGui::Selectable(LZ(descTemperAction[i]), selected)) params.temper.action = i;
+                                if (selected) ImGui::SetItemDefaultFocus();
+                            }
+                            ImGui::EndCombo();
+                        }
+
+                        if (params.temper.action == ArmorChangeParams::eRecipeModify) {
+                            ImGui::TableNextColumn();
+                            ImGui::Checkbox(LZ("Create recipe if missing##Temper"), &params.temper.bNew);
+                            MakeTooltip(
+                                LZ("If an item being modified lacks an existing temper recipe to modify, checking\n"
+                                   "this will create one automatically"));
+                            ImGui::TableNextColumn();
+                            ImGui::Checkbox(g_Config.fTemperGoldCostRatio > 0 ? LZ("Cost gold if no recipe to copy##Temper") : LZ("Make free if no recipe to copy##Temper"),
+                                            &params.temper.bFree);
+                            MakeTooltip(
+                                LZ("If the item being copied lacks a tempering recipe, checking will remove all\n"
+                                   "components and conditions to temper the modified item"));
+                        }
                         ImGui::EndDisabled();
 
                         ImGui::TableNextRow();
                         ImGui::TableNextColumn();
-                        ImGui::Checkbox(LZ("Modify Crafting Recipe"), &params.craft.bModify);
+                        ImGui::Checkbox("##Modify Crafting Recipe", &params.craft.bModify);
                         ImGui::BeginDisabled(!params.craft.bModify);
-                        ImGui::TableNextColumn();
-                        ImGui::Checkbox(LZ("Create recipe if missing##Craft"), &params.craft.bNew);
-                        if (ImGui::IsItemHovered())
-                            ImGui::SetTooltip(
-                                LZ("If an item being modified lacks an existing crafting recipe to modify,\n"
-                                   "checking this will create one automatically"));
-                        ImGui::TableNextColumn();
-                        ImGui::Checkbox(g_Config.fCraftGoldCostRatio > 0 ? LZ("Cost gold if no recipe to copy##Craft") : LZ("Make free if no recipe to copy##Craft"),
-                                        &params.craft.bFree);
-                        if (ImGui::IsItemHovered())
-                            ImGui::SetTooltip(
-                                LZ("If the item being copied lacks a crafting recipe, checking will remove all\n"
-                                   "components and conditions to craft the modified item"));
+
+                        const char* descCraftingAction[] = {"Modify Crafting Recipe", "Remove Crafting Recipe"};
+
+                        ImGui::SameLine();
+                        ImGui::SetNextItemWidth(150.0f);
+                        if (ImGui::BeginCombo("##CraftingAction", LZ(descCraftingAction[params.craft.action]))) {
+                            for (int i = 0; i < ArmorChangeParams::RecipeActionCount; i++) {
+                                bool selected = params.craft.action == i;
+                                if (ImGui::Selectable(LZ(descCraftingAction[i]), selected)) params.craft.action = i;
+                                if (selected) ImGui::SetItemDefaultFocus();
+                            }
+                            ImGui::EndCombo();
+                        }
+
+                        if (params.craft.action == ArmorChangeParams::eRecipeModify) {
+                            ImGui::TableNextColumn();
+                            ImGui::Checkbox(LZ("Create recipe if missing##Craft"), &params.craft.bNew);
+                            if (ImGui::IsItemHovered())
+                                ImGui::SetTooltip(
+                                    LZ("If an item being modified lacks an existing crafting recipe to modify,\n"
+                                       "checking this will create one automatically"));
+                            ImGui::TableNextColumn();
+                            ImGui::Checkbox(g_Config.fCraftGoldCostRatio > 0 ? LZ("Cost gold if no recipe to copy##Craft") : LZ("Make free if no recipe to copy##Craft"),
+                                            &params.craft.bFree);
+                            if (ImGui::IsItemHovered())
+                                ImGui::SetTooltip(
+                                    LZ("If the item being copied lacks a crafting recipe, checking will remove all\n"
+                                       "components and conditions to craft the modified item"));
+                        }
+
                         ImGui::EndDisabled();
 
                         ImGui::EndTable();

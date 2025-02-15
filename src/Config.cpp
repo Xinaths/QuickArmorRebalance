@@ -133,9 +133,11 @@ void LoadPermissions(QuickArmorRebalance::Permissions& p, toml::node_view<toml::
     p.bModifyWeapStagger = tbl["modifyWeapStagger"].value_or(true);
     p.bModifyCustomKeywords = tbl["modifyCustomKeywords"].value_or(true);
     p.crafting.bModify = tbl["modifyCrafting"].value_or(true);
+    p.crafting.bRemove = tbl["removeCrafting"].value_or(true);
     p.crafting.bCreate = tbl["createCrafting"].value_or(true);
     p.crafting.bFree = tbl["freeCrafting"].value_or(true);
     p.temper.bModify = tbl["modifyTemper"].value_or(true);
+    p.temper.bRemove = tbl["removeTemper"].value_or(true);
     p.temper.bCreate = tbl["createTemper"].value_or(true);
     p.temper.bFree = tbl["freeTemper"].value_or(true);
 }
@@ -214,6 +216,9 @@ bool QuickArmorRebalance::Config::Load() {
             g_Config.acParams.weapon.speed.bModify = config["modifyWeapSpeed"].value_or(true);
             g_Config.acParams.weapon.stagger.bModify = config["modifyWeapStagger"].value_or(true);
 
+            g_Config.acParams.ench.power.bModify = config["modifyEnchPower"].value_or(true);
+            g_Config.acParams.ench.rate.bModify = config["modifyEnchRate"].value_or(true);
+
             g_Config.acParams.value.bModify = config["modifyValue"].value_or(true);
 
             auto armorSet = config["armorset"];
@@ -242,10 +247,12 @@ bool QuickArmorRebalance::Config::Load() {
             g_Config.acParams.bDistAsSet = config["loot"]["sets"].value_or(true);
             g_Config.acParams.bMatchSetPieces = config["loot"]["matching"].value_or(true);
 
+            g_Config.acParams.temper.action = config["temper"]["action"].value_or(ArmorChangeParams::eRecipeModify);
             g_Config.acParams.temper.bModify = config["temper"]["modify"].value_or(true);
             g_Config.acParams.temper.bNew = config["temper"]["new"].value_or(false);
             g_Config.acParams.temper.bFree = config["temper"]["free"].value_or(false);
 
+            g_Config.acParams.craft.action = config["craft"]["action"].value_or(ArmorChangeParams::eRecipeModify);
             g_Config.acParams.craft.bModify = config["craft"]["modify"].value_or(true);
             g_Config.acParams.craft.bNew = config["craft"]["new"].value_or(false);
             g_Config.acParams.craft.bFree = config["craft"]["free"].value_or(false);
@@ -933,11 +940,19 @@ void QuickArmorRebalance::Config::Save() {
         {"modifyWeapWeight", g_Config.acParams.weapon.weight.bModify},
         {"modifyWeapSpeed", g_Config.acParams.weapon.speed.bModify},
         {"modifyWeapStagger", g_Config.acParams.weapon.stagger.bModify},
+        {"modifyEnchPower", g_Config.acParams.ench.power.bModify},
+        {"modifyEnchRate", g_Config.acParams.ench.rate.bModify},
         {"modifyValue", g_Config.acParams.value.bModify},
         {"armorset", g_Config.acParams.armorSet ? g_Config.acParams.armorSet->name : "error"},
         {"curve", iCurve->first},
-        {"temper", toml::table{{"modify", g_Config.acParams.temper.bModify}, {"new", g_Config.acParams.temper.bNew}, {"free", g_Config.acParams.temper.bFree}}},
-        {"craft", toml::table{{"modify", g_Config.acParams.craft.bModify}, {"new", g_Config.acParams.craft.bNew}, {"free", g_Config.acParams.craft.bFree}}},
+        {"temper", toml::table{{"action", g_Config.acParams.temper.action},
+                               {"modify", g_Config.acParams.temper.bModify},
+                               {"new", g_Config.acParams.temper.bNew},
+                               {"free", g_Config.acParams.temper.bFree}}},
+        {"craft", toml::table{{"action", g_Config.acParams.craft.action},
+                              {"modify", g_Config.acParams.craft.bModify},
+                              {"new", g_Config.acParams.craft.bNew},
+                              {"free", g_Config.acParams.craft.bFree}}},
         {"loot", toml::table{{"enable", g_Config.acParams.bDistribute},
                              {"pieces", g_Config.acParams.bDistAsPieces},
                              {"sets", g_Config.acParams.bDistAsSet},

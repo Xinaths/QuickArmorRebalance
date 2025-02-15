@@ -66,6 +66,15 @@ namespace QuickArmorRebalance {
     }
 
     template <typename MapType>
+    static auto MapFindOrNull(const MapType& map, const typename MapType::key_type& val) -> const typename MapType::mapped_type {
+        auto it = map.find(val);
+        if (it == map.end())
+            return nullptr;
+        else
+            return it->second;
+    }
+
+    template <typename MapType>
     auto MapFind(const MapType& map, const typename MapType::key_type& key) -> const typename MapType::mapped_type* {
         auto it = map.find(key);
         if (it != map.end()) {

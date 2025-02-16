@@ -164,6 +164,36 @@ const char* RightAlign(const char* text, float extra = 0.0f) {
     return text;
 }
 
+struct PauseTracker {
+    bool bPaused = false;
+    bool bSkipFrame = false;
+
+    void SkipFrame() { bSkipFrame = true; }
+
+    void Pause() {
+        if (bPaused) return;
+        bPaused = true;
+        RE::UI::GetSingleton()->numPausesGame++;
+    }
+
+    void Unpause() {
+        if (!bPaused) return;
+        bPaused = false;
+        RE::UI::GetSingleton()->numPausesGame--;
+    }
+
+    void Update(bool bWant) {
+        if (bWant && !bSkipFrame)
+            Pause();
+        else
+            Unpause();
+        bSkipFrame = false;
+    }
+};
+
+PauseTracker g_Pause;
+
+
 struct GivenItems {
     void UnequipCurrent() {
         stored.clear();
@@ -177,6 +207,7 @@ struct GivenItems {
 
                         stored.insert(i);
                         RE::ActorEquipManager::GetSingleton()->UnequipObject(player, i, nullptr, 1, i->GetEquipSlot(), false, false, false);
+                        g_Pause.SkipFrame();
                     }
                 }
             }
@@ -206,6 +237,7 @@ struct GivenItems {
         if (auto armor = item->As<RE::TESObjectARMO>()) recentEquipSlots &= ~(ArmorSlots)armor->GetSlotMask();
 
         RE::ActorEquipManager::GetSingleton()->UnequipObject(player, item);
+        g_Pause.SkipFrame();
     }
 
     void Equip(RE::TESBoundObject* item) {
@@ -224,6 +256,8 @@ struct GivenItems {
         } else {
             SKSE::GetTaskInterface()->AddTask([=]() { RE::ActorEquipManager::GetSingleton()->EquipObject(player, item); });
         }
+
+        g_Pause.SkipFrame();
     }
 
     void Restore() {
@@ -242,6 +276,8 @@ struct GivenItems {
             }
             stored.clear();
         });
+
+        g_Pause.SkipFrame();
     }
 
     void Give(RE::TESBoundObject* item, bool equip = false, bool reuse = false) {
@@ -254,6 +290,7 @@ struct GivenItems {
         if (!reuse || !FindInInventory(item)) {
             player->AddObjectToContainer(item, nullptr, 1, nullptr);
             items.push_back({ImGui::GetFrameCount(), item});
+            g_Pause.SkipFrame();
         }
 
         // After much testing, Skyrim seems to REALLY not like equipping more then one item per
@@ -297,6 +334,7 @@ struct GivenItems {
         if (it != items.end()) {
             player->RemoveItem(item, 1, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr);
             items.erase(it);
+            g_Pause.SkipFrame();
         }
     }
 
@@ -309,6 +347,7 @@ struct GivenItems {
         for (auto i : items) player->RemoveItem(i.second, 1, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr);
 
         items.clear();
+        g_Pause.SkipFrame();
     }
 
     void Pop(bool unequip = false) {
@@ -330,6 +369,7 @@ struct GivenItems {
             // AddTask isn't strictly needed, but other mods were crashing if an unequip was called first and the item was deleted
             SKSE::GetTaskInterface()->AddTask([player, item = items.back().second]() { player->RemoveItem(item, 1, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr); });
             items.pop_back();
+            g_Pause.SkipFrame();
         }
     }
 
@@ -1199,7 +1239,7 @@ void QuickArmorRebalance::RenderUI() {
                                 iTabSelected = iTab;
                                 if (SliderTable()) {
                                     SliderRow(LZ("Armor Rating"), params.armor.rating, g_Config.flatArmorMod);
-                                    SliderRow(LZ("Weight"), params.armor.weight, g_Config.flatWeightMod ,1);
+                                    SliderRow(LZ("Weight"), params.armor.weight, g_Config.flatWeightMod, 1);
 
                                     // Warmth
                                     {
@@ -2022,6 +2062,7 @@ void QuickArmorRebalance::RenderUI() {
                     }
 
                     ImGui::Checkbox(LZ("Close console after qar command"), &g_Config.bCloseConsole);
+                    ImGui::Checkbox(LZ("Pause game while QAR is open"), &g_Config.bPauseWhileOpen);
                     ImGui::Checkbox(LZ("Delete given items after applying changes"), &g_Config.bAutoDeleteGiven);
                     ImGui::Checkbox(LZ("Round weights to 0.1"), &g_Config.bRoundWeight);
                     ImGui::Checkbox(LZ("Reset sliders after changing mods"), &g_Config.bResetSliders);
@@ -3376,9 +3417,14 @@ void QuickArmorRebalance::RenderUI() {
         if (switchToMod) Local::SwitchToMod(switchToMod);
     }
 
+    if (ImGui::IsMouseDown(ImGuiMouseButton_Middle) || ImGui::IsWindowCollapsed()) g_Pause.SkipFrame();
+
     ImGuiIntegration::BlockInput(!ImGui::IsMouseDown(ImGuiMouseButton_Middle) && !ImGui::IsWindowCollapsed(), ImGui::IsItemHovered());
     ImGui::End();
 
     if (g_Config.bExportUntranslated) Localization::Get()->Export();
-    if (!isActive) ImGuiIntegration::Show(false);
+    if (!isActive)
+        ImGuiIntegration::Show(false);
+    
+    g_Pause.Update(isActive && g_Config.bPauseWhileOpen);
 }

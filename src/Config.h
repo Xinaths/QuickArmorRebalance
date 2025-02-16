@@ -268,6 +268,7 @@ namespace QuickArmorRebalance {
         bool bEnableArmorSlotModelFixHook = true;
         bool bPreventDistributionOfDynamicVariants = true;
         bool bEnableConsoleHook = true;
+        bool bPauseWhileOpen = true;
 
         bool bShortcutEscCloseWindow = true;
 

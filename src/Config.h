@@ -117,11 +117,24 @@ namespace QuickArmorRebalance {
             RecipeActionCount
         };
 
+        enum RecipeRequirementMode {
+            eRequirementReplace,
+            eRequirementKeep,
+            eRequirementRemove,
+            eRequirementModeCount
+        };
+
         struct RecipeOptions {
             int action = eRecipeModify;
             bool bModify = true;
             bool bNew = false;
             bool bFree = false;
+
+            bool bExpanded = false;
+
+            int modePerks = eRequirementReplace;
+            int modeItems = eRequirementReplace;
+            std::set<RE::TESForm*> skipForms;
         };
 
         RecipeOptions temper;
@@ -235,6 +248,8 @@ namespace QuickArmorRebalance {
         std::map<RE::EnchantmentItem*, EnchantmentRanks> mapEnchantments;
         std::map<std::size_t, EnchantmentPool> mapEnchPools;
 
+        std::set<const RE::TESForm*> recipeConditionBlacklist;
+
         void RebuildDisabledWords();
 
         std::vector<std::string> lsDisableWords;
@@ -269,6 +284,7 @@ namespace QuickArmorRebalance {
         bool bPreventDistributionOfDynamicVariants = true;
         bool bEnableConsoleHook = true;
         bool bPauseWhileOpen = true;
+        bool bShowAllRecipeConditions = false;
 
         bool bShortcutEscCloseWindow = true;
 

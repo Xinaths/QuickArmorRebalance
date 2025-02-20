@@ -31,8 +31,7 @@ bool QuickArmorRebalance::ReadJSONFile(std::filesystem::path path, Document& doc
             std::fclose(fp);
 
             if (doc.HasParseError()) {
-                logger::warn("{}: JSON parse error: {} ({})", path.generic_string(),
-                             GetParseError_En(doc.GetParseError()), doc.GetErrorOffset());
+                logger::warn("{}: JSON parse error: {} ({})", path.generic_string(), GetParseError_En(doc.GetParseError()), doc.GetErrorOffset());
                 if (bEditing) {
                     logger::warn("{}: Overwriting previous file contents due to parsing error", path.generic_string());
                     doc.SetObject();
@@ -115,8 +114,7 @@ void ProcessItem(RE::TESBoundObject* i) {
     data->items.insert(i);
 }
 
-void CopyRecipe(std::map<RE::TESBoundObject*, RE::BGSConstructibleObject*>& map, RE::TESBoundObject* src,
-                RE::TESBoundObject* tar) {
+void CopyRecipe(std::map<RE::TESBoundObject*, RE::BGSConstructibleObject*>& map, RE::TESBoundObject* src, RE::TESBoundObject* tar) {
     if (map.find(tar) != map.end()) return;
 
     auto it = map.find(src);
@@ -142,9 +140,8 @@ void QuickArmorRebalance::ProcessData() {
     }
 
     if (!g_Data.sortedMods.empty()) {
-        std::sort(g_Data.sortedMods.begin(), g_Data.sortedMods.end(), [](ModData* const a, ModData* const b) {
-            return _stricmp(a->mod->GetFilename().data(), b->mod->GetFilename().data()) < 0;
-        });
+        std::sort(g_Data.sortedMods.begin(), g_Data.sortedMods.end(),
+                  [](ModData* const a, ModData* const b) { return _stricmp(a->mod->GetFilename().data(), b->mod->GetFilename().data()) < 0; });
     }
 
     auto temperBench = RE::TESForm::LookupByEditorID<RE::BGSKeyword>("CraftingSmithingArmorTable");
@@ -212,6 +209,45 @@ void QuickArmorRebalance::ProcessData() {
         }
     }
 
+    static std::set<RE::TESForm*> recipeConditionForms;
+    for (auto& armorSet : g_Config.armorSets) {
+
+        struct RecipeProcessFuncs {
+            static void Pull(RE::TESBoundObject* obj, RE::BGSConstructibleObject* recipe) {
+                for (auto cond = recipe->conditions.head; cond; cond = cond->next) {
+                    switch (cond->data.functionData.function.get()) {
+                        case RE::FUNCTION_DATA::FunctionID::kGetItemCount:
+                        case RE::FUNCTION_DATA::FunctionID::kGetEquipped:
+                            if (cond->data.functionData.params[0] != obj && recipe->requiredItems.CountObjectsInContainer((RE::TESBoundObject*)cond->data.functionData.params[0])==0) {
+                                //logger::info("{} requires {}", obj->GetName(), ((RE::TESForm*)cond->data.functionData.params[0])->GetName());
+                                recipeConditionForms.insert((RE::TESForm*)cond->data.functionData.params[0]);
+                            }
+                            break;
+                        case RE::FUNCTION_DATA::FunctionID::kHasPerk:
+                            recipeConditionForms.insert((RE::TESForm*)cond->data.functionData.params[0]);
+                            break;
+                    }
+                }
+                
+            }
+
+            static void PullConditions(RE::TESBoundObject* obj) {
+                if (auto recipe = MapFindOrNull(g_Data.temperRecipe, obj)) Pull(obj, recipe);
+                if (auto recipe = MapFindOrNull(g_Data.craftRecipe, obj)) Pull(obj, recipe);
+            }
+        };
+
+        for (auto i : armorSet.items) RecipeProcessFuncs::PullConditions(i);
+        for (auto i : armorSet.weaps) RecipeProcessFuncs::PullConditions(i);
+        for (auto i : armorSet.ammo) RecipeProcessFuncs::PullConditions(i);
+    }
+
+    for (auto i : recipeConditionForms) {
+        g_Data.recipeConditions.push_back(i);
+        std::sort(g_Data.recipeConditions.begin(), g_Data.recipeConditions.end(),
+                  [](RE::TESForm* const a, RE::TESForm* const b) { return _stricmp(a->GetName(), b->GetName()) < 0; });        
+    }
+
     logger::trace("Building list of skyrim armor model files");
 
     auto& lsAddons = dataHandler->GetFormArray<RE::TESObjectARMA>();
@@ -272,8 +308,7 @@ void QuickArmorRebalance::LoadChangesFromFiles() {
     logger::info("{} items affected from local changes", g_Data.modifiedItems.size());
 }
 
-void QuickArmorRebalance::ForChangesInFolder(const char* sub,
-                                             const std::function<void(const RE::TESFile*, std::filesystem::path)> fn) {
+void QuickArmorRebalance::ForChangesInFolder(const char* sub, const std::function<void(const RE::TESFile*, std::filesystem::path)> fn) {
     auto dataHandler = RE::TESDataHandler::GetSingleton();
 
     auto path = std::filesystem::current_path() / PATH_ROOT PATH_CHANGES;
@@ -302,8 +337,7 @@ void QuickArmorRebalance::ForChangesInFolder(const char* sub,
 
 void QuickArmorRebalance::LoadChangesFromFolder(const char* sub, const Permissions& perm) {
     ForChangesInFolder(sub, [&](auto mod, auto path) {
-        if (!LoadFileChanges(mod, path, perm))
-            logger::warn("Failed to load change file {}", path.filename().generic_string());
+        if (!LoadFileChanges(mod, path, perm)) logger::warn("Failed to load change file {}", path.filename().generic_string());
     });
 
     if (perm.bModifyCustomKeywords) {

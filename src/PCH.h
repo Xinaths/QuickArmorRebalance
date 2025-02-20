@@ -35,6 +35,8 @@ inline RE::FormID GetFileId(const RE::TESForm* f) {
     return f->GetFile(0)->IsLight() ? id & 0xfff : id & 0xffffff;
 }
 
+inline std::string QARFormID(const RE::TESForm* form) { return std::format("{}:0x{:x}", form->GetFile(0)->fileName, GetFileId(form)); }
+
 namespace QuickArmorRebalance {
     template <class T>
     void write_thunk_call() {

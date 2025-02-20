@@ -193,7 +193,6 @@ struct PauseTracker {
 
 PauseTracker g_Pause;
 
-
 struct GivenItems {
     void UnequipCurrent() {
         stored.clear();
@@ -668,6 +667,108 @@ void BuildFonts() {
         ImGui_ImplDX11_CreateDeviceObjects();
     }
 }
+
+struct RecipeConditionals {
+    struct Conditionals {
+        std::vector<RE::TESForm*> perks;
+        std::vector<RE::TESForm*> items;
+
+        void Clear() {
+            perks.clear();
+            items.clear();
+        }
+
+        void Sort(std::vector<RE::TESForm*>& ls) {
+            std::sort(ls.begin(), ls.end(),
+                      [](RE::TESForm* const a, RE::TESForm* const b) { return _stricmp(a->GetName(), b->GetName()) < 0; });
+        }
+
+        void Sort() {
+            Sort(perks);
+            Sort(items);
+        }
+
+        void Add(std::vector<RE::TESForm*>& forms, std::vector<void*>& list) {
+            if (list.size() < (g_Config.bShowAllRecipeConditions ? 1 : 2)) return;
+
+            for (auto i : list) {
+                auto form = static_cast<RE::TESForm*>(i);
+                if (std::find(forms.begin(), forms.end(), form) == forms.end()) forms.push_back(form);
+            }
+        }
+
+        void AddFrom(RE::BGSConstructibleObject* obj) {
+            std::vector<void*> tempperks;
+            std::vector<void*> tempitems;
+
+            for (auto cond = obj->conditions.head; cond; cond = cond->next) {
+                switch (cond->data.functionData.function.get()) {
+                    case RE::FUNCTION_DATA::FunctionID::kGetItemCount:
+                    case RE::FUNCTION_DATA::FunctionID::kGetEquipped:
+                        if (obj->requiredItems.CountObjectsInContainer((RE::TESBoundObject*)cond->data.functionData.params[0])==0)
+                            tempitems.push_back(cond->data.functionData.params[0]);
+                        break;
+                    case RE::FUNCTION_DATA::FunctionID::kHasPerk:
+                        tempperks.push_back(cond->data.functionData.params[0]);
+                        break;
+                }
+            }
+
+            Add(this->perks, tempperks);
+            Add(this->items, tempitems);
+        }
+    };
+
+    struct PurposeConditionals {
+        Conditionals orig;
+        Conditionals convert;
+
+        void Clear() {
+            orig.Clear();
+            convert.Clear();
+        }
+
+
+        void Sort() {
+            orig.Sort();
+            convert.Sort();
+        }
+    };
+
+    PurposeConditionals craft;
+    PurposeConditionals temper;
+
+    bool bListsBuilt = false;
+    bool bRefreshed = false;
+
+
+    void AddFromItem(RE::TESBoundObject* item, Conditionals PurposeConditionals::* which) {
+        if (auto cond = MapFindOrNull(g_Data.temperRecipe, item)) {
+            (temper.*which).AddFrom(cond);
+        }
+        if (auto cond = MapFindOrNull(g_Data.craftRecipe, item)) {
+            (craft.*which).AddFrom(cond);
+        }
+    }
+
+    void BuildLists(const ArmorChangeParams& params) {
+        bRefreshed = true;
+        if (bListsBuilt) return;
+        bListsBuilt = true;
+
+        temper.Clear();
+        craft.Clear();
+
+        if (params.armorSet) {
+            for (auto i : params.armorSet->items) AddFromItem(i, &PurposeConditionals::convert);
+        }
+
+        for (auto i : params.data->items) AddFromItem(i, &PurposeConditionals::orig);
+
+        temper.Sort();
+        craft.Sort();
+    }
+};
 
 void QuickArmorRebalance::RenderUI() {
     const auto colorChanged = IM_COL32(0, 255, 0, 255);
@@ -1440,10 +1541,85 @@ void QuickArmorRebalance::RenderUI() {
                            "Note: Adding and removing basic Skyrim keywords is already included \n"
                            "as part of armor conversion."));
 
-                    if (ImGui::BeginTable("Crafting Table", 3, ImGuiTableFlags_SizingFixedFit)) {
+                    static RecipeConditionals recipeConds;
+
+                    struct Recipes {
+                        using TypePtr = std::vector<RE::TESForm*> RecipeConditionals::Conditionals::*;
+
+                        static void ReqChecklist(const char* id, ArmorChangeParams::RecipeOptions& opts, const RecipeConditionals::Conditionals& conds, TypePtr type,
+                                                 bool bDisabled) { 
+                            const auto& ls = conds.*type;
+                            if (ls.empty()) return;
+
+                            ImGui::BeginDisabled(bDisabled);
+                            ImGui::Indent();
+                            ImGui::PushID(id);
+
+                            for (auto i : ls) {
+                                bool bChecked = !opts.skipForms.contains(i);
+                                if (ImGui::Checkbox(i->GetName(), &bChecked)) {
+                                    if (bChecked)
+                                        opts.skipForms.erase(i);
+                                    else
+                                        opts.skipForms.insert(i);
+                                }
+                            }
+
+                            ImGui::PopID();
+                            ImGui::Unindent();
+                            ImGui::EndDisabled();
+                        }
+
+                        static void DrawCombo(const char* name, ArmorChangeParams& params, ArmorChangeParams::RecipeOptions& opts, int& mode,
+                                              const RecipeConditionals::PurposeConditionals& conds,
+                                              TypePtr type) {
+                            const char* label[] = {"Replace", "Keep", "Remove"};
+                            ImGui::PushID(name);
+                            if (ImGui::BeginCombo(LZ(name), LZ(label[mode]))) {
+                                recipeConds.BuildLists(params);
+
+                                ImGui::RadioButton(LZ(label[ArmorChangeParams::eRequirementReplace]), &mode, ArmorChangeParams::eRequirementReplace);
+                                ReqChecklist("replace", opts, conds.convert, type, mode != ArmorChangeParams::eRequirementReplace);
+                                ImGui::RadioButton(LZ(label[ArmorChangeParams::eRequirementKeep]), &mode, ArmorChangeParams::eRequirementKeep);
+                                ReqChecklist("keep", opts, conds.orig, type, mode != ArmorChangeParams::eRequirementKeep);
+                                ImGui::RadioButton(LZ(label[ArmorChangeParams::eRequirementRemove]), &mode, ArmorChangeParams::eRequirementRemove);
+
+                                ImGui::EndCombo();
+                            }
+
+                            ImGui::PopID();
+                        }
+
+                        static void Draw(const char* id, ArmorChangeParams& params, ArmorChangeParams::RecipeOptions& options,
+                                         const RecipeConditionals::PurposeConditionals& conds) {
+                            ImGui::PushID(id);
+                            ImGui::TableNextColumn();
+
+                            if (options.bExpanded) {
+                                if (ImGui::ArrowButton("##Expand", ImGuiDir_Up)) options.bExpanded = false;
+
+                                ImGui::TableNextRow();
+                                ImGui::TableNextColumn();
+                                ImGui::Text(LZ("Requirements"));
+
+                                ImGui::TableNextColumn();
+                                DrawCombo("Perks", params, options, options.modePerks, conds, &RecipeConditionals::Conditionals::perks);
+
+                                ImGui::TableNextColumn();
+                                DrawCombo("Items", params, options, options.modeItems, conds, &RecipeConditionals::Conditionals::items);
+
+                            } else if (ImGui::ArrowButton("##Expand", ImGuiDir_Down))
+                                options.bExpanded = true;
+
+                            ImGui::PopID();
+                        }
+                    };
+
+                    if (ImGui::BeginTable("Crafting Table", 4, ImGuiTableFlags_SizingFixedFit)) {
                         ImGui::TableSetupColumn("CraftCol1");
                         ImGui::TableSetupColumn("CraftCol2");
                         ImGui::TableSetupColumn("CraftCol3");
+                        ImGui::TableSetupColumn("CraftCol4");
 
                         ImGui::TableNextRow();
                         ImGui::TableNextColumn();
@@ -1475,6 +1651,8 @@ void QuickArmorRebalance::RenderUI() {
                             MakeTooltip(
                                 LZ("If the item being copied lacks a tempering recipe, checking will remove all\n"
                                    "components and conditions to temper the modified item"));
+
+                            Recipes::Draw("tempering", params, params.temper, recipeConds.temper);
                         }
                         ImGui::EndDisabled();
 
@@ -1506,15 +1684,19 @@ void QuickArmorRebalance::RenderUI() {
                             ImGui::TableNextColumn();
                             ImGui::Checkbox(g_Config.fCraftGoldCostRatio > 0 ? LZ("Cost gold if no recipe to copy##Craft") : LZ("Make free if no recipe to copy##Craft"),
                                             &params.craft.bFree);
-                            if (ImGui::IsItemHovered())
-                                ImGui::SetTooltip(
-                                    LZ("If the item being copied lacks a crafting recipe, checking will remove all\n"
-                                       "components and conditions to craft the modified item"));
+                            MakeTooltip(
+                                LZ("If the item being copied lacks a crafting recipe, checking will remove all\n"
+                                   "components and conditions to craft the modified item"));
+
+                            Recipes::Draw("cafting", params, params.craft, recipeConds.craft);
                         }
 
                         ImGui::EndDisabled();
 
                         ImGui::EndTable();
+
+                        if (!recipeConds.bRefreshed) recipeConds.bListsBuilt = false;
+                        recipeConds.bRefreshed = false;
                     }
                 }
                 ImGui::EndChild();
@@ -2197,6 +2379,10 @@ void QuickArmorRebalance::RenderUI() {
 
                     ImGui::Checkbox(LZ("Use recipes from as similar item if primary item is lacking"), &g_Config.bUseSecondaryRecipes);
 
+                    ImGui::Checkbox(LZ("Show all recipe requirements"), &g_Config.bShowAllRecipeConditions);
+                    MakeTooltip(LZ("If checked, only requirements with multiples of the same type will be listed.\n"
+                        "For example, a recipe that requires two seperate perks to craft."));
+
                     ImGui::Checkbox(LZ("Enable smelting recipes"), &g_Config.bEnableSmeltingRecipes);
 
                     ImGui::Text(LZ("Instead of free recipes, make recipes cost gold as a portion of the item's value:"));
@@ -2212,6 +2398,23 @@ void QuickArmorRebalance::RenderUI() {
                     ImGui::SliderFloat("##CraftRatio", &g_Config.fCraftGoldCostRatio, 0.0f, 200.0f, "%.0f%%", ImGuiSliderFlags_AlwaysClamp);
                     MakeTooltip(LZ("Set to 0%% to keep free"));
                     ImGui::Unindent();
+
+                    ImGui::Text(LZ("Exclude the following requirements for recipes (does not change materials):"));
+
+                    ImGui::SetNextItemWidth(-FLT_MIN);
+                    if (ImGui::BeginListBox("##RecipeConditions")) {
+                        for (auto i : g_Data.recipeConditions) {
+                            bool checked = g_Config.recipeConditionBlacklist.contains(i);
+                            if (ImGui::Checkbox(i->GetName(), &checked)) {
+                                if (checked)
+                                    g_Config.recipeConditionBlacklist.insert(i);
+                                else
+                                    g_Config.recipeConditionBlacklist.erase(i);
+                            }
+                        }
+
+                        ImGui::EndListBox();
+                    }
 
                     ImGui::EndTabItem();
                 }
@@ -3423,8 +3626,7 @@ void QuickArmorRebalance::RenderUI() {
     ImGui::End();
 
     if (g_Config.bExportUntranslated) Localization::Get()->Export();
-    if (!isActive)
-        ImGuiIntegration::Show(false);
-    
+    if (!isActive) ImGuiIntegration::Show(false);
+
     g_Pause.Update(isActive && g_Config.bPauseWhileOpen);
 }

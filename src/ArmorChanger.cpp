@@ -62,7 +62,7 @@ namespace {
 
     void CopyConditions(RE::TESCondition& tar, const RE::TESCondition& src, void* replace, void* replaceWith);
     void ClearRecipe(RE::BGSConstructibleObject* tar);
-    void ReplaceRecipe(RE::BGSConstructibleObject* tar, const RE::BGSConstructibleObject* src, float w, float fCost);
+    void ReplaceRecipe(ArmorChangeParams::RecipeOptions& opts, RE::BGSConstructibleObject* tar, const RE::BGSConstructibleObject* src, float w, float fCost);
 
     ArmorSlots RemapSlots(ArmorSlots slots, const ArmorChangeParams& params) {
         if (slots & params.remapMask) {
@@ -303,32 +303,38 @@ int QuickArmorRebalance::MakeArmorChanges(const ArmorChangeParams& params) {
                 changes.AddMember("enchPoolBias", Value(0.01f * params.ench.poolChance), al);
         }
 
+        struct Recipe {
+            static Value Params(const ArmorChangeParams::RecipeOptions& params, MemoryPoolAllocator<>& al) {
+                Value recipe(kObjectType);
+                switch (params.action) {
+                    case ArmorChangeParams::eRecipeModify:
+                        if (params.bNew) recipe.AddMember("new", Value(true), al);
+                        if (params.bFree) recipe.AddMember("free", Value(true), al);
+                        if (params.modeItems != ArmorChangeParams::eRequirementReplace) recipe.AddMember("opItems", Value(params.modeItems), al);
+                        if (params.modePerks != ArmorChangeParams::eRequirementReplace) recipe.AddMember("opPerks", Value(params.modePerks), al);
+                        if (!params.skipForms.empty()) {
+                            Value arr(kArrayType);
+                            for (auto i : params.skipForms) {
+                                arr.PushBack(Value(QARFormID(i).c_str(), al), al);
+                            }
+                            recipe.AddMember("noForms", arr, al);
+                        }
+                        break;
+                    case ArmorChangeParams::eRecipeRemove:
+                        recipe.AddMember("remove", Value(true), al);
+                        break;
+                }
+
+                return recipe;
+            }
+        };
+
         if (params.bModifyKeywords) changes.AddMember("keywords", Value(true), al);
         if (params.temper.bModify) {
-            Value recipe(kObjectType);
-            switch (params.temper.action) {
-                case ArmorChangeParams::eRecipeModify:
-                    if (params.temper.bNew) recipe.AddMember("new", Value(true), al);
-                    if (params.temper.bFree) recipe.AddMember("free", Value(true), al);
-                    break;
-                case ArmorChangeParams::eRecipeRemove:
-                    recipe.AddMember("remove", Value(true), al);
-                    break;
-            }
-            changes.AddMember("temper", recipe, al);
+            changes.AddMember("temper", Recipe::Params(params.temper, al), al);
         }
         if (params.craft.bModify) {
-            Value recipe(kObjectType);
-            switch (params.craft.action) {
-                case ArmorChangeParams::eRecipeModify:
-                    if (params.craft.bNew) recipe.AddMember("new", Value(true), al);
-                    if (params.craft.bFree) recipe.AddMember("free", Value(true), al);
-                    break;
-                case ArmorChangeParams::eRecipeRemove:
-                    recipe.AddMember("remove", Value(true), al);
-                    break;
-            }
-            changes.AddMember("craft", recipe, al);
+            changes.AddMember("craft", Recipe::Params(params.craft, al), al);
         }
 
         auto loot = MakeLootChanges(params, i, al);
@@ -1021,6 +1027,24 @@ bool QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, RE::FormID id, c
         }
     }
 
+    struct RecipeSettings {
+        static void Read(const rapidjson::Value& json, ArmorChangeParams::RecipeOptions& opts) {
+            opts.modeItems = GetJsonInt(json, "opItems", 0, ArmorChangeParams::eRequirementModeCount - 1, ArmorChangeParams::eRequirementReplace);
+            opts.modePerks = GetJsonInt(json, "opPerks", 0, ArmorChangeParams::eRequirementModeCount - 1, ArmorChangeParams::eRequirementReplace);
+
+            if (json.HasMember("noForms") && json["noForms"].IsArray()) {
+                auto fileDefault = RE::TESDataHandler::GetSingleton()->LookupLoadedModByIndex(0);
+                for (auto& i : json["noForms"].GetArray()) {
+                    if (i.IsString()) {
+                        if (auto form = FindIn(fileDefault, i.GetString())) {
+                            opts.skipForms.insert(form);
+                        }
+                    }
+                }
+            }
+        }
+    };
+
     if (perm.temper.bModify && changes.HasMember("temper") && !item->As<RE::TESAmmo>()) {
         auto& jsonOpts = changes["temper"];
         if (!jsonOpts.IsObject()) return false;
@@ -1036,6 +1060,9 @@ bool QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, RE::FormID id, c
 
             if (opts.HasMember("new")) bNew = opts["new"].GetBool();
             if (opts.HasMember("free")) bFree = opts["free"].GetBool();
+
+            ArmorChangeParams::RecipeOptions recipeOpts;
+            RecipeSettings::Read(opts, recipeOpts);
 
             RE::BGSConstructibleObject *recipeItem = nullptr, *recipeSrc = nullptr;
 
@@ -1063,7 +1090,7 @@ bool QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, RE::FormID id, c
                 }
             }
 
-            if (recipeItem && bFree) ::ReplaceRecipe(recipeItem, recipeSrc, weight, g_Config.fTemperGoldCostRatio);
+            if (recipeItem && bFree) ::ReplaceRecipe(recipeOpts, recipeItem, recipeSrc, weight, g_Config.fTemperGoldCostRatio);
         } else {
             if (perm.temper.bRemove) {
                 if (auto recipeItem = MapFindOrNull(g_Data.temperRecipe, bo)) {
@@ -1088,6 +1115,9 @@ bool QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, RE::FormID id, c
 
             if (opts.HasMember("new")) bNew = opts["new"].GetBool();
             if (opts.HasMember("free")) bFree = opts["free"].GetBool();
+
+            ArmorChangeParams::RecipeOptions recipeOpts;
+            RecipeSettings::Read(opts, recipeOpts);
 
             RE::BGSConstructibleObject *recipeItem = nullptr, *recipeSrc = nullptr;
 
@@ -1115,7 +1145,7 @@ bool QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, RE::FormID id, c
                     }
                 }
 
-                if (recipeItem && bFree) ::ReplaceRecipe(recipeItem, recipeSrc, weight, g_Config.fCraftGoldCostRatio);
+                if (recipeItem && bFree) ::ReplaceRecipe(recipeOpts, recipeItem, recipeSrc, weight, g_Config.fCraftGoldCostRatio);
             } else if (g_Config.bDisableCraftingRecipesOnRarity && recipeItem) {
                 logger::trace("Disabling recipe for {}", item->GetName());
                 recipeItem->benchKeyword = nullptr;
@@ -1169,6 +1199,10 @@ bool QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, RE::FormID id, c
     return true;
 }
 
+///////////////////////////////////////////////
+// Recipes
+
+// Old, but still using for smelting recipes
 void ::CopyConditions(RE::TESCondition& tar, const RE::TESCondition& src, void* replace, void* replaceWith) {
     auto prev = tar.head;
     if (prev)
@@ -1176,6 +1210,20 @@ void ::CopyConditions(RE::TESCondition& tar, const RE::TESCondition& src, void* 
 
     if (src.head) {
         for (auto psrc = src.head; psrc; psrc = psrc->next) {
+            bool bSkip = false;
+            switch (psrc->data.functionData.function.get()) {
+                case RE::FUNCTION_DATA::FunctionID::kGetItemCount:
+                case RE::FUNCTION_DATA::FunctionID::kGetEquipped:
+                case RE::FUNCTION_DATA::FunctionID::kHasPerk:
+                    bSkip = g_Config.recipeConditionBlacklist.contains((RE::TESForm*)psrc->data.functionData.params[0]);
+                    break;
+            }
+
+            if (bSkip) {
+                if (prev) prev->data.flags.isOR = false;
+                continue;
+            }
+
             auto p = new RE::TESConditionItem();
 
             if (!prev)
@@ -1197,18 +1245,29 @@ void ::CopyConditions(RE::TESCondition& tar, const RE::TESCondition& src, void* 
     }
 }
 
-void ::ClearRecipe(RE::BGSConstructibleObject* tar) {
-    {  // Materials
-        auto& mats = tar->requiredItems;
+static void ClearMats(RE::BGSConstructibleObject* tar) {
+    auto& mats = tar->requiredItems;
 
-        if (mats.containerObjects) {
-            for (unsigned int i = 0; i < mats.numContainerObjects; i++) delete mats.containerObjects[i];
-            RE::free(mats.containerObjects);
-        }
-
-        mats.containerObjects = nullptr;
-        mats.numContainerObjects = 0;
+    if (mats.containerObjects) {
+        for (unsigned int i = 0; i < mats.numContainerObjects; i++) delete mats.containerObjects[i];
+        RE::free(mats.containerObjects);
     }
+
+    mats.containerObjects = nullptr;
+    mats.numContainerObjects = 0;
+}
+
+static void DeleteChain(RE::TESConditionItem* cond) {
+    while (cond) {
+        auto next = cond->next;
+        delete cond;
+        cond = next;
+    }
+}
+
+// Old, but still using for smelting recipes
+void ::ClearRecipe(RE::BGSConstructibleObject* tar) {
+    ClearMats(tar);
 
     {  // Conditions
         RE::TESConditionItem* book = nullptr;
@@ -1230,8 +1289,124 @@ void ::ClearRecipe(RE::BGSConstructibleObject* tar) {
     }
 }
 
-void ::ReplaceRecipe(RE::BGSConstructibleObject* tar, const RE::BGSConstructibleObject* src, float w, float fCost) {
-    ::ClearRecipe(tar);
+inline bool KeepCondition(RE::BGSConstructibleObject* recipe, RE::TESConditionItem* cond, const ArmorChangeParams::RecipeOptions& opts, bool isOrig, RE::TESForm* replacing) {
+    if (isOrig) {
+        switch (cond->data.functionData.function.get()) {
+            case RE::FUNCTION_DATA::FunctionID::kGetItemCount:
+            case RE::FUNCTION_DATA::FunctionID::kGetEquipped: {
+                auto form = (RE::TESBoundObject*)cond->data.functionData.params[0];
+                if (g_Config.bKeepCraftingBooks && recipe->requiredItems.CountObjectsInContainer(form) == 0 && form->As<RE::TESObjectBOOK>()) return true;
+                if (opts.modeItems != ArmorChangeParams::eRequirementKeep) return false;
+                if (recipe->requiredItems.CountObjectsInContainer(form) > 0) return false;  // Need to clear materials
+                if (opts.skipForms.contains(form)) return false;
+                if (g_Config.recipeConditionBlacklist.contains(form)) return false;
+                return true;
+            }
+            case RE::FUNCTION_DATA::FunctionID::kHasPerk: {
+                if (opts.modePerks != ArmorChangeParams::eRequirementKeep) return false;
+                auto form = (RE::TESForm*)cond->data.functionData.params[0];
+                if (opts.skipForms.contains(form)) return false;
+                if (g_Config.recipeConditionBlacklist.contains(form)) return false;
+                return true;
+            } break;
+            default:
+                return false;
+        }
+    } else {
+        switch (cond->data.functionData.function.get()) {
+            case RE::FUNCTION_DATA::FunctionID::kGetItemCount:
+            case RE::FUNCTION_DATA::FunctionID::kGetEquipped: {
+                auto form = (RE::TESBoundObject*)cond->data.functionData.params[0];
+                if (form == replacing) return true;
+                if (recipe->requiredItems.CountObjectsInContainer((RE::TESBoundObject*)form) > 0) return true;  // Always keep materials
+                if (opts.modeItems != ArmorChangeParams::eRequirementReplace) return false;
+                if (opts.skipForms.contains(form)) return false;
+                if (g_Config.recipeConditionBlacklist.contains(form)) return false;
+                return true;
+            }
+            case RE::FUNCTION_DATA::FunctionID::kHasPerk: {
+                if (opts.modePerks != ArmorChangeParams::eRequirementReplace) return false;
+                auto form = (RE::TESForm*)cond->data.functionData.params[0];
+                if (opts.skipForms.contains(form)) return false;
+                if (g_Config.recipeConditionBlacklist.contains(form)) return false;
+                return true;
+            } break;
+            default:
+                return true;
+        }
+    }
+}
+
+inline RE::TESConditionItem* CopyCondition(RE::BGSConstructibleObject* recipe, RE::TESConditionItem* cond, RE::TESForm* replacing, RE::TESConditionItem** pHead,
+                                           RE::TESConditionItem* pTail) {
+    auto p = new RE::TESConditionItem();
+
+    if (!pTail)
+        *pHead = p;
+    else
+        pTail->next = p;
+
+    p->data = cond->data;
+
+    switch (p->data.functionData.function.get()) {
+        case RE::FUNCTION_DATA::FunctionID::kGetItemCount:
+        case RE::FUNCTION_DATA::FunctionID::kGetEquipped:
+            if (p->data.functionData.params[0] == replacing) p->data.functionData.params[0] = recipe->createdItem;
+            break;
+    }
+    p->next = nullptr;
+    return p;
+}
+
+inline RE::TESConditionItem* CopyConditionsIter(RE::BGSConstructibleObject* recipe, RE::TESConditionItem* cond, const ArmorChangeParams::RecipeOptions& opts, bool isOrig,
+                                                RE::TESForm* replacing, RE::TESConditionItem** pHead, RE::TESConditionItem** pTail) {
+    if (!cond) return nullptr;
+
+    if (cond->data.flags.isOR) {
+        bool bAll = true;
+        RE::TESConditionItem* last = cond;
+        for (auto i = cond; i; i = i->next) {
+            last = i;
+            if (!bAll || !KeepCondition(recipe, i, opts, isOrig, replacing)) {
+                bAll = false;
+            }
+
+            if (!i->data.flags.isOR) break;
+        }
+
+        last = last->next;
+        if (!bAll) return last;
+
+        for (auto i = cond; i != last; i = i->next) {
+            *pTail = CopyCondition(recipe, i, replacing, pHead, *pTail);
+        }
+
+        (*pTail)->data.flags.isOR = false;
+
+        return last;
+    } else {
+        if (KeepCondition(recipe, cond, opts, isOrig, replacing)) {
+            *pTail = CopyCondition(recipe, cond, replacing, pHead, *pTail);
+        }
+        return cond->next;
+    }
+}
+
+inline void CopyConditions(RE::BGSConstructibleObject* recipe, RE::TESConditionItem* cond, const ArmorChangeParams::RecipeOptions& opts, bool isOrig, RE::TESForm* replacing,
+                           RE::TESConditionItem** pHead, RE::TESConditionItem** pTail) {
+    while (cond) {
+        cond = CopyConditionsIter(recipe, cond, opts, isOrig, replacing, pHead, pTail);
+    }
+}
+
+void ::ReplaceRecipe(ArmorChangeParams::RecipeOptions& opts, RE::BGSConstructibleObject* tar, const RE::BGSConstructibleObject* src, float w, float fCost) {
+    ClearMats(tar);
+
+    RE::TESConditionItem* pHead = nullptr;
+    RE::TESConditionItem* pTail = nullptr;
+
+    CopyConditions(tar, tar->conditions.head, opts, true, tar->createdItem, &pHead, &pTail);
+
     if (src) {
         tar->benchKeyword = src->benchKeyword;
         tar->data.numConstructed = src->data.numConstructed;
@@ -1250,7 +1425,7 @@ void ::ReplaceRecipe(RE::BGSConstructibleObject* tar, const RE::BGSConstructible
             }
         }
 
-        ::CopyConditions(tar->conditions, src->conditions, src->createdItem, tar->createdItem);
+        CopyConditions(tar, src->conditions.head, opts, false, src->createdItem, &pHead, &pTail);
     } else if (fCost > 0) {
         auto& mats = tar->requiredItems;
 
@@ -1263,7 +1438,13 @@ void ::ReplaceRecipe(RE::BGSConstructibleObject* tar, const RE::BGSConstructible
         mats.containerObjects = RE::calloc<RE::ContainerObject*>(mats.numContainerObjects = 1);
         mats.containerObjects[0] = new RE::ContainerObject(goldObj, std::max(1, (int)(0.01f * fCost * tar->createdItem->GetGoldValue())));
     }
+
+    DeleteChain(tar->conditions.head);
+    tar->conditions.head = pHead;
 }
+
+//~Recipes
+//////////////////////////////
 
 void QuickArmorRebalance::DeleteChanges(std::set<RE::TESBoundObject*> items, const char** fields) {
     std::map<RE::TESFile*, std::vector<RE::TESBoundObject*>> mapFileItems;
@@ -1302,6 +1483,9 @@ void QuickArmorRebalance::DeleteChanges(std::set<RE::TESBoundObject*> items, con
         WriteJSONFile(path, doc);
     }
 }
+
+/////////////////////////////////////////////
+// Keywords
 
 void ApplyKeywordChanges(const KeywordChangeMap& changes) {
     std::unordered_map<RE::TESBoundObject*, std::pair<std::vector<RE::BGSKeyword*>, std::vector<RE::BGSKeyword*>>> itemChangeKWs;
@@ -1473,3 +1657,6 @@ int QuickArmorRebalance::MakeKeywordChanges(const ArmorChangeParams& params, boo
 
     return 0;
 }
+
+//~Keywords
+//////////////////////////////////////////

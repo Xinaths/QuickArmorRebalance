@@ -71,6 +71,8 @@ namespace QuickArmorRebalance {
 
     void ArmorChangeParams::Reset(bool bForce) {
         mapKeywordChanges.clear();
+        craft.skipForms.clear();
+        temper.skipForms.clear();
 
         if (bForce || g_Config.bResetSliders) {
             armor.rating.Reset(100.0f);
@@ -116,6 +118,11 @@ namespace QuickArmorRebalance {
 
         mapArmorSlots.clear();
         mapKeywordChanges.clear();
+
+        temper.modeItems = temper.modePerks = craft.modeItems = craft.modePerks = ArmorChangeParams::eRequirementReplace;
+        craft.skipForms.clear();
+        temper.skipForms.clear();
+
     }
 }
 
@@ -199,6 +206,8 @@ bool QuickArmorRebalance::Config::Load() {
         }
     }
 
+    auto dataHandler = RE::TESDataHandler::GetSingleton();
+
     // UI configs
     {
         const char* lootProfile = "Treasure - Universal";
@@ -247,15 +256,21 @@ bool QuickArmorRebalance::Config::Load() {
             g_Config.acParams.bDistAsSet = config["loot"]["sets"].value_or(true);
             g_Config.acParams.bMatchSetPieces = config["loot"]["matching"].value_or(true);
 
-            g_Config.acParams.temper.action = config["temper"]["action"].value_or(ArmorChangeParams::eRecipeModify);
-            g_Config.acParams.temper.bModify = config["temper"]["modify"].value_or(true);
-            g_Config.acParams.temper.bNew = config["temper"]["new"].value_or(false);
-            g_Config.acParams.temper.bFree = config["temper"]["free"].value_or(false);
+            struct LoadSection {
+                static void Crafting(ArmorChangeParams::RecipeOptions& opts, const toml::node_view<toml::node>& tbl) {
+                    opts.action = tbl["action"].value_or(ArmorChangeParams::eRecipeModify);
+                    opts.bModify = tbl["modify"].value_or(true);
+                    opts.bNew = tbl["new"].value_or(false);
+                    opts.bFree = tbl["free"].value_or(false);
 
-            g_Config.acParams.craft.action = config["craft"]["action"].value_or(ArmorChangeParams::eRecipeModify);
-            g_Config.acParams.craft.bModify = config["craft"]["modify"].value_or(true);
-            g_Config.acParams.craft.bNew = config["craft"]["new"].value_or(false);
-            g_Config.acParams.craft.bFree = config["craft"]["free"].value_or(false);
+                    opts.bExpanded = tbl["expand"].value_or(false);
+                    opts.modeItems = std::clamp(tbl["opItems"].value_or((int)ArmorChangeParams::eRequirementReplace), 0, ArmorChangeParams::eRequirementModeCount - 1);
+                    opts.modePerks = std::clamp(tbl["opPerks"].value_or((int)ArmorChangeParams::eRequirementReplace), 0, ArmorChangeParams::eRequirementModeCount - 1);
+                }
+            };
+
+            LoadSection::Crafting(g_Config.acParams.temper, config["temper"]);
+            LoadSection::Crafting(g_Config.acParams.craft, config["craft"]);
 
             g_Config.nFontSize = config["settings"]["fontsize"].value_or(13);
             g_Config.verbosity = std::clamp(config["settings"]["verbosity"].value_or((int)g_Config.verbosity), 0, spdlog::level::n_levels - 1);
@@ -292,6 +307,7 @@ bool QuickArmorRebalance::Config::Load() {
             g_Config.bEnableEnchantmentDistrib = config["settings"]["distribenchants"].value_or(false);
             g_Config.bEnchantRandomCharge = config["settings"]["enchantrandomcharge"].value_or(true);
             g_Config.fEnchantRates = config["settings"]["enchantrate"].value_or(100.0f);
+            g_Config.bShowAllRecipeConditions = config["settings"]["allrecipereqs"].value_or(false);
 
             if (auto code = config["settings"]["language"].as_string()) {
                 if (!code->get().empty()) Localization::Get()->SetTranslation(StringToWString(code->get()));
@@ -302,6 +318,20 @@ bool QuickArmorRebalance::Config::Load() {
                 arr->for_each([this](auto i) {
                     if (auto str = i.as_string())
                         if (!str->get().empty()) g_Config.lsDisableWords.push_back(str->get());
+                });
+            }
+
+            if (auto arr = config["settings"]["recipeBlacklistConditions"].as_array()) {
+                auto fileDefault = dataHandler->LookupLoadedModByIndex(0);
+
+                arr->for_each([=, this](auto i) {
+                    if (auto str = i.as_string())
+                        if (!str->get().empty()) {
+                            if (auto form = FindIn(fileDefault, str->get().c_str()))
+                                g_Config.recipeConditionBlacklist.insert(form);
+                            else
+                                logger::info("Not found");
+                        }
                 });
             }
 
@@ -328,7 +358,6 @@ bool QuickArmorRebalance::Config::Load() {
             g_Config.acParams.distProfile = lootProfiles.begin()->c_str();
     }
 
-    auto dataHandler = RE::TESDataHandler::GetSingleton();
     if (dataHandler->LookupModByName("Frostfall.esp")) {
         isFrostfallInstalled = true;
 
@@ -919,6 +948,11 @@ toml::table SavePermissions(const QuickArmorRebalance::Permissions& p) {
     };
 }
 
+toml::table CraftingSettings(const ArmorChangeParams::RecipeOptions& opts) {
+    return toml::table{{"action", opts.action},    {"modify", opts.bModify},    {"new", opts.bNew},         {"free", opts.bFree},
+                       {"expand", opts.bExpanded}, {"opItems", opts.modeItems}, {"opPerks", opts.modePerks}};
+}
+
 void QuickArmorRebalance::Config::Save() {
     auto iCurve = g_Config.curves.begin();
     while (iCurve != g_Config.curves.end() && &iCurve->second != g_Config.acParams.curve) iCurve++;
@@ -931,6 +965,9 @@ void QuickArmorRebalance::Config::Save() {
 
     auto tomlDisableWords = toml::array{};
     tomlDisableWords.insert(tomlDisableWords.begin(), lsDisableWords.begin(), lsDisableWords.end());
+
+    auto tomlRecipeConditionBlacklist = toml::array{};
+    for (auto i : recipeConditionBlacklist) tomlRecipeConditionBlacklist.push_back(QARFormID(i));
 
     auto tbl = toml::table{
         {"merge", g_Config.acParams.bMerge},
@@ -946,14 +983,8 @@ void QuickArmorRebalance::Config::Save() {
         {"modifyValue", g_Config.acParams.value.bModify},
         {"armorset", g_Config.acParams.armorSet ? g_Config.acParams.armorSet->name : "error"},
         {"curve", iCurve->first},
-        {"temper", toml::table{{"action", g_Config.acParams.temper.action},
-                               {"modify", g_Config.acParams.temper.bModify},
-                               {"new", g_Config.acParams.temper.bNew},
-                               {"free", g_Config.acParams.temper.bFree}}},
-        {"craft", toml::table{{"action", g_Config.acParams.craft.action},
-                              {"modify", g_Config.acParams.craft.bModify},
-                              {"new", g_Config.acParams.craft.bNew},
-                              {"free", g_Config.acParams.craft.bFree}}},
+        {"temper", CraftingSettings(g_Config.acParams.temper)},
+        {"craft", CraftingSettings(g_Config.acParams.craft)},
         {"loot", toml::table{{"enable", g_Config.acParams.bDistribute},
                              {"pieces", g_Config.acParams.bDistAsPieces},
                              {"sets", g_Config.acParams.bDistAsSet},
@@ -993,9 +1024,11 @@ void QuickArmorRebalance::Config::Save() {
                                  {"showkeyworditemcats", g_Config.bShowKeywordSlots},
                                  {"reorderkeywords", g_Config.bReorderKeywordsForRelevance},
                                  {"equipkeywordpreview", g_Config.bEquipPreviewForKeywords},
+                                 {"allrecipereqs", g_Config.bShowAllRecipeConditions},
                                  {"autodisablewords", tomlDisableWords},
                                  {"language", WStringToString(Localization::Get()->language)},
-                                 {"exportuntranslated", g_Config.bExportUntranslated}}},
+                                 {"exportuntranslated", g_Config.bExportUntranslated},
+                                 {"recipeBlacklistConditions", tomlRecipeConditionBlacklist}}},
         {"shortcuts", toml::table{{"escCloseWindow", g_Config.bShortcutEscCloseWindow}}},
         {"integrations",
          toml::table{

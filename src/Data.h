@@ -97,11 +97,8 @@ namespace QuickArmorRebalance {
             RE::FormID id = GetFullId(mod, (RE::FormID)strtol(str + 2, nullptr, 16));
             return RE::TESForm::LookupByID(id);
         }
-        if (isdigit(*str)) {
-            RE::FormID id = GetFullId(mod, (RE::FormID)strtol(str, nullptr, 10));
-            return RE::TESForm::LookupByID(id);
-        }
 
+        //Has to come before isdigit because some mods might have numeric names so "5Armors.esp:0x123" would fail
         if (auto pos = strchr(str, ':')) {
             if (pOtherFile) *pOtherFile = true;
             std::string fileName(str, pos - str);
@@ -109,6 +106,12 @@ namespace QuickArmorRebalance {
                 return FindIn(mod2, pos + 1);
             }
             return nullptr;
+        }
+
+        //Can EditorId's start with digits?
+        if (isdigit(*str)) {
+            RE::FormID id = GetFullId(mod, (RE::FormID)strtol(str, nullptr, 10));
+            return RE::TESForm::LookupByID(id);
         }
 
         auto r = RE::TESForm::LookupByEditorID(str);
@@ -202,6 +205,8 @@ namespace QuickArmorRebalance {
         std::unordered_set<RE::TESObjectARMA*> dynamicVariantsDAV;
         std::map<std::size_t, std::unordered_set<RE::TESObjectARMO*>> prefVartWith;
         std::map<std::size_t, std::unordered_set<RE::TESObjectARMO*>> prefVartWithout;
+
+        std::unordered_map<RE::TESForm*, std::set<RE::TESForm*>> mapContainerCopy;
     };
 
     struct KeywordChanges {

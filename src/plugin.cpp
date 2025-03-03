@@ -8,6 +8,7 @@
 #include "ModelArmorSlotFix.h"
 #include "ArmorSetBuilder.h"
 #include "Enchantments.h"
+#include "ModIntegrations.h"
 
 namespace QuickArmorRebalance {
     std::mt19937 RNG;
@@ -54,6 +55,8 @@ namespace QuickArmorRebalance {
 
         logger::trace("Loading changes");
         LoadChangesFromFiles();
+
+        ImportFromBOS();
 
         logger::trace("Setting up loot");
         SetupLootLists();

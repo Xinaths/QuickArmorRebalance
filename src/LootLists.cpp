@@ -155,7 +155,8 @@ void LoadContainerList(std::map<RE::TESForm*, QuickArmorRebalance::ContainerChan
             if (!jsonFiles.value.IsObject()) continue;
             for (const auto& entry : jsonFiles.value.GetObj()) {
                 if (auto form = QuickArmorRebalance::FindIn<RE::TESForm>(file, entry.name.GetString())) {
-                    if (form->As<RE::TESContainer>() || form->As<RE::TESLevItem>()) {
+                    auto container = form->As<RE::TESContainer>();
+                    if (container || form->As<RE::TESLevItem>()) {
                         ContainerChance params;
                         if (entry.value.IsObject()) {
                             params.count = GetJsonInt(entry.value, "num", 1, 20);
@@ -168,7 +169,7 @@ void LoadContainerList(std::map<RE::TESForm*, QuickArmorRebalance::ContainerChan
 
                         set[form] = params;
 
-
+                        if (container) g_Data.loot->mapContainerCopy[form] = {};
                     } else
                         logger::warn("Item not container or leveled list: {}", entry.name.GetString());
                 } else
@@ -574,6 +575,13 @@ namespace {
                     if (ench.IsDefault())
                         ench = enchBase;
                     //Else it is either enchBase, or it's been modified by something else - just leave it alone
+                }
+
+                for (auto copyTo : g_Data.loot->mapContainerCopy[entry.first]) {
+                    if (auto containerCopy = copyTo->As<RE::TESContainer>()) {
+                        containerCopy->AddObjectToContainer(list, entry.second.count, nullptr);
+                        g_Data.distContainers[containerCopy] = ench;
+                    }
                 }
             } else if (auto llist = entry.first->As<RE::TESLevItem>()) {
                 if (llist->numEntries < kLLMaxSize) {

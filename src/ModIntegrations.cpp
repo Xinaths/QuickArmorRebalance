@@ -292,7 +292,7 @@ bool QuickArmorRebalance::ExportToKID(const std::vector<RE::TESBoundObject*>& it
     }
 }
 
-template<class T>
+template <class T>
 std::string BuildFormList(const std::unordered_set<RE::TESBoundObject*>& items, const std::unordered_set<RE::TESBoundObject*>& valid) {
     std::string ret;
 
@@ -309,10 +309,9 @@ std::string BuildFormList(const std::unordered_set<RE::TESBoundObject*>& items, 
 }
 
 template <class T>
-bool ExportSkypatcherFile(const char* type, const KeywordChangeMap& map, std::filesystem::path filename,
-                          const std::unordered_set<RE::TESBoundObject*>& validItems) {
+bool ExportSkypatcherFile(const char* type, const KeywordChangeMap& map, std::filesystem::path filename, const std::unordered_set<RE::TESBoundObject*>& validItems) {
     auto pathBase = std::filesystem::current_path() / "Data/SKSE/Plugins/SkyPatcher/";
-    auto path = pathBase / type / filename;      
+    auto path = pathBase / type / filename;
 
     auto pathFilename = path.filename();
     path.remove_filename();
@@ -393,4 +392,190 @@ bool QuickArmorRebalance::ExportToSkypatcher(const std::vector<RE::TESBoundObjec
     }
 
     return true;
+}
+
+namespace po3 {
+    static RE::TESForm* FindForm(const char* str) {
+        if (!strncmp(str, "0x", 2)) {
+            RE::FormID formID = 0;
+
+            if (auto pos = strchr(str, '~')) {
+                auto id = (RE::FormID)strtol(std::string(str + 2, pos - str - 2).c_str(), nullptr, 16);
+                std::string fileName(str, pos + 1);
+                if (auto mod = RE::TESDataHandler::GetSingleton()->LookupModByName(fileName)) {
+                    formID = GetFullId(mod, id);
+                }
+            } else {
+                formID = (RE::FormID)strtol(str + 2, nullptr, 16);
+            }
+
+            if (!formID) return nullptr;
+            return RE::TESForm::LookupByID(formID);
+        }
+
+        return RE::TESForm::LookupByEditorID(str);
+    }
+
+}
+
+namespace {
+    std::vector<std::string> stringSplit(const std::string& str, const char delimiter, int limit = 0) {
+        std::vector<std::string> result;
+        size_t start = 0, end;
+
+        while ((end = str.find(delimiter, start)) != std::string::npos) {
+            result.emplace_back(str.substr(start, end - start));
+            if (limit && result.size() >= limit) return result;
+
+            start = end + 1;
+        }
+        result.emplace_back(str.substr(start));
+
+        return result;
+    }
+
+    void ImportBOSSwap(std::unordered_map<RE::TESForm*, RE::TESForm*>& mapSwaps, const std::string& str) {
+        auto splitForms = stringSplit(str, '|', 2);
+        if (splitForms.size() < 2) return;
+
+        auto strFormsOrig = stringSplit(splitForms[0], ',');
+        std::set<RE::TESForm*> formsOrig;
+
+        for (auto& strForm : strFormsOrig) {
+            RE::TESForm* container = nullptr;
+            if (auto form = po3::FindForm(strForm.c_str())) {
+                if (form->As<RE::TESContainer>()) container = form;
+            } else if (auto ref = form->As<RE::TESObjectREFR>()) {
+                if (auto base = ref->GetBaseObject()) {
+                    if (base->As<RE::TESContainer>()) container = form;
+                }
+            }
+            if (container) {
+                if (g_Data.loot->mapContainerCopy.contains(container))
+                    formsOrig.insert(container);
+            }
+        }
+
+        if (formsOrig.empty()) return;
+
+        auto strFormsSwap = stringSplit(splitForms[1], ',');
+        std::set<RE::TESForm*> formsSwap;
+
+        for (auto& strForm : strFormsSwap) {
+            RE::TESForm* container = nullptr;
+            if (auto form = po3::FindForm(strForm.c_str())) {
+                if (form->As<RE::TESContainer>()) container = form;
+            } else if (auto ref = form->As<RE::TESObjectREFR>()) {
+                if (auto base = ref->GetBaseObject()) {
+                    if (base->As<RE::TESContainer>()) container = form;
+                }
+            }
+            if (container) {
+                if (!g_Data.loot->mapContainerCopy.contains(container))
+                    formsSwap.insert(container);
+            }
+        }
+
+        //Just use the first
+
+        for (auto i : formsSwap) {
+            mapSwaps.insert({i, *formsOrig.begin()});
+            //if (!mapSwaps.contains(i))
+            //    mapSwaps[i] = *formsOrig.begin();
+        }
+    }
+
+    void ImportBOSFile(std::unordered_map<RE::TESForm*, RE::TESForm*>& mapSwaps, std::filesystem::path path) {
+        // Code adapted from BOS itself https://github.com/powerof3/BaseObjectSwapper/blob/master/src/Manager.cpp
+
+        CSimpleIniA ini;
+        ini.SetUnicode();
+        ini.SetMultiKey();
+        ini.SetAllowKeyOnly();
+
+        if (const auto rc = ini.LoadFile(path.c_str()); rc < 0) {
+            logger::error("\tCouldn't read INI: {}", path.generic_string().c_str());
+            return;
+        }
+
+        CSimpleIniA::TNamesDepend sections;
+        ini.GetAllSections(sections);
+        sections.sort(CSimpleIniA::Entry::LoadOrder());
+
+        for (auto& [_section, comment, keyOrder] : sections) {
+            std::string section = _section;
+            if (section.contains('|')) {
+                if (!g_Config.bEnableBOSFromConditional) continue;
+
+                auto splitSection = stringSplit(section, '|', 1);
+                if (splitSection.size() < 1) continue;
+
+                CSimpleIniA::TNamesDepend values;
+                ini.GetAllKeys(section.c_str(), values);
+                values.sort(CSimpleIniA::Entry::LoadOrder());
+
+                if (!values.empty()) {
+                    if (splitSection[0] == "Forms") {
+                        //logger::info("\t\t\t{} form swaps found", values.size());
+                        for (const auto& key : values) {
+                            ImportBOSSwap(mapSwaps, key.pItem);
+                        }
+                    } else {
+                        // Unused by QAR
+                    }
+                }
+            } else {
+                CSimpleIniA::TNamesDepend values;
+                ini.GetAllKeys(section.c_str(), values);
+                values.sort(CSimpleIniA::Entry::LoadOrder());
+
+                if (!values.empty()) {
+                    if (section == "Transforms" || section == "Properties") {
+                        // Unused by QAR
+                    } else {
+                        if (section == "Forms" && !g_Config.bEnableBOSFromGeneric) continue;
+                        else if (section == "References" && !g_Config.bEnableBOSFromGeneric) continue;
+
+                        for (const auto& key : values) {
+                            ImportBOSSwap(mapSwaps, key.pItem);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+void QuickArmorRebalance::ImportFromBOS() {
+    if (!g_Config.bEnableBOSDetect) return;
+    if (!g_Data.loot) return;
+    if (!GetModuleHandle(L"po3_BaseObjectSwapper.dll")) return;
+
+    logger::trace("Importing from BOS");
+
+    auto path = std::filesystem::current_path() / "Data/";
+    if (!std::filesystem::exists(path)) return;
+
+    if (!std::filesystem::is_directory(path)) {
+        logger::error("Is not a directory ({})", path.generic_string());
+        return;
+    }
+
+    std::unordered_map<RE::TESForm*, RE::TESForm*> mapSwaps;
+
+    for (const auto& entry : std::filesystem::directory_iterator(path)) {
+        if (!entry.is_regular_file()) continue;
+        if (_stricmp(entry.path().extension().generic_string().c_str(), ".ini")) continue;
+        if (auto stem = entry.path().filename().stem().generic_string(); stem.size() < 5 || strcmp(&stem[stem.size() - 5], "_SWAP")) continue;  // BOS only accepts capital _SWAP
+
+        logger::trace("Reading BOS file {}", entry.path().generic_string().c_str());
+        ImportBOSFile(mapSwaps, entry.path());
+    }
+
+    for (auto& i : mapSwaps) {
+        logger::trace("{} ({}) -> {} ({})", i.second->GetName(), QARFormID(i.second), i.first->GetName(), QARFormID(i.first));
+        g_Data.loot->mapContainerCopy[i.second].insert(i.first);
+    }
+
+    logger::info("{} new containers added to distribution from BOS", mapSwaps.size());
 }

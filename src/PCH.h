@@ -9,6 +9,8 @@
 #include "RE/Skyrim.h"
 #include "SKSE/SKSE.h"
 
+#include "SimpleIni.h"
+
 #include "rapidjson/document.h"
 
 #define TOML_EXCEPTIONS 0

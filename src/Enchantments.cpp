@@ -3,6 +3,17 @@
 #include "Config.h"
 #include "Data.h"
 
+bool QuickArmorRebalance::IsEnchanted(RE::TESBoundObject* obj) {
+    if (auto armor = obj->As<RE::TESObjectARMO>()) {
+        if (armor->formEnchanting) return true;
+    } else if (auto weapon = obj->As<RE::TESObjectWEAP>()) {
+        if (weapon->formEnchanting) return true;
+    }
+
+    return false;
+}
+
+
 namespace {
     using namespace QuickArmorRebalance;
 
@@ -158,7 +169,7 @@ namespace {
                                         if (!ls->HasType(RE::ExtraCharge::EXTRADATATYPE)) {
                                             auto pExtra = new RE::ExtraCharge();
                                             pExtra->charge = charge * std::powf(RNG_f(), 0.33f);
-                                            ls->Add(pExtra);                                     
+                                            ls->Add(pExtra);
                                         }
                                     }
                                 }

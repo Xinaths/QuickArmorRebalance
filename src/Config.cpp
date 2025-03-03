@@ -340,6 +340,11 @@ bool QuickArmorRebalance::Config::Load() {
             g_Config.bEnableDAVExports = config["integrations"]["enableDAVexports"].value_or(true);
             g_Config.bEnableDAVExportsAlways = config["integrations"]["enableDAVexportsalways"].value_or(false);
 
+            g_Config.bEnableBOSDetect = config["integrations"]["enableBOSdetect"].value_or(true);
+            g_Config.bEnableBOSFromGeneric = config["integrations"]["enableBOSfromgeneric"].value_or(true);
+            g_Config.bEnableBOSFromConditional = config["integrations"]["enableBOSfromconditional"].value_or(true);
+            g_Config.bEnableBOSFromReference = config["integrations"]["enableBOSfromreference"].value_or(true);
+
             LoadPermissions(g_Config.permLocal, config["localPermissions"]);
             LoadPermissions(g_Config.permShared, config["sharedPermissions"]);
 
@@ -1034,6 +1039,10 @@ void QuickArmorRebalance::Config::Save() {
          toml::table{
              {"enableDAVexports", g_Config.bEnableDAVExports},
              {"enableDAVexportsalways", g_Config.bEnableDAVExportsAlways},
+             {"enableBOSdetect", g_Config.bEnableBOSDetect},
+             {"enableBOSfromgeneric", g_Config.bEnableBOSFromGeneric},
+             {"enableBOSfromconditional", g_Config.bEnableBOSFromConditional},
+             {"enableBOSfromreference", g_Config.bEnableBOSFromReference},
          }},
         {"localPermissions", SavePermissions(g_Config.permLocal)},
         {"sharedPermissions", SavePermissions(g_Config.permShared)},

@@ -10,4 +10,6 @@ namespace QuickArmorRebalance {
     bool ExportToSkypatcher(const std::vector<RE::TESBoundObject*>& items, const KeywordChangeMap& map, std::filesystem::path filename);
 
     void ImportFromDAV();
+
+    void ImportFromBOS();
 }

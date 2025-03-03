@@ -113,23 +113,41 @@ struct ItemFilter {
     int slotMode = SlotsAny;
     ArmorSlots slots = 0;
 
-    bool bFilterChanged = true;
-    bool bUnmodified = false;
+    bool bArmorClothing = true;
+    bool bArmorLight = true;
+    bool bArmorHeavy = true;
+
+    int bModified = 2;
+    int bEnchanted = 2;
 
     bool Pass(RE::TESBoundObject* obj) const {
         // Run these fastest to slowest
-        if (nType) {
-            switch (nType) {
-                case ItemType_Armor:
-                    if (!obj->As<RE::TESObjectARMO>()) return false;
-                    break;
-                case ItemType_Weapon:
-                    if (!obj->As<RE::TESObjectWEAP>()) return false;
-                    break;
-                case ItemType_Ammo:
-                    if (!obj->As<RE::TESAmmo>()) return false;
-                    break;
-            }
+        switch (nType) {
+            case ItemType_Armor:
+                if (!obj->As<RE::TESObjectARMO>()) return false;
+            case ItemType_All: {
+                if (auto armor = obj->As<RE::TESObjectARMO>()) {
+                    switch (armor->bipedModelData.armorType.get()) {
+                        case RE::BIPED_MODEL::ArmorType::kClothing:
+                            if (!bArmorClothing) return false;
+                            break;
+                        case RE::BIPED_MODEL::ArmorType::kLightArmor:
+                            if (!bArmorLight) return false;
+                            break;
+                        case RE::BIPED_MODEL::ArmorType::kHeavyArmor:
+                            if (!bArmorHeavy) return false;
+                            break;
+                        default:
+                            return false;
+                    }
+                }
+            } break;
+            case ItemType_Weapon:
+                if (!obj->As<RE::TESObjectWEAP>()) return false;
+                break;
+            case ItemType_Ammo:
+                if (!obj->As<RE::TESAmmo>()) return false;
+                break;
         }
 
         if (*nameFilter && !StringContainsI(obj->GetName(), nameFilter)) return false;
@@ -152,7 +170,8 @@ struct ItemFilter {
                 return false;
         }
 
-        if (bUnmodified && (g_Data.modifiedItems.contains(obj) || g_Data.modifiedItemsShared.contains(obj))) return false;
+        if (bModified != 2 && !!bModified != (g_Data.modifiedItems.contains(obj) || g_Data.modifiedItemsShared.contains(obj))) return false;
+        if (bEnchanted != 2 && !!bEnchanted != IsEnchanted(obj)) return false;
 
         return true;
     }
@@ -679,8 +698,7 @@ struct RecipeConditionals {
         }
 
         void Sort(std::vector<RE::TESForm*>& ls) {
-            std::sort(ls.begin(), ls.end(),
-                      [](RE::TESForm* const a, RE::TESForm* const b) { return _stricmp(a->GetName(), b->GetName()) < 0; });
+            std::sort(ls.begin(), ls.end(), [](RE::TESForm* const a, RE::TESForm* const b) { return _stricmp(a->GetName(), b->GetName()) < 0; });
         }
 
         void Sort() {
@@ -705,7 +723,7 @@ struct RecipeConditionals {
                 switch (cond->data.functionData.function.get()) {
                     case RE::FUNCTION_DATA::FunctionID::kGetItemCount:
                     case RE::FUNCTION_DATA::FunctionID::kGetEquipped:
-                        if (obj->requiredItems.CountObjectsInContainer((RE::TESBoundObject*)cond->data.functionData.params[0])==0)
+                        if (obj->requiredItems.CountObjectsInContainer((RE::TESBoundObject*)cond->data.functionData.params[0]) == 0)
                             tempitems.push_back(cond->data.functionData.params[0]);
                         break;
                     case RE::FUNCTION_DATA::FunctionID::kHasPerk:
@@ -728,7 +746,6 @@ struct RecipeConditionals {
             convert.Clear();
         }
 
-
         void Sort() {
             orig.Sort();
             convert.Sort();
@@ -741,8 +758,7 @@ struct RecipeConditionals {
     bool bListsBuilt = false;
     bool bRefreshed = false;
 
-
-    void AddFromItem(RE::TESBoundObject* item, Conditionals PurposeConditionals::* which) {
+    void AddFromItem(RE::TESBoundObject* item, Conditionals PurposeConditionals::*which) {
         if (auto cond = MapFindOrNull(g_Data.temperRecipe, item)) {
             (temper.*which).AddFrom(cond);
         }
@@ -771,7 +787,7 @@ struct RecipeConditionals {
 };
 
 void QuickArmorRebalance::RenderUI() {
-    const auto colorChanged = IM_COL32(0, 255, 0, 255);
+    const auto colorChanged = IM_COL32(100, 255, 100, 255);
     const auto colorChangedPartial = IM_COL32(0, 150, 0, 255);
     const auto colorChangedShared = IM_COL32(255, 255, 0, 255);
     const auto colorDeleted = IM_COL32(255, 0, 0, 255);
@@ -931,6 +947,9 @@ void QuickArmorRebalance::RenderUI() {
 
                             // ImGui::SetNextItemWidth(200);
                             ImGui::InputText("##ModNameFilter", strModFilter, sizeof(strModFilter) - 1, ImGuiInputTextFlags_AutoSelectAll);
+                            if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+                                strModFilter[0] = '\0';
+                            }
 
                             if (!nModFilter) {
                                 for (int i = 0; strModSpecial[i]; i++) {
@@ -1013,6 +1032,9 @@ void QuickArmorRebalance::RenderUI() {
 
                         ImGui::SetNextItemWidth(200.0f);
                         ImGui::Combo("##FilterMods", &nModFilter, modFilterDesc, IM_ARRAYSIZE(modFilterDesc));
+                        if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+                            nModFilter = 0;
+                        }
                         ImGui::EndTable();
                     }
 
@@ -1024,6 +1046,11 @@ void QuickArmorRebalance::RenderUI() {
                     if (ImGui::InputTextWithHint("##ItemFilter", LZ("by Name"), filter.nameFilter, sizeof(filter.nameFilter) - 1, ImGuiInputTextFlags_AutoSelectAll))
                         g_filterRound++;
 
+                    if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+                        filter.nameFilter[0] = '\0';
+                        g_filterRound++;
+                    }
+
                     ImGui::SameLine();
                     ImGui::SetNextItemWidth(80);
 
@@ -1033,7 +1060,7 @@ void QuickArmorRebalance::RenderUI() {
                         popCol++;
                     }
 
-                    if (ImGui::BeginCombo("##Typefilter", filter.nType ? itemTypes[filter.nType] : LZ("by Type"))) {
+                    if (ImGui::BeginCombo("##Typefilter", filter.nType ? itemTypes[filter.nType] : LZ("by Type"), ImGuiComboFlags_HeightLarge)) {
                         ImGui::PopStyleColor(popCol);
                         popCol = 0;
 
@@ -1042,14 +1069,28 @@ void QuickArmorRebalance::RenderUI() {
                                 filter.nType = i;
                                 g_filterRound++;
                             }
+
+                            if (i == ItemFilter::ItemType_Armor) {
+                                ImGui::Indent();
+                                if (ImGui::Checkbox(LZ("Clothing"), &filter.bArmorClothing)) g_filterRound++;
+                                if (ImGui::Checkbox(LZ("Light"), &filter.bArmorLight)) g_filterRound++;
+                                if (ImGui::Checkbox(LZ("Heavy"), &filter.bArmorHeavy)) g_filterRound++;
+                                ImGui::Unindent();
+                            }
                         }
                         ImGui::EndCombo();
                     }
+                    if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+                        filter.nType = ItemFilter::ItemType_All;
+                        filter.bArmorClothing = filter.bArmorLight = filter.bArmorHeavy = true;
+                        g_filterRound++;
+                    }
+
                     ImGui::PopStyleColor(popCol);
                     popCol = 0;
 
                     ImGui::SameLine();
-                    ImGui::SetNextItemWidth(120);
+                    ImGui::SetNextItemWidth(100);
 
                     popCol = 0;
                     if (!filter.slots) {
@@ -1087,14 +1128,61 @@ void QuickArmorRebalance::RenderUI() {
                             }
                             ImGui::EndTable();
                         }
-
                         ImGui::EndCombo();
                     }
+
+                    if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+                        filter.slots = 0;
+                        g_filterRound++;
+                    }
+
                     ImGui::PopStyleColor(popCol);
                     popCol = 0;
 
                     ImGui::SameLine();
-                    if (ImGui::Checkbox(LZ("Unmodified"), &filter.bUnmodified)) g_filterRound++;
+                    // if (ImGui::Checkbox(LZ("Unmodified"), &filter.bUnmodified)) g_filterRound++;
+                    ImGui::SetNextItemWidth(60);
+
+                    struct TriStateCheckbox {
+                        static bool Insert(const char* label, int* state) {
+                            static const int triState[] = {0, -1, 2};
+                            int local = triState[*state];
+                            bool bRet = false;
+                            if (ImGui::CheckboxFlags(label, &local, 3)) {
+                                *state = (1 + *state) % 3;
+                                bRet = true;
+                            }
+
+                            if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+                                *state = 2;
+                                bRet = true;
+                            }
+
+                            return bRet;
+                        }
+                    };
+
+                    if (filter.bModified != 2 || filter.bEnchanted != 2) {
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+                        popCol++;
+                    }
+
+                    if (ImGui::BeginCombo("##OtherFilters", LZ("Other"))) {
+                        ImGui::PopStyleColor(popCol);
+                        popCol = 0;
+
+                        if (TriStateCheckbox::Insert(LZ("Modified"), &filter.bModified)) g_filterRound++;
+                        if (TriStateCheckbox::Insert(LZ("Enchanted"), &filter.bEnchanted)) g_filterRound++;
+
+                        ImGui::EndCombo();
+                    }
+                    if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+                        filter.bModified = 2;
+                        filter.bEnchanted = 2;
+                        g_filterRound++;
+                    }
+                    ImGui::PopStyleColor(popCol);
+                    popCol = 0;
 
                     if (ImGui::BeginTable("Convert Table", 3, ImGuiTableFlags_SizingFixedFit)) {
                         ImGui::TableSetupColumn("ConvertCol1");
@@ -1547,7 +1635,7 @@ void QuickArmorRebalance::RenderUI() {
                         using TypePtr = std::vector<RE::TESForm*> RecipeConditionals::Conditionals::*;
 
                         static void ReqChecklist(const char* id, ArmorChangeParams::RecipeOptions& opts, const RecipeConditionals::Conditionals& conds, TypePtr type,
-                                                 bool bDisabled) { 
+                                                 bool bDisabled) {
                             const auto& ls = conds.*type;
                             if (ls.empty()) return;
 
@@ -1571,8 +1659,7 @@ void QuickArmorRebalance::RenderUI() {
                         }
 
                         static void DrawCombo(const char* name, ArmorChangeParams& params, ArmorChangeParams::RecipeOptions& opts, int& mode,
-                                              const RecipeConditionals::PurposeConditionals& conds,
-                                              TypePtr type) {
+                                              const RecipeConditionals::PurposeConditionals& conds, TypePtr type) {
                             const char* label[] = {"Replace", "Keep", "Remove"};
                             ImGui::PushID(name);
                             if (ImGui::BeginCombo(LZ(name), LZ(label[mode]))) {
@@ -1791,22 +1878,64 @@ void QuickArmorRebalance::RenderUI() {
                             ImGui::EndDisabled();
 
                             if (ImGui::BeginMenu(LZ("Select ..."))) {
-                                if (ImGui::Selectable(LZ("Armor"))) {
-                                    selectedItems.clear();
-                                    for (auto i : data.filteredItems) {
-                                        if (auto armor = i->As<RE::TESObjectARMO>()) selectedItems.insert(armor);
+                                std::function<bool(RE::TESBoundObject*)> cond;
+
+                                if (ImGui::BeginMenu(LZ("Armor"))) {
+                                    if (ImGui::Selectable(LZ("Any"))) {
+                                        cond = [](RE::TESBoundObject* obj) { return obj->As<RE::TESObjectARMO>(); };
                                     }
+                                    if (ImGui::Selectable(LZ("Clothing"))) {
+                                        cond = [](RE::TESBoundObject* obj) {
+                                            auto armor = obj->As<RE::TESObjectARMO>();
+                                            return armor && armor->bipedModelData.armorType == RE::BIPED_MODEL::ArmorType::kClothing;
+                                        };
+                                    }
+                                    if (ImGui::Selectable(LZ("Light"))) {
+                                        cond = [](RE::TESBoundObject* obj) {
+                                            auto armor = obj->As<RE::TESObjectARMO>();
+                                            return armor && armor->bipedModelData.armorType == RE::BIPED_MODEL::ArmorType::kLightArmor;
+                                        };
+                                    }
+                                    if (ImGui::Selectable(LZ("Heavy"))) {
+                                        cond = [](RE::TESBoundObject* obj) {
+                                            auto armor = obj->As<RE::TESObjectARMO>();
+                                            return armor && armor->bipedModelData.armorType == RE::BIPED_MODEL::ArmorType::kHeavyArmor;
+                                        };
+                                    }
+
+                                    ImGui::EndMenu();
                                 }
                                 if (ImGui::Selectable(LZ("Weapons"))) {
-                                    selectedItems.clear();
-                                    for (auto i : data.filteredItems) {
-                                        if (auto weap = i->As<RE::TESObjectWEAP>()) selectedItems.insert(weap);
-                                    }
+                                    cond = [](RE::TESBoundObject* obj) { return obj->As<RE::TESObjectWEAP>(); };
                                 }
                                 if (ImGui::Selectable(LZ("Ammo"))) {
-                                    selectedItems.clear();
-                                    for (auto i : data.filteredItems) {
-                                        if (auto ammo = i->As<RE::TESAmmo>()) selectedItems.insert(ammo);
+                                    cond = [](RE::TESBoundObject* obj) { return obj->As<RE::TESAmmo>(); };
+                                }
+
+                                ImGui::Separator();
+                                if (ImGui::Selectable(LZ("Enchanted"))) {
+                                    cond = [](RE::TESBoundObject* obj) { return IsEnchanted(obj); };
+                                }
+                                if (ImGui::Selectable(LZ("Unenchanted"))) {
+                                    cond = [](RE::TESBoundObject* obj) { return !IsEnchanted(obj); };
+                                }
+
+                                if (cond) {
+                                    if (isShiftDown) {
+                                        for (auto i : data.filteredItems) {
+                                            if (cond(i)) selectedItems.insert(i);
+                                        }
+                                    } else if (isCtrlDown || selectedItems.size() > 1) {
+                                        std::set<RE::TESBoundObject*> copy = std::move(selectedItems);
+
+                                        for (auto i : copy) {
+                                            if (cond(i)) selectedItems.insert(i);
+                                        }
+                                    } else {
+                                        selectedItems.clear();
+                                        for (auto i : data.filteredItems) {
+                                            if (cond(i)) selectedItems.insert(i);
+                                        }
                                     }
                                 }
 
@@ -1858,7 +1987,7 @@ void QuickArmorRebalance::RenderUI() {
                             ImGui::BeginGroup();
 
                             bool isChecked = !uncheckedItems.contains(i);
-                            ImGui::PushID(name.c_str());
+                            ImGui::PushID(i->GetFormID());
 
                             if (isChecked && isModified) hasModifiedItems = true;
 
@@ -2380,8 +2509,9 @@ void QuickArmorRebalance::RenderUI() {
                     ImGui::Checkbox(LZ("Use recipes from as similar item if primary item is lacking"), &g_Config.bUseSecondaryRecipes);
 
                     ImGui::Checkbox(LZ("Show all recipe requirements"), &g_Config.bShowAllRecipeConditions);
-                    MakeTooltip(LZ("If checked, only requirements with multiples of the same type will be listed.\n"
-                        "For example, a recipe that requires two seperate perks to craft."));
+                    MakeTooltip(
+                        LZ("If checked, only requirements with multiples of the same type will be listed.\n"
+                           "For example, a recipe that requires two seperate perks to craft."));
 
                     ImGui::Checkbox(LZ("Enable smelting recipes"), &g_Config.bEnableSmeltingRecipes);
 
@@ -2464,6 +2594,18 @@ void QuickArmorRebalance::RenderUI() {
                 }
 
                 if (ImGui::BeginTabItem(LZ("Integrations"))) {
+                    ImGui::SeparatorText(LZ("Base Object Swapper"));
+                    ImGui::Checkbox(LZ("Automatically infer new containers from Base Object Swapper"), &g_Config.bEnableBOSDetect);
+                    ImGui::BeginDisabled(!g_Config.bEnableBOSDetect);
+                    ImGui::Indent();
+
+                    ImGui::Checkbox(LZ("From generic swaps"), &g_Config.bEnableBOSFromGeneric);
+                    ImGui::Checkbox(LZ("From conditional swaps"), &g_Config.bEnableBOSFromConditional);
+                    ImGui::Checkbox(LZ("From specific reference swaps"), &g_Config.bEnableBOSFromReference);
+
+                    ImGui::Unindent();
+                    ImGui::EndDisabled();
+
                     ImGui::SeparatorText(LZ("Dynamic Armor Variants"));
                     ImGui::Checkbox(LZ("Enable exports to DAV"), &g_Config.bEnableDAVExports);
                     ImGui::SameLine();

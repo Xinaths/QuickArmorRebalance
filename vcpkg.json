@@ -9,6 +9,7 @@
       "name": "imgui",
       "version>=": "1.91.0",
       "features": [ "dx11-binding", "win32-binding", "freetype" ]
-    }
+    },
+    "simpleini"
   ]
 }

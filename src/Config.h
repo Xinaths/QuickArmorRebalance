@@ -296,6 +296,11 @@ namespace QuickArmorRebalance {
         bool bEnableDAVExports = true;
         bool bEnableDAVExportsAlways = false;
 
+        bool bEnableBOSDetect = true;
+        bool bEnableBOSFromGeneric = true;
+        bool bEnableBOSFromReference = true;
+        bool bEnableBOSFromConditional = true;
+
         bool bShowKeywordSlots = true;
         bool bReorderKeywordsForRelevance = true;
         bool bEquipPreviewForKeywords = true;

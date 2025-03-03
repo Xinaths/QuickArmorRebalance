@@ -53,6 +53,9 @@ target_include_directories(${PROJECT_NAME} PRIVATE include)
 find_package(ImGui CONFIG REQUIRED)
 target_link_libraries(${PROJECT_NAME} PRIVATE imgui::imgui)
 
+find_path(SIMPLEINI_INCLUDE_DIRS "SimpleIni.h")
+target_include_directories(${PROJECT_NAME} PRIVATE ${SIMPLEINI_INCLUDE_DIRS})
+
 #find_package(ICU 74.2 REQUIRED i18n uc data)
 #target_link_libraries(${PROJECT_NAME} PRIVATE ICU::i18n ICU::uc ICU::data)
 

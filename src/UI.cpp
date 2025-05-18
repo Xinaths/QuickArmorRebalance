@@ -792,6 +792,8 @@ struct RecipeConditionals {
 };
 
 void QuickArmorRebalance::RenderUI() {
+    const auto colorTextDefault = ImGui::GetStyleColorVec4(ImGuiCol_Text);
+
     const auto colorChanged = IM_COL32(100, 255, 100, 255);
     const auto colorChangedPartial = IM_COL32(0, 150, 0, 255);
     const auto colorChangedShared = IM_COL32(255, 255, 0, 255);
@@ -2191,9 +2193,72 @@ void QuickArmorRebalance::RenderUI() {
                             ImGui::PopID();
                             ImGui::EndGroup();
 
-                            if (!curMod && ImGui::IsItemHovered(ImGuiHoveredFlags_Stationary)) {
+                            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal | ImGuiHoveredFlags_NoSharedDelay)) {
                                 if (ImGui::BeginTooltip()) {
+                                    ImGui::PushStyleColor(ImGuiCol_Text, colorTextDefault);
+
                                     if (!curMod) ImGui::Text(LZ("File: %s"), i->GetFile(0)->fileName);
+
+                                    if (auto armor = i->As<RE::TESObjectARMO>()) {
+                                        static const char* strArmorType[] = {"Light Armor", "Heavy Armor", "Clothing"};
+                                        int nType = (int)armor->bipedModelData.armorType.get();
+                                        if (nType >= 0 && nType <= 2) ImGui::Text(LZ(strArmorType[nType]));
+
+                                        if (params.curve) {
+                                            ImGui::Text("Slots:");
+                                            ImGui::Indent();
+                                            auto slotsCur = (ArmorSlots)armor->GetSlotMask();
+                                            auto slotsOrig = MapFindOr(g_Data.modifiedArmorSlots, armor, slotsCur);
+                                            auto slotsCombined = slotsCur | slotsOrig;
+
+                                            if (slotsCombined) {
+                                                for (int slot = 0; slot < 32; slot++) {
+                                                    if (slotsCombined & (1 << slot)) {
+                                                        if (!(slotsCur & (1 << slot))) {
+                                                            ImGui::PushStyleColor(ImGuiCol_Text, colorDeleted);
+                                                            ImGui::Text(LZFormat("-Slot {} - {}", slot + 30, LZ(params.curve->slotName[slot].c_str())).c_str());
+                                                            ImGui::PopStyleColor();
+                                                        } else if (!(slotsOrig & (1 << slot))) {
+                                                            ImGui::PushStyleColor(ImGuiCol_Text, colorChanged);
+                                                            ImGui::Text(LZFormat("+Slot {} - {}", slot + 30, LZ(params.curve->slotName[slot].c_str())).c_str());
+                                                            ImGui::PopStyleColor();
+                                                        } else
+                                                            ImGui::Text(LZFormat("Slot {} - {}", slot + 30, LZ(params.curve->slotName[slot].c_str())).c_str());
+                                                    }
+                                                }
+                                            } else
+                                                ImGui::Text(LZ("None"));
+                                            ImGui::Unindent();
+
+                                            if (armor->formEnchanting) ImGui::Text(LZFormat("Enchantment: {}", armor->formEnchanting->GetFullName()).c_str());
+
+                                            if (armor->numKeywords > 0) {
+                                                ImGui::Text(LZ("Keywords:"));
+                                                ImGui::Indent();
+                                                for (unsigned int n = 0; n < armor->numKeywords; n++)
+                                                    if (armor->keywords[n]) ImGui::Text(armor->keywords[n]->GetFormEditorID());
+                                                ImGui::Unindent();
+                                            }
+                                        }
+
+                                    } else if (auto weapon = i->As<RE::TESObjectWEAP>()) {
+                                        static const char* strWeaponType[] = {"Fist",     "1H Sword", "1H Dagger", "1H Axe", "1H Mace",
+                                                                              "2H Sword", "2H Axe",   "Bow",       "Staff",  "Crossbow"};
+                                        int nType = (int)weapon->GetWeaponType();
+                                        if (nType >= 0 && nType <= 9) ImGui::Text(LZ(strWeaponType[nType]));
+
+                                        if (weapon->formEnchanting) ImGui::Text(LZFormat("Enchantment: {}", weapon->formEnchanting->GetFullName()).c_str());
+
+                                        if (weapon->numKeywords > 0) {
+                                            ImGui::Text(LZ("Keywords:"));
+                                            ImGui::Indent();
+                                            for (unsigned int n = 0; n < weapon->numKeywords; n++)
+                                                if (weapon->keywords[n]) ImGui::Text(weapon->keywords[n]->GetFormEditorID());
+                                            ImGui::Unindent();
+                                        }
+                                    }
+
+                                    ImGui::PopStyleColor();
                                     ImGui::EndTooltip();
                                 }
                             }

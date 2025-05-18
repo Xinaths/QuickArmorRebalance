@@ -58,6 +58,8 @@ bool MenuItemConfirmed(const char* str) {
     return bRet;
 }
 
+bool DoClearFilter() { return ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right); }
+
 std::vector<ModData*> GetFilteredMods(int nModFilter, const char* nameFilter) {
     std::vector<ModData*> list;
     list.reserve(g_Data.sortedMods.size());
@@ -950,7 +952,7 @@ void QuickArmorRebalance::RenderUI() {
 
                             // ImGui::SetNextItemWidth(200);
                             ImGui::InputText("##ModNameFilter", strModFilter, sizeof(strModFilter) - 1, ImGuiInputTextFlags_AutoSelectAll);
-                            if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+                            if (DoClearFilter()) {
                                 strModFilter[0] = '\0';
                             }
 
@@ -1035,7 +1037,7 @@ void QuickArmorRebalance::RenderUI() {
 
                         ImGui::SetNextItemWidth(200.0f);
                         ImGui::Combo("##FilterMods", &nModFilter, modFilterDesc, IM_ARRAYSIZE(modFilterDesc));
-                        if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+                        if (DoClearFilter()) {
                             nModFilter = 0;
                         }
                         ImGui::EndTable();
@@ -1049,7 +1051,7 @@ void QuickArmorRebalance::RenderUI() {
                     if (ImGui::InputTextWithHint("##ItemFilter", LZ("by Name"), filter.nameFilter, sizeof(filter.nameFilter) - 1, ImGuiInputTextFlags_AutoSelectAll))
                         g_filterRound++;
 
-                    if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+                    if (DoClearFilter()) {
                         filter.nameFilter[0] = '\0';
                         g_filterRound++;
                     }
@@ -1083,7 +1085,7 @@ void QuickArmorRebalance::RenderUI() {
                         }
                         ImGui::EndCombo();
                     }
-                    if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+                    if (DoClearFilter()) {
                         filter.nType = ItemFilter::ItemType_All;
                         filter.bArmorClothing = filter.bArmorLight = filter.bArmorHeavy = true;
                         g_filterRound++;
@@ -1134,7 +1136,7 @@ void QuickArmorRebalance::RenderUI() {
                         ImGui::EndCombo();
                     }
 
-                    if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+                    if (DoClearFilter()) {
                         filter.slots = 0;
                         g_filterRound++;
                     }
@@ -1156,7 +1158,7 @@ void QuickArmorRebalance::RenderUI() {
                                 bRet = true;
                             }
 
-                            if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+                            if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
                                 *state = 2;
                                 bRet = true;
                             }
@@ -1179,7 +1181,7 @@ void QuickArmorRebalance::RenderUI() {
 
                         ImGui::EndCombo();
                     }
-                    if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+                    if (DoClearFilter()) {
                         filter.bModified = 2;
                         filter.bEnchanted = 2;
                         g_filterRound++;

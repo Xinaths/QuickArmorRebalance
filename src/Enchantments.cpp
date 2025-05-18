@@ -154,8 +154,8 @@ namespace {
                 auto entry = item.second.second.get();
                 if (entry->extraLists) {
                     if (true) {
-                        for (auto& ls : *entry->extraLists) {
-                            if (ls->HasType(RE::ExtraEnchantment::EXTRADATATYPE)) continue;
+                        for (auto ls : *entry->extraLists) {
+                            if (!ls || ls->HasType(RE::ExtraEnchantment::EXTRADATATYPE)) continue;
 
                             if (ShouldEnchant(entry->object, contEnchChance, level)) {
                                 int charge = 0;

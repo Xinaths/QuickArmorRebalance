@@ -534,7 +534,7 @@ namespace {
                         // Unused by QAR
                     } else {
                         if (section == "Forms" && !g_Config.bEnableBOSFromGeneric) continue;
-                        else if (section == "References" && !g_Config.bEnableBOSFromGeneric) continue;
+                        else if (section == "References" && !g_Config.bEnableBOSFromReference) continue;
 
                         for (const auto& key : values) {
                             ImportBOSSwap(mapSwaps, key.pItem);

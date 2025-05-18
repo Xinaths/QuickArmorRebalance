@@ -112,6 +112,9 @@ namespace QuickArmorRebalance {
         ench.rate.bModify = false;
         ench.pool = nullptr;
 
+        ench.strip = false;
+        ench.stripArmor = ench.stripWeapons = ench.stripStaves = false;
+
         value.bModify = false;
         temper.bModify = false;
         craft.bModify = false;
@@ -147,6 +150,9 @@ void LoadPermissions(QuickArmorRebalance::Permissions& p, toml::node_view<toml::
     p.temper.bRemove = tbl["removeTemper"].value_or(true);
     p.temper.bCreate = tbl["createTemper"].value_or(true);
     p.temper.bFree = tbl["freeTemper"].value_or(true);
+    p.bStripEnchArmor = tbl["stripEnchArmor"].value_or(true);
+    p.bStripEnchWeapons = tbl["stripEnchWeapons"].value_or(true);
+    p.bStripEnchStaves = tbl["stripEnchStaves"].value_or(true);
 }
 
 bool QuickArmorRebalance::Config::Load() {
@@ -229,6 +235,11 @@ bool QuickArmorRebalance::Config::Load() {
             g_Config.acParams.ench.rate.bModify = config["modifyEnchRate"].value_or(true);
 
             g_Config.acParams.value.bModify = config["modifyValue"].value_or(true);
+
+            g_Config.acParams.ench.strip = config["enchStrip"].value_or(false);
+            g_Config.acParams.ench.stripArmor = config["enchStripArmor"].value_or(true);
+            g_Config.acParams.ench.stripWeapons = config["enchStripWeapons"].value_or(true);
+            g_Config.acParams.ench.stripStaves = config["enchStripStaves"].value_or(true);
 
             auto armorSet = config["armorset"];
             if (armorSet.is_string()) {
@@ -950,6 +961,9 @@ toml::table SavePermissions(const QuickArmorRebalance::Permissions& p) {
         {"modifyTemper", p.temper.bModify},
         {"createTemper", p.temper.bCreate},
         {"freeTemper", p.temper.bFree},
+        {"stripEnchArmor", p.bStripEnchArmor},
+        {"stripEnchWeapons", p.bStripEnchWeapons},
+        {"stripEnchStaves", p.bStripEnchStaves},
     };
 }
 
@@ -986,6 +1000,10 @@ void QuickArmorRebalance::Config::Save() {
         {"modifyEnchPower", g_Config.acParams.ench.power.bModify},
         {"modifyEnchRate", g_Config.acParams.ench.rate.bModify},
         {"modifyValue", g_Config.acParams.value.bModify},
+        {"enchStrip", g_Config.acParams.ench.strip},
+        {"enchStripArmor", g_Config.acParams.ench.stripArmor},
+        {"enchStripWeapons", g_Config.acParams.ench.stripWeapons},
+        {"enchStripStaves", g_Config.acParams.ench.stripStaves},
         {"armorset", g_Config.acParams.armorSet ? g_Config.acParams.armorSet->name : "error"},
         {"curve", iCurve->first},
         {"temper", CraftingSettings(g_Config.acParams.temper)},

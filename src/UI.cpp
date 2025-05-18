@@ -453,6 +453,9 @@ void PermissionsChecklist(const char* id, Permissions& p) {
     ImGui::Checkbox(LZ("Create temper recipes"), &p.temper.bCreate);
     ImGui::Checkbox(LZ("Free temper recipes"), &p.temper.bFree);
     ImGui::Checkbox(LZ("Remove temper recipes"), &p.temper.bRemove);
+    ImGui::Checkbox(LZ("Remove armor enchantments"), &p.bStripEnchArmor);
+    ImGui::Checkbox(LZ("Remove weapon enchantments"), &p.bStripEnchWeapons);
+    ImGui::Checkbox(LZ("Remove staff enchantments"), &p.bStripEnchStaves);
     ImGui::PopID();
 }
 
@@ -1599,6 +1602,20 @@ void QuickArmorRebalance::RenderUI() {
 
                                     ImGui::EndTable();
                                 }
+
+                                ImGui::PushID("StripEnch");
+                                ImGui::Checkbox(LZ("Remove preset enchantments from"), &params.ench.strip);
+                                MakeTooltip(LZ("Items that have a preset enchantment cannot receive random enchantments."));
+
+                                ImGui::BeginDisabled(!params.ench.strip);
+                                ImGui::SameLine();
+                                ImGui::Checkbox(LZ("Armor"), &params.ench.stripArmor);
+                                ImGui::SameLine();
+                                ImGui::Checkbox(LZ("Weapons"), &params.ench.stripWeapons);
+                                ImGui::SameLine();
+                                ImGui::Checkbox(LZ("Staves"), &params.ench.stripStaves);
+                                ImGui::EndDisabled();
+                                ImGui::PopID();
 
                                 ImGui::EndTabItem();
                             }

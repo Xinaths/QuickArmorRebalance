@@ -279,6 +279,9 @@ int QuickArmorRebalance::MakeArmorChanges(const ArmorChangeParams& params) {
             ArmorSlots slotsRemapped = RemapSlots(slotsOrig, params);
             if (slotsRemapped != slotsOrig) changes.AddMember("slots", slotsRemapped, al);
 
+            if (params.ench.strip)
+                changes.AddMember("stripEnch", Value(params.ench.stripArmor), al);
+
         } else if (auto weap = i->As<RE::TESObjectWEAP>()) {
             AddModification("damage", params.weapon.damage, changes, al);
             AddModification("weight", params.weapon.weight, changes, al, false, kFlatWeightStore);
@@ -286,6 +289,12 @@ int QuickArmorRebalance::MakeArmorChanges(const ArmorChangeParams& params) {
             AddModification("stagger", params.weapon.stagger, changes, al);
             AddModification("value", params.value, changes, al);
 
+            if (params.ench.strip) {
+                if (weap->GetWeaponType() == RE::WEAPON_TYPE::kStaff)
+                    changes.AddMember("stripEnch", Value(params.ench.stripStaves), al);
+                else
+                    changes.AddMember("stripEnch", Value(params.ench.stripWeapons), al);
+            }
         } else if (auto ammo = i->As<RE::TESAmmo>()) {
             AddModification("damage", params.weapon.damage, changes, al);
             AddModification("weight", params.weapon.weight, changes, al, false, kFlatWeightStore);
@@ -919,6 +928,9 @@ bool QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, RE::FormID id, c
             }
         }
 
+        if (perm.bStripEnchArmor && GetJsonBool(changes, "stripEnch")) armor->formEnchanting = nullptr;
+
+
     } else if (auto weap = item->As<RE::TESObjectWEAP>()) {
         auto src = objSrc->As<RE::TESObjectWEAP>();
         if (!src) return true;
@@ -965,6 +977,13 @@ bool QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, RE::FormID id, c
                 MatchKeywords(weap, addKwds, [](RE::BGSKeyword* kw) { return g_Config.kwSetWeap.contains(kw); });
             }
         }
+
+        if (weap->GetWeaponType() == RE::WEAPON_TYPE::kStaff) {
+            if (perm.bStripEnchStaves && GetJsonBool(changes, "stripEnch")) weap->formEnchanting = nullptr;
+        } else {
+            if (perm.bStripEnchWeapons && GetJsonBool(changes, "stripEnch")) weap->formEnchanting = nullptr;
+        }
+
     } else if (auto ammo = item->As<RE::TESAmmo>()) {
         auto src = objSrc->As<RE::TESAmmo>();
         if (!src) return true;

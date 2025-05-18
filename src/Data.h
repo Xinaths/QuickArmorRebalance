@@ -26,6 +26,15 @@ namespace QuickArmorRebalance {
     bool ReadJSONFile(std::filesystem::path path, rapidjson::Document& doc, bool bEditing = true);
     bool WriteJSONFile(std::filesystem::path path, rapidjson::Document& doc);
 
+    inline int GetJsonBool(const rapidjson::Value& parent, const char* id, bool d = false) {
+        if (parent.HasMember(id)) {
+            const auto& v = parent[id];
+            if (v.IsBool()) return v.GetBool();
+        }
+
+        return d;
+    }
+
     inline int GetJsonInt(const rapidjson::Value& parent, const char* id, int min = 0, int max = 0, int d = 0) {
         if (parent.HasMember(id)) {
             const auto& v = parent[id];

@@ -107,6 +107,11 @@ namespace QuickArmorRebalance {
             EnchantmentPool* pool = nullptr;
             float poolChance = 50.0f;
             bool poolRestrict = false;
+
+            bool strip = false;
+            bool stripWeapons = true;
+            bool stripArmor = true;
+            bool stripStaves = true;
         } ench;
 
         SliderPair value;
@@ -176,6 +181,9 @@ namespace QuickArmorRebalance {
         bool bModifyWeapSpeed = true;
         bool bModifyWeapStagger = true;
         bool bModifyCustomKeywords = true;
+        bool bStripEnchArmor = true;
+        bool bStripEnchWeapons = true;
+        bool bStripEnchStaves = true;
 
         RecipePermissions crafting;
         RecipePermissions temper;

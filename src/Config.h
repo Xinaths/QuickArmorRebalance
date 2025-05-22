@@ -255,6 +255,9 @@ namespace QuickArmorRebalance {
 
         std::map<RE::EnchantmentItem*, EnchantmentRanks> mapEnchantments;
         std::map<std::size_t, EnchantmentPool> mapEnchPools;
+        std::map<std::size_t, WeightedEnchantments> mapStaffEnchPools;
+        std::set<RE::EnchantmentItem*> setStaffEnchs;
+
 
         std::set<const RE::TESForm*> recipeConditionBlacklist;
 
@@ -296,8 +299,9 @@ namespace QuickArmorRebalance {
 
         bool bShortcutEscCloseWindow = true;
 
-        bool bEnableEnchantmentDistrib = false;
+        bool bEnableEnchantmentDistrib = true;
         bool bEnchantRandomCharge = true;
+        bool bAlwaysEnchantStaves = true;
 
         bool bExportUntranslated = false;
 
@@ -352,6 +356,7 @@ namespace QuickArmorRebalance {
 
     extern Config g_Config;
 
+    void ConfigFileWarning(std::filesystem::path path, const char* str);
     void ImportKeywords(const RE::TESFile* mod, const char* tab, const std::set<RE::BGSKeyword*>& kws);
 
 }

@@ -67,7 +67,7 @@ namespace QuickArmorRebalance {
     inline std::string MakeLower(const char* str) { return MakeLower(std::string(str)); }
 
     static auto MapFindOr(const auto& map, const auto& val, const auto r) {
-        auto it = map.find(val);
+        const auto& it = map.find(val);
         if (it == map.end())
             return r;
         else
@@ -224,11 +224,12 @@ namespace QuickArmorRebalance {
     };
 
     using KeywordChangeMap = std::unordered_map<RE::BGSKeyword*, KeywordChanges>;
+    using WeightedEnchantments = std::map<RE::EnchantmentItem*, float>;
 
     struct EnchantmentPool {
         std::string name;
         std::string strContents;
-        std::map<RE::EnchantmentItem*, float> enchs;
+        WeightedEnchantments enchs;
     };
 
     struct EnchantParams : public EnchantProbability {
@@ -275,6 +276,7 @@ namespace QuickArmorRebalance {
         std::unordered_set<RE::TESBoundObject*> distItems;
 
         std::unordered_map<RE::TESBoundObject*, ObjEnchantParams> enchParams;
+        std::unordered_map<RE::TESBoundObject*, WeightedEnchantments*> staffEnchGroup;
 
         std::vector<RE::TESForm*> recipeConditions;
     };

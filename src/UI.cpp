@@ -2510,21 +2510,16 @@ void QuickArmorRebalance::RenderUI() {
 
                     ImGui::Checkbox(LZ("Prevent distribution of dynamic variants"), &g_Config.bPreventDistributionOfDynamicVariants);
 
-                    if (ImGui::Checkbox(LZ("[EXPERIMENTAL] Add random enchantments to distributed gear"), &g_Config.bEnableEnchantmentDistrib)) {
+                    if (ImGui::Checkbox(LZ("Add random enchantments to distributed gear"), &g_Config.bEnableEnchantmentDistrib)) {
                         if (g_Config.bEnableEnchantmentDistrib) InstallEnchantmentHooks();
                     }
-                    MakeTooltip(
-                        LZ("This is a new feature that will result in permanent changes in saved games.\n"
-                           "At the time of this release, there are no known issues, however\n"
-                           "out of an abundance of caution this is disabled by default.\n"
-                           "Please only enable this if you understand that there may be unknown issues\n"
-                           "and you are willing to take the risk of potential crashes or save game corruption."));
                     ImGui::SliderFloat(LZ("Adjust enchantment rates"), &g_Config.fEnchantRates, 0.0f, 300.0f, "%.0f%%", ImGuiSliderFlags_AlwaysClamp);
                     MakeTooltip(LZFormat("This is relative to the base enchantment rates, which are currently set between {:.0f}%% and {:.0f}%%.\n"
                                          "Other factors may modify this rate further.",
                                          100.0f * g_Config.enchChanceBase, 100.0f * (g_Config.enchChanceBase + g_Config.enchChanceBonusMax))
                                     .c_str());
                     ImGui::Checkbox(LZ("Randomize remaining charge on weapon enchantments"), &g_Config.bEnchantRandomCharge);
+                    ImGui::Checkbox(LZ("Always add enchantments to staves"), &g_Config.bAlwaysEnchantStaves);
 
                     ImGui::SeparatorText(LZ("Preferred Variants"));
                     MakeTooltip(

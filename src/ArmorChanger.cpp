@@ -979,9 +979,18 @@ bool QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, RE::FormID id, c
         }
 
         if (weap->GetWeaponType() == RE::WEAPON_TYPE::kStaff) {
-            if (perm.bStripEnchStaves && GetJsonBool(changes, "stripEnch")) weap->formEnchanting = nullptr;
+            if (perm.bStripEnchStaves && GetJsonBool(changes, "stripEnch")) {
+                weap->formEnchanting = nullptr;
+                weap->amountofEnchantment = 0;
+            }
+
+            if (auto enchGroup = MapFindOrNull(g_Data.staffEnchGroup, src))
+                g_Data.staffEnchGroup[weap] = enchGroup;
         } else {
-            if (perm.bStripEnchWeapons && GetJsonBool(changes, "stripEnch")) weap->formEnchanting = nullptr;
+            if (perm.bStripEnchWeapons && GetJsonBool(changes, "stripEnch")) {
+                weap->formEnchanting = nullptr;
+                weap->amountofEnchantment = 0;
+            }
         }
 
     } else if (auto ammo = item->As<RE::TESAmmo>()) {

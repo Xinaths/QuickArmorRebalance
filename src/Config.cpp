@@ -29,6 +29,9 @@ namespace QuickArmorRebalance {
     bool LoadArmorSet(BaseArmorSet& s, const Value& node);
     void LoadCustomKeywords(const Value& jsonCustomKWs);
 
+    void ConfigFileWarning(std::filesystem::path path, const char* str) { logger::warn("{}: {}", path.filename().generic_string(), str); }
+
+
     RE::TESObjectARMO* BaseArmorSet::FindMatching(RE::TESObjectARMO* w) const {
         auto slots = (ArmorSlots)w->GetSlotMask();
 
@@ -315,8 +318,9 @@ bool QuickArmorRebalance::Config::Load() {
             g_Config.bReorderKeywordsForRelevance = config["settings"]["reorderkeywords"].value_or(true);
             g_Config.bEquipPreviewForKeywords = config["settings"]["equipkeywordpreview"].value_or(true);
             g_Config.bExportUntranslated = config["settings"]["exportuntranslated"].value_or(false);
-            g_Config.bEnableEnchantmentDistrib = config["settings"]["distribenchants"].value_or(false);
+            g_Config.bEnableEnchantmentDistrib = config["settings"]["distenchants"].value_or(true);
             g_Config.bEnchantRandomCharge = config["settings"]["enchantrandomcharge"].value_or(true);
+            g_Config.bAlwaysEnchantStaves = config["settings"]["alwaysenchantstaves"].value_or(true);
             g_Config.fEnchantRates = config["settings"]["enchantrate"].value_or(100.0f);
             g_Config.bShowAllRecipeConditions = config["settings"]["allrecipereqs"].value_or(false);
 
@@ -471,7 +475,6 @@ bool QuickArmorRebalance::Config::Load() {
 }
 
 namespace {
-    void ConfigFileWarning(std::filesystem::path path, const char* str) { logger::warn("{}: {}", path.filename().generic_string(), str); }
 
     bool LoadKeywords(std::filesystem::path path, const Value& d, const char* field, std::set<RE::BGSKeyword*>& set) {
         const auto& jsonKeywords = d[field];
@@ -678,114 +681,7 @@ bool QuickArmorRebalance::Config::LoadFile(std::filesystem::path path) {
 
     if (d.HasMember("translation")) Localization::Get()->LoadTranslation(d["translation"]);
 
-    if (d.HasMember("enchAvailable")) {
-        const auto& jsonEnchs = d["enchAvailable"];
-        if (jsonEnchs.IsObject()) {
-            for (auto& jsonMod : jsonEnchs.GetObj()) {
-                if (auto file = dataHandler->LookupModByName(jsonMod.name.GetString())) {
-                    if (jsonMod.value.IsArray()) {
-                        for (const auto& i : jsonMod.value.GetArray()) {
-                            if (i.IsString()) {
-                                if (auto ench = QuickArmorRebalance::FindIn<RE::EnchantmentItem>(file, i.GetString(), false)) {
-                                    if (ench->data.baseEnchantment) {
-                                        g_Config.mapEnchantments[ench->data.baseEnchantment].ranks.push_back(ench);
-                                    } else {
-                                        logger::warn("{}: Enchantment '{}' has no base enchantment", path.filename().generic_string(), i.GetString());
-                                    }
-
-                                } else
-                                    logger::warn("{}: Enchantment '{}' not found", path.filename().generic_string(), i.GetString());
-                            } else if (i.IsObject()) {
-                                for (auto& group : i.GetObj()) {
-                                    auto baseEnch = QuickArmorRebalance::FindIn<RE::EnchantmentItem>(file, group.name.GetString(), false);
-                                    if (!baseEnch) {
-                                        logger::warn("{}: Enchantment '{}' not found", path.filename().generic_string(), group.name.GetString());
-                                        continue;
-                                    }
-
-                                    if (group.value.IsString()) {
-                                        if (auto ench = QuickArmorRebalance::FindIn<RE::EnchantmentItem>(file, group.value.GetString(), false)) {
-                                            g_Config.mapEnchantments[baseEnch].ranks.push_back(ench);
-                                        } else
-                                            logger::warn("{}: Enchantment '{}' not found", path.filename().generic_string(), group.value.GetString());
-                                    } else if (group.value.IsArray()) {
-                                        for (const auto& id : group.value.GetArray()) {
-                                            if (id.IsString()) {
-                                                if (auto ench = QuickArmorRebalance::FindIn<RE::EnchantmentItem>(file, id.GetString(), false)) {
-                                                    g_Config.mapEnchantments[baseEnch].ranks.push_back(ench);
-                                                } else
-                                                    logger::warn("{}: Enchantment '{}' not found", path.filename().generic_string(), id.GetString());
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        } else
-            ConfigFileWarning(path, "enchAvailable expected to be an object");
-    }
-
-    if (d.HasMember("enchParams")) {
-        auto file = dataHandler->LookupLoadedModByIndex(0);  // Most will be in Skyrim.esm & I don't want to complicate the data format to group by file
-
-        const auto& jsonEnchs = d["enchParams"];
-        if (jsonEnchs.IsObject()) {
-            for (auto& i : jsonEnchs.GetObj()) {
-                if (auto ench = QuickArmorRebalance::FindIn<RE::EnchantmentItem>(file, i.name.GetString(), false)) {
-                    auto& ranks = g_Config.mapEnchantments[ench];
-                    if (i.value.IsObject()) {
-                        auto jsonParams = i.value.GetObj();
-
-                        if (jsonParams.HasMember("min")) ranks.levelMin = std ::clamp(jsonParams["min"].GetInt(), 1, INT_MAX);
-                        if (jsonParams.HasMember("max")) ranks.levelMax = std ::clamp(jsonParams["max"].GetInt(), 1, INT_MAX);
-                        ranks.levelMax = std::max(ranks.levelMin, ranks.levelMax);
-                    }
-                } else
-                    logger::warn("{}: Enchantment '{}' not found", path.filename().generic_string(), i.name.GetString());
-            }
-        }
-    }
-
-    if (d.HasMember("enchPools")) {
-        auto file = dataHandler->LookupLoadedModByIndex(0);  // Most will be in Skyrim.esm & I don't want to complicate the data format to group by file
-        const auto& jsonEnchs = d["enchPools"];
-        if (jsonEnchs.IsObject()) {
-            for (auto& jsonPool : jsonEnchs.GetObj()) {
-                auto hash = std::hash<std::string>{}(MakeLower(jsonPool.name.GetString()));
-
-                auto& pool = g_Config.mapEnchPools[hash];
-
-                if (pool.name.empty()) pool.name = jsonPool.name.GetString();
-
-                if (jsonPool.value.IsObject()) {
-                    for (const auto& i : jsonPool.value.GetObj()) {
-                        if (auto ench = QuickArmorRebalance::FindIn<RE::EnchantmentItem>(file, i.name.GetString(), false)) {
-                            if (pool.enchs.contains(ench))
-                                logger::warn("{}: Enchantment '{}' duplicated in pool '{}'", path.filename().generic_string(), i.name.GetString(), jsonPool.name.GetString());
-
-                            if (!((ench->data.castingType == RE::MagicSystem::CastingType::kConstantEffect && ench->data.delivery == RE::MagicSystem::Delivery::kSelf) ||
-                                  (ench->data.castingType == RE::MagicSystem::CastingType::kFireAndForget && ench->data.delivery == RE::MagicSystem::Delivery::kTouch))) {
-                                logger::warn("{}: Enchantment '{}' has unknown configuration (will not match armor or weapons)", path.filename().generic_string(),
-                                             i.name.GetString());
-                            }
-
-                            if (i.value.IsFloat())
-                                pool.enchs[ench] = i.value.GetFloat();
-                            else if (i.value.IsInt())
-                                pool.enchs[ench] = (float)i.value.GetInt();
-                            else
-                                logger::warn("{}: Enchantment pool entry '{}' incorrect value type", path.filename().generic_string(), i.name.GetString());
-                        } else
-                            logger::warn("{}: Enchantment '{}' not found", path.filename().generic_string(), i.name.GetString());
-                    }
-                }
-            }
-        } else
-            ConfigFileWarning(path, "enchPools expected to be an object");
-    }
+    LoadEnchantmentConfigs(path, d);
 
     return true;
 }
@@ -1024,9 +920,10 @@ void QuickArmorRebalance::Config::Save() {
                                  {"normalizedrops", g_Config.bNormalizeModDrops},
                                  {"droprate", g_Config.fDropRates},
                                  {"levelgranularity", g_Config.levelGranularity},
-                                 {"distribenchants", g_Config.bEnableEnchantmentDistrib},
+                                 {"distenchants", g_Config.bEnableEnchantmentDistrib},
                                  {"enchantrate", g_Config.fEnchantRates},
                                  {"enchantrandomcharge", g_Config.bEnchantRandomCharge},
+                                 {"alwaysenchantstaves", g_Config.bAlwaysEnchantStaves},
                                  {"craftingraritymax", g_Config.craftingRarityMax},
                                  {"craftingraritydisable", g_Config.bDisableCraftingRecipesOnRarity},
                                  {"keepcraftingbooks", g_Config.bKeepCraftingBooks},

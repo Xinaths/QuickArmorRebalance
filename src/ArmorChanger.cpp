@@ -813,11 +813,19 @@ bool QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, RE::FormID id, c
             if (!g_Data.modifiedArmorSlots.contains(armor))  // Don't overwrite previous
                 g_Data.modifiedArmorSlots[armor] = armor->bipedModelData.bipedObjectSlots.underlying();
 
-            auto slots = (RE::BIPED_MODEL::BipedObjectSlot)jsonOption.GetUint();
-            armor->bipedModelData.bipedObjectSlots = slots;
+            auto slots = (ArmorSlots)jsonOption.GetUint();
+            armor->bipedModelData.bipedObjectSlots = (RE::BIPED_MODEL::BipedObjectSlot)slots;
             for (auto addon : armor->armorAddons) {
                 if (addon->GetFile(0) == armor->GetFile(0)) {  // Don't match other files, might be placeholders
-                    addon->bipedModelData.bipedObjectSlots = slots;
+                    //Some models have multiple pieces with different slots, so leave parts alone that aren't changing
+                    //This might need to be converted to a 2 pass setup
+
+                    if ((addon->bipedModelData.bipedObjectSlots.underlying() & slots) == addon->bipedModelData.bipedObjectSlots.underlying()) {
+                        slots &= ~addon->bipedModelData.bipedObjectSlots.underlying();
+                        continue;
+                    }
+
+                    addon->bipedModelData.bipedObjectSlots = (RE::BIPED_MODEL::BipedObjectSlot)slots;
 
                     for (int i = 0; i < RE::SEXES::kTotal; i++) {
                         if (!addon->bipedModels[i].model.empty()) {
@@ -825,7 +833,7 @@ bool QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, RE::FormID id, c
                             ToLower(modelPath);
 
                             auto hash = std::hash<std::string>{}(modelPath);
-                            if (!g_Data.noModifyModels.contains(hash)) g_Data.remapFileArmorSlots[hash] = (ArmorSlots)slots;
+                            if (!g_Data.noModifyModels.contains(hash)) g_Data.remapFileArmorSlots[hash] = slots;
 
                             if (modelPath.length() > 6) {
                                 char* pChar = modelPath.data() + modelPath.length() - 6;  //'_X.nif'
@@ -833,11 +841,11 @@ bool QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, RE::FormID id, c
                                     if (*pChar == '0') {
                                         *pChar = '1';
                                         hash = std::hash<std::string>{}(modelPath);
-                                        if (!g_Data.noModifyModels.contains(hash)) g_Data.remapFileArmorSlots[hash] = (ArmorSlots)slots;
+                                        if (!g_Data.noModifyModels.contains(hash)) g_Data.remapFileArmorSlots[hash] = slots;
                                     } else if (*pChar == '1') {
                                         *pChar = '0';
                                         hash = std::hash<std::string>{}(modelPath);
-                                        if (!g_Data.noModifyModels.contains(hash)) g_Data.remapFileArmorSlots[hash] = (ArmorSlots)slots;
+                                        if (!g_Data.noModifyModels.contains(hash)) g_Data.remapFileArmorSlots[hash] = slots;
                                     }
                                 }
                             }

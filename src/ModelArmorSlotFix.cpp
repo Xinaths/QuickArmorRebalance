@@ -38,6 +38,7 @@ namespace {
                 if (it != g_Data.remapFileArmorSlots.end()) {
                     auto slots = it->second;
                     auto missing = slots;
+                    ArmorSlots availible = 0;
 
                     auto& data = skin->GetRuntimeData();
 
@@ -46,14 +47,19 @@ namespace {
                     for (int i = 0; i < data.numPartitions; i++) {
                         auto& part = data.partitions[i];
                         if (part.slot < 30 || part.slot >= 62) continue;
-                        missing &= ~(1 << (part.slot - 30));
+                        auto slot = (1 << (part.slot - 30));
+                        availible |= slot;
+                        missing &= ~slot;
                         if (!missing) return; //Have everything, can abort
                     }
+
+                    availible &= ~slots;
 
                     //Second pass - update slots for missing parts
                     for (int i = 0; i < data.numPartitions; i++) {
                         auto& part = data.partitions[i];
                         if (part.slot < 30 || part.slot >= 62) continue;
+                        if (part.slot == 32 && availible != (1 << (32 - 30))) continue; //Only remap 32 if its the only slot availible, seems to break if this happens
                         if (((1 << (part.slot - 30)) & slots) == 0) { //Mismatched slot - remap
                             unsigned long slot;
                             _BitScanForward(&slot, missing);

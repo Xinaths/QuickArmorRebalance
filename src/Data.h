@@ -8,6 +8,11 @@ namespace QuickArmorRebalance {
     using ArmorSlots = unsigned int;
     using WordSet = std::set<std::size_t>;
 
+    struct Region;
+
+    enum ERegionRarity { eRegion_Same, eRegion_Common, eRegion_Uncommon, eRegion_Rare, eRegion_Exotic, eRegion_RarityCount };
+    enum ELootType { eLoot_Set, eLoot_Armor, eLoot_Weapon, eLoot_TypeCount};
+
     struct DynamicVariant {
         std::string name;
         WordSet hints;
@@ -53,7 +58,6 @@ namespace QuickArmorRebalance {
         return std::max(min, d);
     }
 
-
     inline void ToLower(std::string& str) {
         // std::transform(str.begin(), str.end(), str.begin(), [](unsigned char c) { return std::tolower(c, std::locale()); });
         toLowerUTF8(str);
@@ -92,6 +96,17 @@ namespace QuickArmorRebalance {
         return nullptr;  // Return nullptr if not found
     }
 
+    template <typename MapType>
+    bool MapFind(const MapType& map, const typename MapType::key_type& key, typename MapType::mapped_type& ret) {
+        auto it = map.find(key);
+        if (it != map.end()) {
+            ret = it->second;
+            return true;
+        }
+        return false; 
+    }
+
+
     inline rapidjson::Value& EnsureHas(rapidjson::Value& obj, const char* field, rapidjson::Type t, rapidjson::MemoryPoolAllocator<>& al) {
         if (!obj.HasMember(field) || obj[field].GetType() != t) {
             obj.RemoveMember(field);
@@ -107,7 +122,7 @@ namespace QuickArmorRebalance {
             return RE::TESForm::LookupByID(id);
         }
 
-        //Has to come before isdigit because some mods might have numeric names so "5Armors.esp:0x123" would fail
+        // Has to come before isdigit because some mods might have numeric names so "5Armors.esp:0x123" would fail
         if (auto pos = strchr(str, ':')) {
             if (pOtherFile) *pOtherFile = true;
             std::string fileName(str, pos - str);
@@ -117,7 +132,7 @@ namespace QuickArmorRebalance {
             return nullptr;
         }
 
-        //Can EditorId's start with digits?
+        // Can EditorId's start with digits?
         if (isdigit(*str)) {
             RE::FormID id = GetFullId(mod, (RE::FormID)strtol(str, nullptr, 10));
             return RE::TESForm::LookupByID(id);
@@ -177,16 +192,51 @@ namespace QuickArmorRebalance {
         EnchantProbability ench;
     };
 
-    struct LootContainerGroup {
-        std::map<RE::TESForm*, ContainerChance> large;
-        std::map<RE::TESForm*, ContainerChance> small;
-        std::map<RE::TESForm*, ContainerChance> weapon;
+    template <class TYPE, int COUNT>
+    class SplitSets {
+    public:
+        std::set<TYPE*>& operator[](int n) { return set[n]; }
 
-        std::map<LootDistGroup*, std::vector<RE::TESBoundObject*>[3]> pieces;
-        std::map<LootDistGroup*, std::vector<const ArmorSet*>[3]> sets;
-        std::map<LootDistGroup*, std::vector<RE::TESBoundObject*>[3]> weapons;
+        void Remove(TYPE* region) {
+            for (int i = 0; i < COUNT; i++) set->erase(region);
+        }
+        void Add(TYPE* other, int nGroup) {
+            Remove(other);
+            if (nGroup < COUNT) set[nGroup].insert(other);
+        }
+
+    protected:
+        std::set<TYPE*> set[COUNT];
+    };
+
+    struct LootContainerGroup {
+        using ContainerChanceMap = std::map<RE::TESForm*, ContainerChance>;
+
+        std::map<Region*, ContainerChanceMap> large;
+        std::map<Region*, ContainerChanceMap> small;
+        std::map<Region*, ContainerChanceMap> weapon;
+
+        struct Items {
+            std::vector<RE::TESBoundObject*> pieces;
+            std::vector<const ArmorSet*> sets;
+            std::vector<RE::TESBoundObject*> weapons;
+        };
+
+        using Rarities = Items[3];
+        using Tiers = std::map<LootDistGroup*, Rarities>;
+        using Regions = std::map<const Region*, Tiers>;
+
+        Regions contents;
+
+        //std::map<Region*, std::map<LootDistGroup*, std::vector<RE::TESBoundObject*>[3]>> pieces;
+        //std::map<Region*, std::map<LootDistGroup*, std::vector<const ArmorSet*>[3]>> sets;
+        //std::map<Region*, std::map<LootDistGroup*, std::vector<RE::TESBoundObject*>[3]>> weapons;
+
+        std::set<Region*> regions;
+        SplitSets<LootContainerGroup, eRegion_RarityCount> migration;
 
         EnchantProbability ench;
+
         bool bLeveled = true;
     };
 
@@ -197,6 +247,7 @@ namespace QuickArmorRebalance {
     struct ItemDistData {
         LootDistProfile* profile;
         LootDistGroup* group;
+        const Region* region;
         int rarity;
 
         RE::TESBoundObject* piece;
@@ -216,6 +267,9 @@ namespace QuickArmorRebalance {
         std::map<std::size_t, std::unordered_set<RE::TESObjectARMO*>> prefVartWithout;
 
         std::unordered_map<RE::TESForm*, std::set<RE::TESForm*>> mapContainerCopy;
+
+        std::map<Region*, std::map<LootContainerGroup*, RE::TESBoundObject*>> tblRegionSourceCache[eLoot_TypeCount];
+        std::map<Region*, std::map<LootContainerGroup*, RE::TESBoundObject*>> tblRegionSourceCurveCache[eLoot_TypeCount];
     };
 
     struct KeywordChanges {

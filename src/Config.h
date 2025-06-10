@@ -41,6 +41,15 @@ namespace QuickArmorRebalance {
         void Load(const rapidjson::Value& node);
     };
 
+    struct Region {
+        bool IsValid() const { return bVerified; }
+
+        std::string name;
+        SplitSets<Region, eRegion_RarityCount> rarity;
+
+        bool bVerified = false;
+    };
+
     struct BaseArmorSet {
         std::string name;
         std::string strContents;
@@ -145,6 +154,7 @@ namespace QuickArmorRebalance {
         RecipeOptions temper;
         RecipeOptions craft;
 
+        Region* region = nullptr;
         int rarity = 0;
         bool bDistribute = false;
         bool bDistAsSet = true;
@@ -219,6 +229,8 @@ namespace QuickArmorRebalance {
             return nullptr;
         }
 
+        Region* GetRegion(const char* name);
+
         std::set<const RE::TESFile*> blacklist;
         std::set<RE::BGSKeyword*> kwSet;
         std::set<RE::BGSKeyword*> kwSlotSpecSet;
@@ -258,6 +270,8 @@ namespace QuickArmorRebalance {
         std::map<std::size_t, WeightedEnchantments> mapStaffEnchPools;
         std::set<RE::EnchantmentItem*> setStaffEnchs;
 
+        std::map<std::size_t, Region> mapRegions;
+        std::vector<Region*> lsRegionsSorted;
 
         std::set<const RE::TESForm*> recipeConditionBlacklist;
 
@@ -296,6 +310,8 @@ namespace QuickArmorRebalance {
         bool bEnableConsoleHook = true;
         bool bPauseWhileOpen = true;
         bool bShowAllRecipeConditions = false;
+        bool bEnableRegionalLoot = true;
+        bool bEnableMigratedLoot = true;
 
         bool bShortcutEscCloseWindow = true;
 
@@ -352,6 +368,9 @@ namespace QuickArmorRebalance {
             RE::BGSKeyword* warmth[5];
             RE::BGSKeyword* coverage[5];
         } ffKeywords;
+
+        int nRegionRarityEntries[eRegion_RarityCount] = {0};
+        int nMigrationRarityEntries[eRegion_RarityCount] = {0};
     };
 
     extern Config g_Config;

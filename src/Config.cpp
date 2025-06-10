@@ -22,12 +22,14 @@
 
 using namespace rapidjson;
 using namespace QuickArmorRebalance;
+constexpr auto LZ = QuickArmorRebalance::Localize;
 
 namespace QuickArmorRebalance {
     Config g_Config;
 
     bool LoadArmorSet(BaseArmorSet& s, const Value& node);
     void LoadCustomKeywords(const Value& jsonCustomKWs);
+    bool LoadRegions(const Value& node);
 
     void ConfigFileWarning(std::filesystem::path path, const char* str) { logger::warn("{}: {}", path.filename().generic_string(), str); }
 
@@ -157,6 +159,14 @@ void LoadPermissions(QuickArmorRebalance::Permissions& p, toml::node_view<toml::
     p.bStripEnchWeapons = tbl["stripEnchWeapons"].value_or(true);
     p.bStripEnchStaves = tbl["stripEnchStaves"].value_or(true);
 }
+
+Region* QuickArmorRebalance::Config::GetRegion(const char* name) {
+    auto nameHash = std::hash<std::string>{}(MakeLower(name));
+    auto& region = g_Config.mapRegions[nameHash];
+    if (region.name.empty()) region.name = name;
+    return &region;
+}
+
 
 bool QuickArmorRebalance::Config::Load() {
     bEnableConsoleHook = !REL::Module::IsVR();
@@ -323,6 +333,8 @@ bool QuickArmorRebalance::Config::Load() {
             g_Config.bAlwaysEnchantStaves = config["settings"]["alwaysenchantstaves"].value_or(true);
             g_Config.fEnchantRates = config["settings"]["enchantrate"].value_or(100.0f);
             g_Config.bShowAllRecipeConditions = config["settings"]["allrecipereqs"].value_or(false);
+            g_Config.bEnableRegionalLoot = config["settings"]["regionalloot"].value_or(true);
+            g_Config.bEnableMigratedLoot = config["settings"]["migrateloot"].value_or(true);
 
             if (auto code = config["settings"]["language"].as_string()) {
                 if (!code->get().empty()) Localization::Get()->SetTranslation(StringToWString(code->get()));
@@ -465,6 +477,21 @@ bool QuickArmorRebalance::Config::Load() {
         }
     }
 
+    for (auto& region : g_Config.mapRegions) {
+        region.second.rarity.Add(&region.second, eRegion_Same);
+    }
+
+    for (auto& group : g_Data.loot->containerGroups) {
+        group.second.migration.Add(&group.second, eRegion_Same);
+    }
+
+    for (auto& region : mapRegions) {
+        if (region.second.IsValid())
+            lsRegionsSorted.push_back(&region.second);
+    }
+    std::sort(lsRegionsSorted.begin(), lsRegionsSorted.end(), [](Region* a, Region* b) { return strcmp(LZ(a->name.c_str()), LZ(b->name.c_str())) < 0; });
+
+
     if (bSuccess)
         strCriticalError.clear();
     else
@@ -576,6 +603,21 @@ bool QuickArmorRebalance::Config::LoadFile(std::filesystem::path path) {
         flatValueMod = GetJsonInt(jsonSettings, "flatValueMod", 1, 10000, flatValueMod);
         flatWeightMod = GetJsonInt(jsonSettings, "flatWeightMod", 1, 10000, flatWeightMod);
         flatWeapDamageMod = GetJsonInt(jsonSettings, "flatWeapDamageMod", 1, 10000, flatWeapDamageMod);
+
+        auto ReadRarityParams = [&](const char* name, int* entries) {
+            if (jsonSettings.HasMember(name)) {
+                auto& node = jsonSettings[name];
+
+                entries[eRegion_Same] = GetJsonInt(node, "same", 0, 100, entries[eRegion_Same]);
+                entries[eRegion_Common] = GetJsonInt(node, "common", 0, 100, entries[eRegion_Common]);
+                entries[eRegion_Uncommon] = GetJsonInt(node, "uncommon", 0, 100, entries[eRegion_Uncommon]);
+                entries[eRegion_Rare] = GetJsonInt(node, "rare", 0, 100, entries[eRegion_Rare]);
+                entries[eRegion_Exotic] = GetJsonInt(node, "exotic", 0, 100, entries[eRegion_Exotic]);
+            }
+        };
+
+        ReadRarityParams("lootRegionWeights", nRegionRarityEntries);
+        ReadRarityParams("lootMigrationWeights", nMigrationRarityEntries);
     }
 
     if (d.HasMember("keywords")) {
@@ -626,6 +668,10 @@ bool QuickArmorRebalance::Config::LoadFile(std::filesystem::path path) {
 
     if (d.HasMember("loot")) {
         LoadLootConfig(d["loot"]);
+    }
+
+    if (d.HasMember("regions")) {
+        LoadRegions(d["regions"]);
     }
 
     if (d.HasMember("wordHints")) {
@@ -837,6 +883,57 @@ bool QuickArmorRebalance::LoadArmorSet(BaseArmorSet& s, const Value& node) {
     return bSuccess;
 }
 
+void LoadRegionRarityList(Region* region, const Value& node, int rarity, bool bFrom) {
+    if (!node.IsArray()) return;
+
+    for (auto& jsonOther : node.GetArray()) {
+        if (!jsonOther.IsString()) continue;
+
+        auto other = g_Config.GetRegion(jsonOther.GetString());
+
+        if (other == region) continue;
+
+        if (bFrom) {
+            region->rarity.Add(other, rarity);
+        } else {
+            other->rarity.Add(region, rarity);
+        }
+    }
+}
+
+void LoadRegionList(Region* region, const Value& node, const char* name, bool bFrom) {
+    if (!node.HasMember(name)) return;
+
+    auto& rarities = node[name];
+    if (!rarities.IsObject()) return;
+
+    static const char* rarityNames[] = {"same", "common", "uncommon", "rare", "exotic", "none"};
+    for (int i = 0; i <= eRegion_RarityCount; i++) {
+        if (rarities.HasMember(rarityNames[i])) LoadRegionRarityList(region, rarities[rarityNames[i]], i, bFrom);
+    }
+}
+
+bool QuickArmorRebalance::LoadRegions(const Value& node) {
+    if (!node.IsObject()) return false;
+
+    for (auto& jsonRegion : node.GetObj()) {
+        if (!jsonRegion.value.IsObject()) continue;
+
+        auto region = g_Config.GetRegion(jsonRegion.name.GetString());
+        region->bVerified = true;
+        region->name = jsonRegion.name.GetString();
+        //region->rarity[eRegion_Same].insert(&region);
+
+        LoadRegionList(region, jsonRegion.value, "from", true);
+        LoadRegionList(region, jsonRegion.value, "to", false);
+
+        
+    }
+
+
+    return true; }
+
+
 toml::table SavePermissions(const QuickArmorRebalance::Permissions& p) {
     return toml::table{
         {"loot", p.bDistributeLoot},
@@ -928,6 +1025,8 @@ void QuickArmorRebalance::Config::Save() {
                                  {"craftingraritydisable", g_Config.bDisableCraftingRecipesOnRarity},
                                  {"keepcraftingbooks", g_Config.bKeepCraftingBooks},
                                  {"enforcerarity", g_Config.bEnableRarityNullLoot},
+                                 {"regionalloot", g_Config.bEnableRegionalLoot},
+                                 {"migratedloot", g_Config.bEnableMigratedLoot},
                                  {"resetslotremap", g_Config.bResetSlotRemap},
                                  {"enableallitems", g_Config.bEnableAllItems},
                                  {"allowinvalidremap", g_Config.bAllowInvalidRemap},

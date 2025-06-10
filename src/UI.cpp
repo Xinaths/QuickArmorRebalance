@@ -1328,7 +1328,7 @@ void QuickArmorRebalance::RenderUI() {
                     ImGui::BeginDisabled(!params.bDistribute);
 
                     ImGui::SameLine();
-                    ImGui::SetNextItemWidth(300);
+                    ImGui::SetNextItemWidth(180);
 
                     hlDistributeAs.Push(params.bDistribute);
 
@@ -1360,6 +1360,26 @@ void QuickArmorRebalance::RenderUI() {
                     }
 
                     hlRarity.Pop();
+
+                    ImGui::SameLine();
+                    ImGui::SetNextItemWidth(140);
+
+                    //hlRarity.Push(params.bDistribute);
+
+                    if (ImGui::BeginCombo("##Region", params.region ? LZ(params.region->name.c_str()) : LZ("<Anywhere>"), ImGuiComboFlags_PopupAlignLeft)) {
+                        if (ImGui::Selectable(LZ("<Anywhere>"), !params.region)) params.region = nullptr;
+                        for (auto region : g_Config.lsRegionsSorted) {
+                            bool selected = region == params.region;
+
+                            if (ImGui::Selectable(LZ(region->name.c_str()), selected))
+                                params.region = region;
+                            if (selected) ImGui::SetItemDefaultFocus();
+                        }
+
+                        ImGui::EndCombo();
+                    }
+
+                    //hlRarity.Pop();
 
                     ImGui::Indent(60);
                     ImGui::Checkbox(LZ("As pieces"), &params.bDistAsPieces);
@@ -2497,6 +2517,12 @@ void QuickArmorRebalance::RenderUI() {
                 }
 
                 if (ImGui::BeginTabItem(LZ("Distribution"))) {
+                    ImGui::Checkbox(LZ("Enable regional loot"), &g_Config.bEnableRegionalLoot);
+                    MakeTooltip(LZ("Items assigned a region will be most likely to appear there, with a smaller chance to appear in other regions."));
+                    ImGui::Checkbox(LZ("Enable out of place loot"), &g_Config.bEnableMigratedLoot);
+                    MakeTooltip(LZ("This allows loot to appear in places it wasn't assigned at a reduced rate.\n"
+                        "Example: A small chance to find Ancient Nord loot inside a Bandit chest."));
+
                     ImGui::Checkbox(LZ("Enforce loot rarity with empty loot"), &g_Config.bEnableRarityNullLoot);
                     MakeTooltip(
                         LZ("Example: The subset of items elible for loot has 1 rare item, 0 commons and uncommons\n"

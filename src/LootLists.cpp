@@ -45,13 +45,13 @@ namespace {
 }
 
 Value QuickArmorRebalance::MakeLootChanges(const ArmorChangeParams& params, RE::TESBoundObject* i, MemoryPoolAllocator<>& al) {
-    if (!params.armorSet) return {};
+    if (!params.bDistribute || !(params.bMerge || (params.armorSet && params.distProfile && params.rarity >= 0))) return {};
 
     auto& data = *params.data;
     for (auto item : data.items)  // Don't build loot sets from current armor (aka mixed mod sets) - maybe in the future
         if (item->GetFile(0) != i->GetFile(0)) return {};
 
-    if (!data.isWornArmor && params.bDistribute && params.distProfile) {
+    if (!data.isWornArmor) {
         Value loot(kObjectType);
 
         if (auto armor = i->As<RE::TESObjectARMO>()) {
@@ -82,11 +82,11 @@ Value QuickArmorRebalance::MakeLootChanges(const ArmorChangeParams& params, RE::
             if (params.bDistAsPieces) loot.AddMember("piece", true, al);
         }
 
-        if (!loot.ObjectEmpty()) {
-            loot.AddMember("profile", Value(params.distProfile, al), al);
-            loot.AddMember("group", Value(params.armorSet->loot->name.c_str(), al), al);
-            loot.AddMember("rarity", params.rarity, al);
-            if (params.region) loot.AddMember("region", Value(params.region->name.c_str(), al), al);
+        if (params.bMerge || !loot.ObjectEmpty()) {
+            if (params.distProfile) loot.AddMember("profile", Value(params.distProfile, al), al);
+            if (params.armorSet) loot.AddMember("group", Value(params.armorSet->loot->name.c_str(), al), al);
+            if (params.rarity >= 0) loot.AddMember("rarity", params.rarity, al);
+            if (params.region && params.region!=kRegion_KeepPrevious) loot.AddMember("region", Value(params.region->name.c_str(), al), al);
 
             return loot;
         }
@@ -95,7 +95,7 @@ Value QuickArmorRebalance::MakeLootChanges(const ArmorChangeParams& params, RE::
     return Value();
 }
 
-void QuickArmorRebalance::LoadLootChanges(RE::TESBoundObject* item, const Value& jsonLoot) {
+void QuickArmorRebalance::LoadLootChanges(RE::TESBoundObject* item, const Value& jsonLoot, unsigned int& changed) {
     if (!item) return;
 
     if (!jsonLoot.HasMember("profile")) return;
@@ -107,8 +107,18 @@ void QuickArmorRebalance::LoadLootChanges(RE::TESBoundObject* item, const Value&
 
     if (!jsonLoot.HasMember("rarity") || !jsonLoot["rarity"].IsInt()) return;
 
+    if (!jsonLoot.HasMember("group")) return;
+    const auto& jsonGroup = jsonLoot["group"];
+    if (!jsonGroup.IsString()) return;
+
+    const auto& itGroup = g_Data.distGroups.find(jsonGroup.GetString());
+    if (itGroup == g_Data.distGroups.end()) return;
+
+    changed |= eChange_Loot;
+
     const Region* region = nullptr;
     if (jsonLoot.HasMember("region")) {
+        changed |= eChange_Region;
         const auto& jsonRegion = jsonLoot["region"];
 
         if (jsonRegion.IsString()) {
@@ -118,13 +128,6 @@ void QuickArmorRebalance::LoadLootChanges(RE::TESBoundObject* item, const Value&
             }
         }
     }
-
-    if (!jsonLoot.HasMember("group")) return;
-    const auto& jsonGroup = jsonLoot["group"];
-    if (!jsonGroup.IsString()) return;
-
-    const auto& itGroup = g_Data.distGroups.find(jsonGroup.GetString());
-    if (itGroup == g_Data.distGroups.end()) return;
 
     auto profile = &itProfile->second;
     auto group = &itGroup->second;
@@ -716,9 +719,9 @@ namespace {
         for (auto& tier : group->contents[region]) {
             auto& fallback = group->contents[nullptr][tier.first];
 
-            //auto Builder = [](const LootContainerGroup::Rarities& contents, const LootContainerGroup::Rarities& fallback, int rarity) {
-            //    return BuildContentList(!contents[rarity].weapons.empty() ? contents[rarity].weapons : fallback[rarity].weapons);
-            //};
+            // auto Builder = [](const LootContainerGroup::Rarities& contents, const LootContainerGroup::Rarities& fallback, int rarity) {
+            //     return BuildContentList(!contents[rarity].weapons.empty() ? contents[rarity].weapons : fallback[rarity].weapons);
+            // };
 
             RE::TESBoundObject* list = nullptr;
 
@@ -878,7 +881,7 @@ void QuickArmorRebalance::SetupLootLists() {
     }
 
     logger::trace("Building loot lists");
-    //BuildSetLists();
+    // BuildSetLists();
     BuildContainerLootLists();
     logger::info("Done processing loot, {} lists created", g_nLListsCreated);
 

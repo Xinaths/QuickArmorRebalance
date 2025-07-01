@@ -50,6 +50,8 @@ namespace QuickArmorRebalance {
         bool bVerified = false;
     };
 
+    static Region* const kRegion_KeepPrevious = reinterpret_cast<Region*>(-1);
+
     struct BaseArmorSet {
         std::string name;
         std::string strContents;
@@ -244,6 +246,7 @@ namespace QuickArmorRebalance {
         std::unordered_map<RE::TESBoundObject*, BaseArmorSet*> mapObjToSet;
 
         std::set<std::string> lootProfiles;
+        std::map<const char*, std::set<Region*>> lootProfileRegions;
 
         WordSet wordsDynamicVariants;
         WordSet wordsStaticVariants;

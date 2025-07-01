@@ -13,6 +13,17 @@ namespace QuickArmorRebalance {
     enum ERegionRarity { eRegion_Same, eRegion_Common, eRegion_Uncommon, eRegion_Rare, eRegion_Exotic, eRegion_RarityCount };
     enum ELootType { eLoot_Set, eLoot_Armor, eLoot_Weapon, eLoot_TypeCount};
 
+    enum EItemChanges { 
+        eChange_Stats       = (1 << 0), 
+        eChange_Slots       = (1 << 1), 
+        eChange_Keywords    = (1 << 2), 
+        eChange_Loot        = (1 << 3),
+        eChange_Survival    = (1 << 4),
+        eChange_Conversion  = (1 << 5),
+        eChange_Recipes     = (1 << 6),
+        eChange_Region      = (1 << 7),
+    };
+
     struct DynamicVariant {
         std::string name;
         WordSet hints;
@@ -306,12 +317,12 @@ namespace QuickArmorRebalance {
     struct ProcessedData {
         std::map<const RE::TESFile*, std::unique_ptr<ModData>> modData;
         std::vector<ModData*> sortedMods;
-        std::unordered_set<const RE::TESFile*> modifiedFiles;
-        std::unordered_set<const RE::TESFile*> modifiedFilesShared;
+        std::unordered_map<const RE::TESFile*, unsigned int> modifiedFiles;
+        std::unordered_map<const RE::TESFile*, unsigned int> modifiedFilesShared;
         std::unordered_set<const RE::TESFile*> modifiedFilesDeleted;
 
-        std::unordered_set<RE::TESBoundObject*> modifiedItems;
-        std::unordered_set<RE::TESBoundObject*> modifiedItemsShared;
+        std::unordered_map<RE::TESBoundObject*, unsigned int> modifiedItems;
+        std::unordered_map<RE::TESBoundObject*, unsigned int> modifiedItemsShared;
         std::unordered_set<RE::TESBoundObject*> modifiedItemsDeleted;
         std::map<RE::TESBoundObject*, RE::BGSConstructibleObject*> temperRecipe;
         std::map<RE::TESBoundObject*, RE::BGSConstructibleObject*> craftRecipe;

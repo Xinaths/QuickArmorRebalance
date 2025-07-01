@@ -13,7 +13,7 @@ namespace QuickArmorRebalance
     int RescanPreferenceVariants();
 
     int ApplyChanges(const RE::TESFile* file, const rapidjson::Value& ls, const Permissions& perm);
-    bool ApplyChanges(const RE::TESFile* file, RE::FormID id, const rapidjson::Value& changes, const Permissions& perm);
+    bool ApplyChanges(const RE::TESFile* file, RE::FormID id, const rapidjson::Value& changes, const Permissions& perm, unsigned int& changed);
 
     void DeleteChanges(std::set<RE::TESBoundObject*> items, const char** fields = nullptr);
 

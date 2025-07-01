@@ -103,6 +103,11 @@ namespace QuickArmorRebalance {
 
         bMerge = true;
         bDistribute = false;
+        bDistAsSet = bDistAsPieces = false;
+        rarity = -1;
+        distProfile = nullptr;
+        region = kRegion_KeepPrevious;
+
         bModifyKeywords = false;
         armor.rating.bModify = false;
         armor.weight.bModify = false;
@@ -387,7 +392,7 @@ bool QuickArmorRebalance::Config::Load() {
         if (g_Config.lootProfiles.contains(lootProfile))
             g_Config.acParams.distProfile = g_Config.lootProfiles.find(lootProfile)->c_str();
         else if (!lootProfiles.empty())
-            g_Config.acParams.distProfile = lootProfiles.begin()->c_str();
+            g_Config.acParams.distProfile = nullptr; //lootProfiles.begin()->c_str();
     }
 
     if (dataHandler->LookupModByName("Frostfall.esp")) {
@@ -490,7 +495,18 @@ bool QuickArmorRebalance::Config::Load() {
             lsRegionsSorted.push_back(&region.second);
     }
     std::sort(lsRegionsSorted.begin(), lsRegionsSorted.end(), [](Region* a, Region* b) { return strcmp(LZ(a->name.c_str()), LZ(b->name.c_str())) < 0; });
+    for (auto& strProfile : lootProfiles) {
+        auto& regions = lootProfileRegions[strProfile.c_str()];
 
+        for (auto& group : g_Data.loot->distProfiles[strProfile].containerGroups) {
+            if (group->regions.empty()) {
+                regions.clear();
+                break;
+            }
+
+            regions.insert(group->regions.begin(), group->regions.end());
+        }
+    }
 
     if (bSuccess)
         strCriticalError.clear();
@@ -1141,6 +1157,8 @@ void QuickArmorRebalance::Config::RebuildDisabledWords() {
 }
 
 void QuickArmorRebalance::ImportKeywords(const RE::TESFile* mod, const char* tabName, const std::set<RE::BGSKeyword*>& kws) {
+    if (!mod) return;
+
     auto path = std::filesystem::current_path() / PATH_ROOT PATH_CONFIGS;
     path /= mod->fileName;
     path += " Keywords.json";
@@ -1171,7 +1189,7 @@ void QuickArmorRebalance::ImportKeywords(const RE::TESFile* mod, const char* tab
 
         for (auto& kwObj : tab.value.GetObj()) {
             auto kw = RE::TESForm::LookupByEditorID<RE::BGSKeyword>(kwObj.name.GetString());
-            if (kws.contains(kw)) {
+            if (kw && kws.contains(kw)) {
                 insertTab.RemoveMember(kw->formEditorID.c_str());
                 insertTab.AddMember(Value(kw->formEditorID.c_str(), al), tab.value, al);
                 removeKWs.push_back(kw);

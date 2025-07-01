@@ -570,6 +570,38 @@ struct HighlightTrack {
     }
 };
 
+struct ErrorTrack {
+    static bool hasErrors;
+
+    char pop = 0;
+    bool enabled = false;
+
+    operator bool() { return enabled; }
+
+    void Push(bool show = true) {
+        enabled = show;
+        if (show) {
+            hasErrors = true;
+
+            auto phase = 0.5 + 0.5 * sin(ImGui::GetTime() * (std::_Pi_val / 1.0));
+            auto brightness = std::lerp(64, 255, phase);
+            const auto colorHighlight = IM_COL32(brightness, 0, 0, 255);
+
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+            ImGui::PushStyleColor(ImGuiCol_Border, colorHighlight);
+            pop = 1;
+        } else
+            pop = 0;
+    }
+
+    void Pop() {
+        ImGui::PopStyleVar(pop);
+        ImGui::PopStyleColor(pop);
+    }
+};
+
+bool ErrorTrack::hasErrors = false;
+
 struct TimedTooltip {
     std::string text;
     double until = 0;
@@ -827,6 +859,7 @@ void QuickArmorRebalance::RenderUI() {
     static HighlightTrack hlConvert;
     static HighlightTrack hlDistributeAs;
     static HighlightTrack hlRarity;
+    static HighlightTrack hlRegion;
     static HighlightTrack hlDynamicVariants;
     static HighlightTrack hlSlots;
 
@@ -842,6 +875,12 @@ void QuickArmorRebalance::RenderUI() {
     bool popupCustomKeywords = false;
 
     bool hasModifiedItems = false;
+
+    const bool hadErrors = ErrorTrack::hasErrors;
+    ErrorTrack::hasErrors = false;
+
+    unsigned int needChanges = 0;
+    static unsigned int anyItemChanges = 0;
 
     ArmorSlots remappedSrc = 0;
     ArmorSlots remappedTar = 0;
@@ -1191,6 +1230,8 @@ void QuickArmorRebalance::RenderUI() {
                     ImGui::PopStyleColor(popCol);
                     popCol = 0;
 
+                    const auto strSpecialConvert = LZ("<Keep previous>");
+
                     if (ImGui::BeginTable("Convert Table", 3, ImGuiTableFlags_SizingFixedFit)) {
                         ImGui::TableSetupColumn("ConvertCol1");
                         ImGui::TableSetupColumn("ConvertCol2", ImGuiTableColumnFlags_WidthStretch);
@@ -1205,7 +1246,8 @@ void QuickArmorRebalance::RenderUI() {
                         int nArmorSet = 0;
                         hlConvert.Push();
 
-                        const auto strSpecialConvert = LZ("<Keep previous>");
+                        ErrorTrack errConvert;
+                        errConvert.Push(!params.armorSet && (!params.bMerge || !(anyItemChanges & eChange_Conversion)));
 
                         if (ImGui::BeginCombo("##ConvertTo", params.armorSet ? params.armorSet->name.c_str() : strSpecialConvert,
                                               ImGuiComboFlags_PopupAlignLeft | ImGuiComboFlags_HeightLarge)) {
@@ -1227,6 +1269,10 @@ void QuickArmorRebalance::RenderUI() {
 
                             ImGui::EndCombo();
                         }
+
+                        if (!params.armorSet) needChanges |= eChange_Conversion;
+
+                        errConvert.Pop();
                         hlConvert.Pop();
 
                         ImGui::TableNextColumn();
@@ -1239,9 +1285,9 @@ void QuickArmorRebalance::RenderUI() {
                         ImGui::SameLine();
 
                         static HighlightTrack hlApply;
-                        hlApply.Push(hlConvert && hlDistributeAs && hlRarity && hlSlots);
+                        hlApply.Push(hlConvert && hlDistributeAs && hlRarity && hlSlots && hlRegion);
 
-                        ImGui::BeginDisabled(data.filteredItems.size() >= kItemListLimit);
+                        ImGui::BeginDisabled(hadErrors || data.filteredItems.size() >= kItemListLimit);
 
                         static TimedTooltip respApply;
                         bool bApply = false;
@@ -1315,14 +1361,13 @@ void QuickArmorRebalance::RenderUI() {
 
                     // Distribution
                     ImGui::Separator();
-                    ImGui::BeginDisabled(!curMod || !params.armorSet);
+                    ImGui::BeginDisabled(!curMod);  // || !params.armorSet);
 
                     // Need to create a dummy table to negate stretching the combo boxes
                     ImGui::Checkbox(LZ("Distribute as "), &params.bDistribute);
-                    if (!curMod)
-                        MakeTooltip(LZ("Distribution can only be configured for a single mod at a time."));
-                    else if (!params.armorSet)
-                        MakeTooltip(LZ("Cannot add or change distribution without a conversion set selected."));
+                    if (!curMod) MakeTooltip(LZ("Distribution can only be configured for a single mod at a time."));
+                    // else if (!params.armorSet)
+                    //     MakeTooltip(LZ("Cannot add or change distribution without a conversion set selected."));
                     else
                         MakeTooltip(LZ("Additions or changes to loot distribution will not take effect until you restart Skyrim"));
                     ImGui::BeginDisabled(!params.bDistribute);
@@ -1332,9 +1377,20 @@ void QuickArmorRebalance::RenderUI() {
 
                     hlDistributeAs.Push(params.bDistribute);
 
-                    if (ImGui::BeginCombo("##DistributeAs", params.distProfile, ImGuiComboFlags_PopupAlignLeft | ImGuiComboFlags_HeightLarge)) {
+                    ErrorTrack errDistributeAs;
+                    errDistributeAs.Push(params.bDistribute && !params.distProfile && (!params.bMerge || !(anyItemChanges & eChange_Loot)));
+
+                    if (ImGui::BeginCombo("##DistributeAs", params.distProfile ? params.distProfile : strSpecialConvert,
+                                          ImGuiComboFlags_PopupAlignLeft | ImGuiComboFlags_HeightLarge)) {
+                        {
+                            bool selected = !params.distProfile;
+                            if (ImGui::Selectable(strSpecialConvert, selected)) params.distProfile = nullptr;
+                            if (selected) ImGui::SetItemDefaultFocus();
+                            // MakeTooltip(LZ("Keeps the existing conversion set.\nIf there is no existing conversion, no changes will be made to the item."), true);
+                        }
+
                         for (auto& i : g_Config.lootProfiles) {
-                            bool selected = params.distProfile == i;
+                            bool selected = params.distProfile == i.c_str();
                             if (ImGui::Selectable(LZ(i.c_str()), selected)) params.distProfile = i.c_str();
                             if (selected) ImGui::SetItemDefaultFocus();
                         }
@@ -1342,6 +1398,9 @@ void QuickArmorRebalance::RenderUI() {
                         ImGui::EndCombo();
                     }
 
+                    if (params.bDistribute && !params.distProfile) needChanges |= eChange_Loot;
+
+                    errDistributeAs.Pop();
                     hlDistributeAs.Pop();
 
                     ImGui::SameLine();
@@ -1349,7 +1408,17 @@ void QuickArmorRebalance::RenderUI() {
 
                     hlRarity.Push(params.bDistribute);
 
-                    if (ImGui::BeginCombo("##Rarity", rarity[params.rarity], ImGuiComboFlags_PopupAlignLeft)) {
+                    ErrorTrack errRarity;
+                    errRarity.Push(params.bDistribute && params.rarity < 0 && (!params.bMerge || !(anyItemChanges & eChange_Loot)));
+
+                    if (ImGui::BeginCombo("##Rarity", params.rarity >= 0 ? rarity[params.rarity] : strSpecialConvert, ImGuiComboFlags_PopupAlignLeft)) {
+                        {
+                            bool selected = params.rarity < 0;
+                            if (ImGui::Selectable(strSpecialConvert, selected)) params.rarity = -1;
+                            if (selected) ImGui::SetItemDefaultFocus();
+                            // MakeTooltip(LZ("Keeps the existing conversion set.\nIf there is no existing conversion, no changes will be made to the item."), true);
+                        }
+
                         for (int i = 0; rarity[i]; i++) {
                             bool selected = i == params.rarity;
                             if (ImGui::Selectable(rarity[i], selected)) params.rarity = i;
@@ -1359,27 +1428,36 @@ void QuickArmorRebalance::RenderUI() {
                         ImGui::EndCombo();
                     }
 
+                    if (params.bDistribute && params.rarity < 0) needChanges |= eChange_Loot;
+
+                    errRarity.Pop();
                     hlRarity.Pop();
 
                     ImGui::SameLine();
                     ImGui::SetNextItemWidth(140);
 
-                    //hlRarity.Push(params.bDistribute);
+                    hlRegion.Push(params.bDistribute && params.region && params.region!=kRegion_KeepPrevious);
 
-                    if (ImGui::BeginCombo("##Region", params.region ? LZ(params.region->name.c_str()) : LZ("<Anywhere>"), ImGuiComboFlags_PopupAlignLeft)) {
+                    auto& profileRegions = g_Config.lootProfileRegions[params.distProfile];
+                    if (params.region!=kRegion_KeepPrevious && !profileRegions.empty() && !profileRegions.contains(params.region)) params.region = nullptr;
+                    if (ImGui::BeginCombo("##Region",
+                                          params.region ? (params.region == kRegion_KeepPrevious ? strSpecialConvert : LZ(params.region->name.c_str())) : LZ("<Anywhere>"),
+                                          ImGuiComboFlags_PopupAlignLeft | ImGuiComboFlags_HeightLarge)) {
+                        if (ImGui::Selectable(strSpecialConvert, params.region == kRegion_KeepPrevious)) params.region = kRegion_KeepPrevious;
                         if (ImGui::Selectable(LZ("<Anywhere>"), !params.region)) params.region = nullptr;
                         for (auto region : g_Config.lsRegionsSorted) {
                             bool selected = region == params.region;
 
-                            if (ImGui::Selectable(LZ(region->name.c_str()), selected))
-                                params.region = region;
+                            ImGui::BeginDisabled(!profileRegions.empty() && !profileRegions.contains(region));
+                            if (ImGui::Selectable(LZ(region->name.c_str()), selected)) params.region = region;
                             if (selected) ImGui::SetItemDefaultFocus();
+                            ImGui::EndDisabled();
                         }
 
                         ImGui::EndCombo();
                     }
 
-                    //hlRarity.Pop();
+                    hlRegion.Pop();
 
                     ImGui::Indent(60);
                     ImGui::Checkbox(LZ("As pieces"), &params.bDistAsPieces);
@@ -1397,7 +1475,9 @@ void QuickArmorRebalance::RenderUI() {
                     hlDynamicVariants.Push(!analyzeResults.sets[AnalyzeResults::eWords_DynamicVariants].empty() ||
                                            !analyzeResults.sets[AnalyzeResults::eWords_EitherVariants].empty());
 
+                    ImGui::EndDisabled();
                     ImGui::SameLine();
+
                     if (ImGui::Button(LZ("Dynamic Variants"))) {
                         popupDynamicVariants = true;
                     }
@@ -1405,7 +1485,6 @@ void QuickArmorRebalance::RenderUI() {
 
                     ImGui::Unindent(60);
 
-                    ImGui::EndDisabled();
                     ImGui::EndDisabled();
 
                     // Modifications
@@ -2000,6 +2079,8 @@ void QuickArmorRebalance::RenderUI() {
                         }
                         if (!hasAnchor) lastSelectedItem = nullptr;
 
+                        anyItemChanges = 0;
+
                         for (auto i : data.filteredItems) {
                             int popCol = 0;
                             bool isModified = false;
@@ -2027,8 +2108,12 @@ void QuickArmorRebalance::RenderUI() {
 
                             ImGui::BeginGroup();
 
-                            bool isChecked = !uncheckedItems.contains(i);
+                            unsigned int itemChanges = MapFindOr(g_Data.modifiedItems, i, 0u);  // | MapFindOr(g_Data.modifiedItemsShared, i, 0u);
+                            const bool canUse = (itemChanges & needChanges) == needChanges;
+
+                            bool isChecked = !uncheckedItems.contains(i) && canUse;
                             ImGui::PushID(i->GetFormID());
+                            ImGui::BeginDisabled(!canUse);
 
                             if (isChecked && isModified) hasModifiedItems = true;
 
@@ -2038,7 +2123,10 @@ void QuickArmorRebalance::RenderUI() {
                                 else
                                     uncheckedItems.erase(i);
                             }
-                            if (isChecked) data.items.push_back(i);
+                            if (isChecked) {
+                                anyItemChanges |= itemChanges;
+                                data.items.push_back(i);
+                            }
 
                             ImGui::SameLine();
 
@@ -2210,6 +2298,7 @@ void QuickArmorRebalance::RenderUI() {
                                 }
                             }
 
+                            ImGui::EndDisabled();
                             ImGui::PopID();
                             ImGui::EndGroup();
 
@@ -2520,8 +2609,9 @@ void QuickArmorRebalance::RenderUI() {
                     ImGui::Checkbox(LZ("Enable regional loot"), &g_Config.bEnableRegionalLoot);
                     MakeTooltip(LZ("Items assigned a region will be most likely to appear there, with a smaller chance to appear in other regions."));
                     ImGui::Checkbox(LZ("Enable out of place loot"), &g_Config.bEnableMigratedLoot);
-                    MakeTooltip(LZ("This allows loot to appear in places it wasn't assigned at a reduced rate.\n"
-                        "Example: A small chance to find Ancient Nord loot inside a Bandit chest."));
+                    MakeTooltip(
+                        LZ("This allows loot to appear in places it wasn't assigned at a reduced rate.\n"
+                           "Example: A small chance to find Ancient Nord loot inside a Bandit chest."));
 
                     ImGui::Checkbox(LZ("Enforce loot rarity with empty loot"), &g_Config.bEnableRarityNullLoot);
                     MakeTooltip(
@@ -3366,18 +3456,20 @@ void QuickArmorRebalance::RenderUI() {
                     ImGui::InputText("##TabName", strTab, sizeof(strTab) - 1);
 
                     if (ImGui::BeginListBox("##KeywordList", ImVec2(300.0f, 500.0f))) {
-                        if (ImGui::BeginPopupContextWindow()) {
-                            if (ImGui::Selectable(LZ("Enable all"))) {
-                                for (auto kw : mapFileKeywords[curKWFile]) mapEnabledKWs[kw] = true;
+                        if (curKWFile) {
+                            if (ImGui::BeginPopupContextWindow()) {
+                                if (ImGui::Selectable(LZ("Enable all"))) {
+                                    for (auto kw : mapFileKeywords[curKWFile]) mapEnabledKWs[kw] = true;
+                                }
+                                if (ImGui::Selectable(LZ("Disable all"))) {
+                                    for (auto kw : mapFileKeywords[curKWFile]) mapEnabledKWs[kw] = false;
+                                }
+                                ImGui::EndPopup();
                             }
-                            if (ImGui::Selectable(LZ("Disable all"))) {
-                                for (auto kw : mapFileKeywords[curKWFile]) mapEnabledKWs[kw] = false;
-                            }
-                            ImGui::EndPopup();
-                        }
 
-                        for (auto kw : mapFileKeywords[curKWFile]) {
-                            if (ImGui::Checkbox(kw->formEditorID.c_str(), &mapEnabledKWs[kw])) {
+                            for (auto kw : mapFileKeywords[curKWFile]) {
+                                if (ImGui::Checkbox(kw->formEditorID.c_str(), &mapEnabledKWs[kw])) {
+                                }
                             }
                         }
 
@@ -3386,18 +3478,20 @@ void QuickArmorRebalance::RenderUI() {
 
                     static TimedTooltip resp;
                     if (ImGui::Button(RightAlign(LZ("Import")))) {
-                        std::set<RE::BGSKeyword*> kws;
+                        if (curKWFile) {
+                            std::set<RE::BGSKeyword*> kws;
 
-                        // auto& tab = mapKWTabs[strTab];
-                        for (auto kw : mapFileKeywords[curKWFile]) {
-                            if (mapEnabledKWs[kw]) {
-                                kws.insert(kw);
-                                fMaxKWSize = std::max(fMaxKWSize, 25.0f + ImGui::CalcTextSize(kw->formEditorID.c_str()).x);
+                            // auto& tab = mapKWTabs[strTab];
+                            for (auto kw : mapFileKeywords[curKWFile]) {
+                                if (mapEnabledKWs[kw]) {
+                                    kws.insert(kw);
+                                    fMaxKWSize = std::max(fMaxKWSize, 25.0f + ImGui::CalcTextSize(kw->formEditorID.c_str()).x);
+                                }
                             }
-                        }
 
-                        ImportKeywords(curKWFile, strTab, kws);
-                        resp.Enable(LZ("Keywords imported."));
+                            ImportKeywords(curKWFile, strTab, kws);
+                            resp.Enable(LZ("Keywords imported."));
+                        }
                     }
                     if (!resp.Show())
                         MakeTooltip(

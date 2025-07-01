@@ -86,7 +86,7 @@ Value QuickArmorRebalance::MakeLootChanges(const ArmorChangeParams& params, RE::
             if (params.distProfile) loot.AddMember("profile", Value(params.distProfile, al), al);
             if (params.armorSet) loot.AddMember("group", Value(params.armorSet->loot->name.c_str(), al), al);
             if (params.rarity >= 0) loot.AddMember("rarity", params.rarity, al);
-            if (params.region && params.region!=kRegion_KeepPrevious) loot.AddMember("region", Value(params.region->name.c_str(), al), al);
+            if (params.region && params.region != kRegion_KeepPrevious) loot.AddMember("region", Value(params.region->name.c_str(), al), al);
 
             return loot;
         }
@@ -516,7 +516,7 @@ namespace {
         if (nUsed == 1) {
             for (int i = 0; i < 3; i++)
                 if (lists[i]) {
-                    if (!g_Config.bEnableRarityNullLoot)
+                    if (!g_Config.bEnableRarityNullLoot || i == 0)
                         return lists[i];
                     else
                         return BuildListFrom("Rarity List", &lists[i], 1, RE::TESLeveledList::kCalculateForEachItemInCount,
@@ -526,9 +526,15 @@ namespace {
 
         std::vector<RE::TESBoundObject*> r;
 
-        for (int i = 0; i < 3; i++) {
-            if (lists[i] || g_Config.bEnableRarityNullLoot)
-                for (int n = 0; n < weight[i]; n++) r.push_back(lists[i]);
+        // Add most rare to least rare, letting it not add more rare entries if they don't exist
+
+        bool bAdd = false;
+        for (int i = 2; i >= 0; i--) {
+            if (lists[i]) {
+                bAdd = true;
+            }
+
+            if (bAdd && (!lists[i] || g_Config.bEnableRarityNullLoot)) AddListEntries(r, lists[i], weight[i]);
         }
 
         return BuildListFrom("Rarity List", r, RE::TESLeveledList::kCalculateForEachItemInCount);
@@ -668,45 +674,45 @@ namespace {
         }
     }
 
-            /*
-    void BuildSetLists() {
-        for (const auto& i : QuickArmorRebalance::g_Data.loot->containerGroups) {
-            auto& group = i.second;
-            if (!group.small.empty()) {
-                std::map<QuickArmorRebalance::LootDistGroup*, RE::TESBoundObject*> contentsLists;
-                for (auto& j : group.pieces) {
-                    if (auto list = BuildGroupList(j.second)) contentsLists[j.first] = list;
-                }
+    /*
+void BuildSetLists() {
+for (const auto& i : QuickArmorRebalance::g_Data.loot->containerGroups) {
+    auto& group = i.second;
+    if (!group.small.empty()) {
+        std::map<QuickArmorRebalance::LootDistGroup*, RE::TESBoundObject*> contentsLists;
+        for (auto& j : group.pieces) {
+            if (auto list = BuildGroupList(j.second)) contentsLists[j.first] = list;
+        }
 
-                if (auto pieceList = BuildCurveList(std::move(contentsLists))) {
-                    FillContents(group.small, pieceList, group.ench);
-                }
-            }
-
-            if (!group.large.empty()) {
-                std::map<QuickArmorRebalance::LootDistGroup*, RE::TESBoundObject*> contentsLists;
-                for (auto& j : group.sets) {
-                    if (auto list = BuildGroupList(j.second)) contentsLists[j.first] = list;
-                }
-
-                if (auto pieceList = BuildCurveList(std::move(contentsLists))) {
-                    FillContents(group.large, pieceList, group.ench);
-                }
-            }
-
-            if (!group.weapon.empty()) {
-                std::map<QuickArmorRebalance::LootDistGroup*, RE::TESBoundObject*> contentsLists;
-                for (auto& j : group.weapons) {
-                    if (auto list = BuildGroupList(j.second)) contentsLists[j.first] = list;
-                }
-
-                if (auto pieceList = BuildCurveList(std::move(contentsLists))) {
-                    FillContents(group.weapon, pieceList, group.ench);
-                }
-            }
+        if (auto pieceList = BuildCurveList(std::move(contentsLists))) {
+            FillContents(group.small, pieceList, group.ench);
         }
     }
-            */
+
+    if (!group.large.empty()) {
+        std::map<QuickArmorRebalance::LootDistGroup*, RE::TESBoundObject*> contentsLists;
+        for (auto& j : group.sets) {
+            if (auto list = BuildGroupList(j.second)) contentsLists[j.first] = list;
+        }
+
+        if (auto pieceList = BuildCurveList(std::move(contentsLists))) {
+            FillContents(group.large, pieceList, group.ench);
+        }
+    }
+
+    if (!group.weapon.empty()) {
+        std::map<QuickArmorRebalance::LootDistGroup*, RE::TESBoundObject*> contentsLists;
+        for (auto& j : group.weapons) {
+            if (auto list = BuildGroupList(j.second)) contentsLists[j.first] = list;
+        }
+
+        if (auto pieceList = BuildCurveList(std::move(contentsLists))) {
+            FillContents(group.weapon, pieceList, group.ench);
+        }
+    }
+}
+}
+    */
 
     RE::TESBoundObject* BuildRegionalGroupCurveList(ELootType lootType, LootContainerGroup* group, Region* region) {
         RE::TESBoundObject* ret = nullptr;
@@ -750,7 +756,6 @@ namespace {
         if (!g_Config.bEnableMigratedLoot) {
             return g_Data.loot->tblRegionSourceCache[lootType][region][&group] = BuildRegionalGroupCurveList(lootType, &group, region);
         }
-
 
         std::vector<RE::TESBoundObject*> entries;
         for (int i = 0; i < eRegion_RarityCount; i++) {

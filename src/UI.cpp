@@ -2607,7 +2607,11 @@ void QuickArmorRebalance::RenderUI() {
 
                 if (ImGui::BeginTabItem(LZ("Distribution"))) {
                     ImGui::Checkbox(LZ("Enable regional loot"), &g_Config.bEnableRegionalLoot);
-                    MakeTooltip(LZ("Items assigned a region will be most likely to appear there, with a smaller chance to appear in other regions."));
+                    MakeTooltip(LZ("If disabled, all items are treated as having no region assignment."));
+                    ImGui::BeginDisabled(!g_Config.bEnableRegionalLoot);
+                    ImGui::Checkbox(LZ("Enable cross region loot"), &g_Config.bEnableCrossRegionLoot);
+                    MakeTooltip(LZ("If disabled, items will ONLY appear in their assigned regions."));
+                    ImGui::EndDisabled();
                     ImGui::Checkbox(LZ("Enable out of place loot"), &g_Config.bEnableMigratedLoot);
                     MakeTooltip(
                         LZ("This allows loot to appear in places it wasn't assigned at a reduced rate.\n"

@@ -117,7 +117,7 @@ void QuickArmorRebalance::LoadLootChanges(RE::TESBoundObject* item, const Value&
     changed |= eChange_Loot;
 
     const Region* region = nullptr;
-    if (jsonLoot.HasMember("region")) {
+    if (g_Config.bEnableRegionalLoot && jsonLoot.HasMember("region")) {
         changed |= eChange_Region;
         const auto& jsonRegion = jsonLoot["region"];
 
@@ -668,9 +668,9 @@ namespace {
         }
     }
 
+            /*
     void BuildSetLists() {
         for (const auto& i : QuickArmorRebalance::g_Data.loot->containerGroups) {
-            /*
             auto& group = i.second;
             if (!group.small.empty()) {
                 std::map<QuickArmorRebalance::LootDistGroup*, RE::TESBoundObject*> contentsLists;
@@ -704,9 +704,9 @@ namespace {
                     FillContents(group.weapon, pieceList, group.ench);
                 }
             }
-            */
         }
     }
+            */
 
     RE::TESBoundObject* BuildRegionalGroupCurveList(ELootType lootType, LootContainerGroup* group, Region* region) {
         RE::TESBoundObject* ret = nullptr;
@@ -747,6 +747,11 @@ namespace {
         RE::TESBoundObject* ret = nullptr;
         if (MapFind(g_Data.loot->tblRegionSourceCache[lootType][region], &group, ret)) return ret;
 
+        if (!g_Config.bEnableMigratedLoot) {
+            return g_Data.loot->tblRegionSourceCache[lootType][region][&group] = BuildRegionalGroupCurveList(lootType, &group, region);
+        }
+
+
         std::vector<RE::TESBoundObject*> entries;
         for (int i = 0; i < eRegion_RarityCount; i++) {
             std::vector<RE::TESBoundObject*> groupList;
@@ -767,6 +772,10 @@ namespace {
         if (!region) {
             logger::info("FIXME");
             return nullptr;
+        }
+
+        if (!g_Config.bEnableRegionalLoot || !g_Config.bEnableCrossRegionLoot) {
+            return BuildSourceSelectionList(lootType, group, region);
         }
 
         std::vector<RE::TESBoundObject*> entries;

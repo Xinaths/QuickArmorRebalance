@@ -339,6 +339,7 @@ bool QuickArmorRebalance::Config::Load() {
             g_Config.fEnchantRates = config["settings"]["enchantrate"].value_or(100.0f);
             g_Config.bShowAllRecipeConditions = config["settings"]["allrecipereqs"].value_or(false);
             g_Config.bEnableRegionalLoot = config["settings"]["regionalloot"].value_or(true);
+            g_Config.bEnableCrossRegionLoot = config["settings"]["crossregionloot"].value_or(true);
             g_Config.bEnableMigratedLoot = config["settings"]["migrateloot"].value_or(true);
 
             if (auto code = config["settings"]["language"].as_string()) {
@@ -1042,6 +1043,7 @@ void QuickArmorRebalance::Config::Save() {
                                  {"keepcraftingbooks", g_Config.bKeepCraftingBooks},
                                  {"enforcerarity", g_Config.bEnableRarityNullLoot},
                                  {"regionalloot", g_Config.bEnableRegionalLoot},
+                                 {"crossregionloot", g_Config.bEnableCrossRegionLoot},
                                  {"migratedloot", g_Config.bEnableMigratedLoot},
                                  {"resetslotremap", g_Config.bResetSlotRemap},
                                  {"enableallitems", g_Config.bEnableAllItems},

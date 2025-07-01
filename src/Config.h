@@ -314,6 +314,7 @@ namespace QuickArmorRebalance {
         bool bPauseWhileOpen = true;
         bool bShowAllRecipeConditions = false;
         bool bEnableRegionalLoot = true;
+        bool bEnableCrossRegionLoot = true;
         bool bEnableMigratedLoot = true;
 
         bool bShortcutEscCloseWindow = true;

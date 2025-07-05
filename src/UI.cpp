@@ -48,6 +48,29 @@ void MakeTooltip(const char* str, bool delay = false) {
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | (delay ? ImGuiHoveredFlags_DelayNormal : 0))) ImGui::SetTooltip(str);
 }
 
+struct TriStateCheckbox {
+    static const int kTrue = 1;
+    static const int kFalse = 0;
+    static const int kEither = 2;
+
+    static bool Insert(const char* label, int* state) {
+        static const int triState[] = {0, -1, 2};
+        int local = triState[*state];
+        bool bRet = false;
+        if (ImGui::CheckboxFlags(label, &local, 3)) {
+            *state = (1 + *state) % 3;
+            bRet = true;
+        }
+
+        if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+            *state = 2;
+            bRet = true;
+        }
+
+        return bRet;
+    }
+};
+
 bool MenuItemConfirmed(const char* str) {
     bool bRet = false;
     if (ImGui::BeginMenu(str)) {
@@ -58,9 +81,68 @@ bool MenuItemConfirmed(const char* str) {
     return bRet;
 }
 
+struct ModFilterSettings {
+    int any = TriStateCheckbox::kEither;
+    int stats = TriStateCheckbox::kEither;
+    int slots = TriStateCheckbox::kEither;
+    int keywords = TriStateCheckbox::kEither;
+    int loot = TriStateCheckbox::kEither;
+    int survival = TriStateCheckbox::kEither;
+    int recipes = TriStateCheckbox::kEither;
+    int region = TriStateCheckbox::kEither;
+
+    ModFilterSettings() { Reset(); }
+
+    void Reset() {
+        any = stats = slots = keywords = loot = survival = recipes = region = TriStateCheckbox::kEither;
+        Build();
+    }
+
+    void Build() {
+        enabledFlags = disabledFlags = 0;
+
+        SetFlag(stats, eChange_Stats);
+        SetFlag(slots, eChange_Slots);
+        SetFlag(keywords, eChange_Keywords);
+        SetFlag(loot, eChange_Loot);
+        SetFlag(survival, eChange_Survival);
+        SetFlag(recipes, eChange_Recipes);
+        SetFlag(region, eChange_Region);
+    }
+
+    bool Test(unsigned int flags) const {
+        switch (any) {
+            case TriStateCheckbox::kTrue:
+                if (!flags) return false;
+                break;
+            case TriStateCheckbox::kFalse:
+                if (flags) return false;
+                break;
+        }
+
+        if ((flags & enabledFlags) != enabledFlags) return false;
+        if ((flags & disabledFlags) != 0) return false;
+
+        return true;
+    }
+
+    bool Active() { return any != TriStateCheckbox::kEither || enabledFlags || disabledFlags; }
+
+protected:
+    void SetFlag(int state, unsigned int flag) {
+        if (state == TriStateCheckbox::kTrue)
+            enabledFlags |= flag;
+        else if (state == TriStateCheckbox::kFalse)
+            disabledFlags |= flag;
+    }
+
+    unsigned int enabledFlags = 0;
+    unsigned int disabledFlags = 0;
+};
+
 bool DoClearFilter() { return ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right); }
 
-std::vector<ModData*> GetFilteredMods(int nModFilter, const char* nameFilter) {
+std::vector<ModData*> GetFilteredMods(int nModFilter, const char* nameFilter, ModFilterSettings& modFilters) {
     std::vector<ModData*> list;
     list.reserve(g_Data.sortedMods.size());
     switch (nModFilter) {
@@ -71,15 +153,7 @@ std::vector<ModData*> GetFilteredMods(int nModFilter, const char* nameFilter) {
                 std::copy_if(g_Data.sortedMods.begin(), g_Data.sortedMods.end(), std::back_inserter(list),
                              [=](ModData* mod) { return StringContainsI(mod->mod->fileName, nameFilter); });
             break;
-        case 1:
-            std::copy_if(g_Data.sortedMods.begin(), g_Data.sortedMods.end(), std::back_inserter(list),
-                         [=](ModData* mod) { return !mod->bModified && (!*nameFilter || StringContainsI(mod->mod->fileName, nameFilter)); });
-            break;
-        case 2:
-            std::copy_if(g_Data.sortedMods.begin(), g_Data.sortedMods.end(), std::back_inserter(list),
-                         [=](ModData* mod) { return mod->bModified && (!*nameFilter || StringContainsI(mod->mod->fileName, nameFilter)); });
-            break;
-        case 3: {
+        case 1: {
             static bool bOnce = false;
             if (!bOnce) {
                 bOnce = true;
@@ -100,7 +174,13 @@ std::vector<ModData*> GetFilteredMods(int nModFilter, const char* nameFilter) {
             break;
     }
 
-    return list;
+    if (!modFilters.Active()) return list;
+
+    std::vector<ModData*> ret;
+    ret.reserve(list.size());
+    std::copy_if(list.begin(), list.end(), std::back_inserter(ret), [&](ModData* mod) { return modFilters.Test(mod->changes); });
+
+    return ret;
 }
 
 struct ItemFilter {
@@ -119,8 +199,8 @@ struct ItemFilter {
     bool bArmorLight = true;
     bool bArmorHeavy = true;
 
-    int bModified = 2;
     int bEnchanted = 2;
+    ModFilterSettings modFilters;
 
     bool Pass(RE::TESBoundObject* obj) const {
         // Run these fastest to slowest
@@ -172,8 +252,9 @@ struct ItemFilter {
                 return false;
         }
 
-        if (bModified != 2 && !!bModified != (g_Data.modifiedItems.contains(obj) || g_Data.modifiedItemsShared.contains(obj))) return false;
         if (bEnchanted != 2 && !!bEnchanted != IsEnchanted(obj)) return false;
+
+        if (!modFilters.Test(MapFindOr(g_Data.modifiedItems, obj, 0u) | MapFindOr(g_Data.modifiedItemsShared, obj, 0u))) return false;
 
         return true;
     }
@@ -461,6 +542,28 @@ void PermissionsChecklist(const char* id, Permissions& p) {
     ImGui::PopID();
 }
 
+short g_filterRound = 0;
+
+void InsertModificationFilter(ModFilterSettings& filters) {
+    ImGui::Text(LZ("QAR changes:"));
+    bool bChanged = false;
+    bChanged |= TriStateCheckbox::Insert(LZ("Any"), &filters.any);
+    ImGui::BeginDisabled(filters.any == TriStateCheckbox::kFalse);
+    bChanged |= TriStateCheckbox::Insert(LZ("Distributed as loot"), &filters.loot);
+    bChanged |= TriStateCheckbox::Insert(LZ("Region"), &filters.region);
+    bChanged |= TriStateCheckbox::Insert(LZ("Alterated stats"), &filters.stats);
+    bChanged |= TriStateCheckbox::Insert(LZ("Altered survival stats"), &filters.survival);
+    bChanged |= TriStateCheckbox::Insert(LZ("Altered recipes"), &filters.recipes);
+    bChanged |= TriStateCheckbox::Insert(LZ("Slot remapping"), &filters.slots);
+    bChanged |= TriStateCheckbox::Insert(LZ("Changed keywords"), &filters.keywords);
+    ImGui::EndDisabled();
+
+    if (bChanged) {
+        filters.Build();
+        g_filterRound++;
+    }
+}
+
 enum { ModSpecial_Worn, ModSpecial_All };
 
 void AddFormsToList(const auto& all, const ItemFilter& filter) {
@@ -473,7 +576,6 @@ void AddFormsToList(const auto& all, const ItemFilter& filter) {
     }
 }
 
-short g_filterRound = 0;
 
 bool GetCurrentListItems(ModData* curMod, int nModSpecial, const ItemFilter& filter, AnalyzeResults& results) {
     static short filterRound = -1;
@@ -928,7 +1030,7 @@ void QuickArmorRebalance::RenderUI() {
 
         if (g_Config.strCriticalError.empty()) {
             static int nModFilter = 0;
-            const char* modFilterDesc[] = {LZ("No filter"), LZ("Unmodified"), LZ("Modified"), LZ("Has possible dynamic variants")};
+            static ModFilterSettings modModFilterSettings;
 
             const char* strModSpecial[] = {LZ("<Currently Worn Armor>"), LZ("<All Items>"), nullptr};
             bool bModSpecialEnabled[] = {true, g_Config.bEnableAllItems};
@@ -1010,7 +1112,7 @@ void QuickArmorRebalance::RenderUI() {
                                 }
                             }
 
-                            for (auto i : GetFilteredMods(nModFilter, strModFilter)) {
+                            for (auto i : GetFilteredMods(nModFilter, strModFilter, modModFilterSettings)) {
                                 bool selected = curMod == i;
 
                                 int pop = 0;
@@ -1077,9 +1179,31 @@ void QuickArmorRebalance::RenderUI() {
                         // ImGui::Checkbox("Hide modified", &bFilterChangedMods);
 
                         ImGui::SetNextItemWidth(200.0f);
-                        ImGui::Combo("##FilterMods", &nModFilter, modFilterDesc, IM_ARRAYSIZE(modFilterDesc));
+
+                        const char* modFilterDesc[] = {LZ("No filter"), LZ("Has possible dynamic variants")};
+
+                        if (ImGui::BeginCombo("##FilterMods", modModFilterSettings.Active() ? LZ("<Filters active>") : modFilterDesc[nModFilter], ImGuiComboFlags_HeightLarge)) {
+                            {
+                                bool selected = nModFilter == 0;
+                                if (ImGui::Selectable(modFilterDesc[0], selected)) {
+                                    nModFilter = 0;
+                                }
+                            }
+                            {
+                                bool selected = nModFilter == 1;
+                                if (ImGui::Selectable(modFilterDesc[1], selected)) {
+                                    nModFilter = 1;
+                                }
+                            }
+
+                            InsertModificationFilter(modModFilterSettings);
+
+                            ImGui::EndCombo();
+                        }
+
                         if (DoClearFilter()) {
                             nModFilter = 0;
+                            modModFilterSettings.Reset();
                         }
                         ImGui::EndTable();
                     }
@@ -1189,41 +1313,22 @@ void QuickArmorRebalance::RenderUI() {
                     // if (ImGui::Checkbox(LZ("Unmodified"), &filter.bUnmodified)) g_filterRound++;
                     ImGui::SetNextItemWidth(60);
 
-                    struct TriStateCheckbox {
-                        static bool Insert(const char* label, int* state) {
-                            static const int triState[] = {0, -1, 2};
-                            int local = triState[*state];
-                            bool bRet = false;
-                            if (ImGui::CheckboxFlags(label, &local, 3)) {
-                                *state = (1 + *state) % 3;
-                                bRet = true;
-                            }
-
-                            if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
-                                *state = 2;
-                                bRet = true;
-                            }
-
-                            return bRet;
-                        }
-                    };
-
-                    if (filter.bModified != 2 || filter.bEnchanted != 2) {
+                    if (!(filter.bEnchanted != 2 || filter.modFilters.Active())) {
                         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
                         popCol++;
                     }
 
-                    if (ImGui::BeginCombo("##OtherFilters", LZ("Other"))) {
+                    if (ImGui::BeginCombo("##OtherFilters", LZ("Other"), ImGuiComboFlags_HeightLargest)) {
                         ImGui::PopStyleColor(popCol);
                         popCol = 0;
 
-                        if (TriStateCheckbox::Insert(LZ("Modified"), &filter.bModified)) g_filterRound++;
                         if (TriStateCheckbox::Insert(LZ("Enchanted"), &filter.bEnchanted)) g_filterRound++;
+                        InsertModificationFilter(filter.modFilters);
 
                         ImGui::EndCombo();
                     }
                     if (DoClearFilter()) {
-                        filter.bModified = 2;
+                        filter.modFilters.Reset();
                         filter.bEnchanted = 2;
                         g_filterRound++;
                     }
@@ -1436,10 +1541,10 @@ void QuickArmorRebalance::RenderUI() {
                     ImGui::SameLine();
                     ImGui::SetNextItemWidth(140);
 
-                    hlRegion.Push(params.bDistribute && params.region && params.region!=kRegion_KeepPrevious);
+                    hlRegion.Push(params.bDistribute && params.region && params.region != kRegion_KeepPrevious);
 
                     auto& profileRegions = g_Config.lootProfileRegions[params.distProfile];
-                    if (params.region!=kRegion_KeepPrevious && !profileRegions.empty() && !profileRegions.contains(params.region)) params.region = nullptr;
+                    if (params.region != kRegion_KeepPrevious && !profileRegions.empty() && !profileRegions.contains(params.region)) params.region = nullptr;
                     if (ImGui::BeginCombo("##Region",
                                           params.region ? (params.region == kRegion_KeepPrevious ? strSpecialConvert : LZ(params.region->name.c_str())) : LZ("<Anywhere>"),
                                           ImGuiComboFlags_PopupAlignLeft | ImGuiComboFlags_HeightLarge)) {

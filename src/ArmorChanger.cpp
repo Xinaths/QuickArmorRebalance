@@ -685,12 +685,14 @@ int QuickArmorRebalance::ApplyChanges(const RE::TESFile* file, const rapidjson::
 
     if (nChanges > 0) {
         g_Data.modData[file]->bModified = true;
+        g_Data.modData[file]->changes |= allChanges;
         if (&perm == &g_Config.permShared) {
             g_Data.modifiedFilesShared[file] |= allChanges;
         } else {
             g_Data.modifiedFiles[file] |= allChanges;
             g_Data.modifiedFilesDeleted.erase(file);
         }
+
     }
 
     return nChanges;

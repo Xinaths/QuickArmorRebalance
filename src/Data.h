@@ -177,6 +177,7 @@ namespace QuickArmorRebalance {
         bool bModified = false;
         bool bHasDynamicVariants = false;
         bool bHasPotentialDVs = false;
+        unsigned int changes = 0;
     };
 
     struct LootDistGroup {

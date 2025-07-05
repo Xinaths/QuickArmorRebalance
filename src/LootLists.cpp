@@ -18,6 +18,9 @@ Loot table notes
 
 */
 
+// #define RUN_DISTRIBUTION_TESTS 10
+// #define TEST_FOR_DUPLICATE_LISTS
+
 using namespace rapidjson;
 using namespace QuickArmorRebalance;
 
@@ -243,6 +246,7 @@ void QuickArmorRebalance::LoadLootConfig(const Value& jsonLoot) {
         if (jsonGroups.IsObject()) {
             for (const auto& jsonGroup : jsonGroups.GetObj()) {
                 auto& group = g_Data.loot->containerGroups[jsonGroup.name.GetString()];
+                if (group.name.empty()) group.name = jsonGroup.name.GetString();
 
                 if (jsonGroup.value.HasMember("leveled")) group.bLeveled = jsonGroup.value["leveled"].GetBool();
                 if (jsonGroup.value.HasMember("enchPower")) group.ench.enchPower = jsonGroup.value["enchPower"].GetFloat();
@@ -324,11 +328,17 @@ void QuickArmorRebalance::ValidateLootConfig() {
     }
 }
 
+std::map<std::string, RE::TESBoundObject*> g_TestList;
+
 namespace {
     using namespace QuickArmorRebalance;
 
     int g_nLListsCreated = 0;
     std::map<const char*, int> g_nLLTypes;
+
+#ifdef TEST_FOR_DUPLICATE_LISTS
+    std::vector<RE::TESLevItem*> g_createdLists;
+#endif
 
     const size_t kLLMaxSize = 0xff;  // Not 0x100 because num_entries would roll to 0 at max size
 
@@ -415,6 +425,9 @@ namespace {
             }
 
             // LogListContents(list);
+#ifdef TEST_FOR_DUPLICATE_LISTS
+            g_createdLists.push_back(list);
+#endif
             return list;
         }
     }
@@ -501,7 +514,15 @@ namespace {
         return BuildListFrom("Mod Groupped Armor Sets List", modLists, RE::TESLeveledList::kCalculateForEachItemInCount);
     }
 
-    RE::TESBoundObject* BuildGroupList(const LootContainerGroup::Rarities& contents, const LootContainerGroup::Rarities& fallback, auto Fetch) {
+    RE::TESBoundObject* BuildGroupList(const LootContainerGroup::Rarities& contents, const LootContainerGroup::Rarities& fallback, RE::TESBoundObject** lowerTier, auto Fetch) {
+        RE::TESBoundObject* ret = nullptr;
+        auto cachePtr = &Fetch(contents, 0);
+        if (MapFind(g_Data.loot->cacheGroupList, cachePtr, ret)) {
+            // Cache unused due to RegionalGroupTierList cache
+            // logger::info("Group List cache used");
+            return ret;
+        }
+
         RE::TESBoundObject* lists[3] = {nullptr, nullptr, nullptr};
 
         int nUsed = 0;
@@ -512,32 +533,57 @@ namespace {
         constexpr int weight[] = {15, 4, 1};
         constexpr int weightTotal = 20;
 
-        if (!nUsed) return nullptr;
-        if (nUsed == 1) {
-            for (int i = 0; i < 3; i++)
-                if (lists[i]) {
-                    if (!g_Config.bEnableRarityNullLoot || i == 0)
-                        return lists[i];
-                    else
-                        return BuildListFrom("Rarity List", &lists[i], 1, RE::TESLeveledList::kCalculateForEachItemInCount,
-                                             100 - (uint8_t)(100.f * (float)weight[i] / weightTotal));
-                }
-        }
-
-        std::vector<RE::TESBoundObject*> r;
-
-        // Add most rare to least rare, letting it not add more rare entries if they don't exist
-
-        bool bAdd = false;
-        for (int i = 2; i >= 0; i--) {
-            if (lists[i]) {
-                bAdd = true;
+        if (!nUsed)
+            ret = nullptr;
+        else {
+            for (int i = 0; i < 3; i++) {
+                if (lists[i]) lowerTier[i] = lists[i];
             }
 
-            if (bAdd && (!lists[i] || g_Config.bEnableRarityNullLoot)) AddListEntries(r, lists[i], weight[i]);
+            if (nUsed == 1) {
+                if (lists[0])
+                    ret = lists[0];  // If its a common, just always return the common
+                else {
+                    for (int i = 0; i < 3; i++) {
+                        if (!lists[i]) {
+                            lists[i] = lowerTier[i];
+                            nUsed++;
+                        }
+                    }
+
+                    if (nUsed == 1) {
+                        for (int i = 1; i < 3; i++)
+                            if (lists[i]) {
+                                if (!g_Config.bEnableRarityNullLoot || i == 0)
+                                    ret = lists[i];
+                                else
+                                    ret = BuildListFrom("Rarity List", &lists[i], 1, RE::TESLeveledList::kCalculateForEachItemInCount,
+                                                        100 - (uint8_t)(100.f * (float)weight[i] / weightTotal));
+                                break;
+                            }
+                    }
+                }
+            }
+
+            if (!ret) {
+                std::vector<RE::TESBoundObject*> r;
+
+                // Add most rare to least rare, letting it not add more rare entries if they don't exist
+
+                bool bAdd = false;
+                for (int i = 2; i >= 0; i--) {
+                    if (lists[i]) {
+                        bAdd = true;
+                    }
+
+                    if (bAdd && !(!lists[i] && !g_Config.bEnableRarityNullLoot)) AddListEntries(r, lowerTier[i], weight[i]);  // Lower tier will have current tier if appropriate
+                }
+
+                ret = BuildListFrom("Rarity List", r, RE::TESLeveledList::kCalculateForEachItemInCount);
+            }
         }
 
-        return BuildListFrom("Rarity List", r, RE::TESLeveledList::kCalculateForEachItemInCount);
+        return g_Data.loot->cacheGroupList[cachePtr] = ret;
     }
 
     int GetGroupEntriesForLevel(int level, QuickArmorRebalance::LootDistGroup* group) {
@@ -714,6 +760,7 @@ for (const auto& i : QuickArmorRebalance::g_Data.loot->containerGroups) {
 }
     */
 
+    /*
     RE::TESBoundObject* BuildRegionalGroupCurveList(ELootType lootType, LootContainerGroup* group, Region* region) {
         RE::TESBoundObject* ret = nullptr;
         if (!group->contents.contains(region)) region = nullptr;
@@ -748,13 +795,61 @@ for (const auto& i : QuickArmorRebalance::g_Data.loot->containerGroups) {
 
         return g_Data.loot->tblRegionSourceCurveCache[lootType][region][group] = BuildCurveList(contentsLists);
     }
+    */
 
-    RE::TESBoundObject* BuildSourceSelectionList(ELootType lootType, LootContainerGroup& group, Region* region) {
+    RE::TESBoundObject* BuildRegionalGroupTierList(ELootType lootType, LootContainerGroup* group, Region* region, LootDistGroup* tier) {
+        const LootContainerGroup::Rarities* rarities = nullptr;
+
+        auto& fallback = group->contents[nullptr][tier];
+
+        if (auto regionTiers = MapFind(group->contents, region)) {
+            rarities = MapFind(*regionTiers, tier);
+        }
+
+        if (!rarities) rarities = &fallback;
+
         RE::TESBoundObject* ret = nullptr;
-        if (MapFind(g_Data.loot->tblRegionSourceCache[lootType][region], &group, ret)) return ret;
+        auto cachePtr = rarities;
+        if (MapFind(g_Data.loot->cacheRegionalGroupTierList[lootType], cachePtr, ret)) {
+            // Cache actively used
+            // logger::info("RegionalGroupTierList cache used");
+            return ret;
+        }
+
+        std::map<QuickArmorRebalance::LootDistGroup*, RE::TESBoundObject*> contentsLists;
+
+        RE::TESBoundObject* list = nullptr;
+
+        switch (lootType) {
+            case eLoot_Set: {
+                list = BuildGroupList(*rarities, fallback, g_Data.loot->cacheLowerTierItems[lootType][group][region],
+                                      [](const LootContainerGroup::Rarities& items, int rarity) -> auto& { return items[rarity].sets; });
+            } break;
+            case eLoot_Armor: {
+                list = BuildGroupList(*rarities, fallback, g_Data.loot->cacheLowerTierItems[lootType][group][region],
+                                      [](const LootContainerGroup::Rarities& items, int rarity) -> auto& { return items[rarity].pieces; });
+            } break;
+            case eLoot_Weapon: {
+                list = BuildGroupList(*rarities, fallback, g_Data.loot->cacheLowerTierItems[lootType][group][region],
+                                      [](const LootContainerGroup::Rarities& items, int rarity) -> auto& { return items[rarity].weapons; });
+            } break;
+        }
+
+        return g_Data.loot->cacheRegionalGroupTierList[lootType][cachePtr] = list;
+    }
+
+    RE::TESBoundObject* BuildSourceSelectionList(ELootType lootType, LootContainerGroup& group, Region* region, LootDistGroup* tier) {
+        RE::TESBoundObject* ret = nullptr;
+        // if (MapFind(g_Data.loot->tblRegionSourceCache[lootType][region], &group, ret)) return ret;
+        auto& cache = g_Data.loot->cacheSourceSelectionList[lootType][tier][&group];
+        auto cachePtr = region;
+        if (MapFind(cache, cachePtr, ret)) {
+            // logger::info("SourceSelectionList cache used");
+            return ret;
+        }
 
         if (!g_Config.bEnableMigratedLoot) {
-            return g_Data.loot->tblRegionSourceCache[lootType][region][&group] = BuildRegionalGroupCurveList(lootType, &group, region);
+            return cache[cachePtr] = BuildRegionalGroupTierList(lootType, &group, region, tier);
         }
 
         std::vector<RE::TESBoundObject*> entries;
@@ -763,24 +858,26 @@ for (const auto& i : QuickArmorRebalance::g_Data.loot->containerGroups) {
             for (auto iGroup : group.migration[i]) {
                 if ((!iGroup->regions.empty() && !iGroup->regions.contains(region))) continue;
 
-                if (auto list = BuildRegionalGroupCurveList(lootType, iGroup, region)) groupList.push_back(list);
+                if (auto list = BuildRegionalGroupTierList(lootType, iGroup, region, tier)) groupList.push_back(list);
             }
 
             if (groupList.empty()) continue;
             AddListEntries(entries, BuildListFrom("Group Selection", groupList, 0), g_Config.nMigrationRarityEntries[i]);
         }
 
-        return g_Data.loot->tblRegionSourceCache[lootType][region][&group] = BuildListFrom("Group Rarity Selection", entries, 0);
+        // logger::info("Building list for [{}] {} - {} - {}", (int)lootType, group.name, region ? region->name : "<universal>", tier ? tier->name : "<unleveled>");
+
+        return cache[cachePtr] = BuildListFrom("Group Rarity Selection", entries, 0);
     }
 
-    RE::TESBoundObject* BuildRegionSelectionList(ELootType lootType, LootContainerGroup& group, Region* region) {
+    RE::TESBoundObject* BuildRegionSelectionList(ELootType lootType, LootContainerGroup& group, Region* region, LootDistGroup* tier) {
         if (!region) {
             logger::info("FIXME");
             return nullptr;
         }
 
         if (!g_Config.bEnableRegionalLoot || !g_Config.bEnableCrossRegionLoot) {
-            return BuildSourceSelectionList(lootType, group, region);
+            return BuildSourceSelectionList(lootType, group, region, tier);
         }
 
         std::vector<RE::TESBoundObject*> entries;
@@ -792,7 +889,7 @@ for (const auto& i : QuickArmorRebalance::g_Data.loot->containerGroups) {
                     continue;
                 }
 
-                if (auto list = BuildSourceSelectionList(lootType, group, iRegion)) regionList.push_back(list);
+                if (auto list = BuildSourceSelectionList(lootType, group, iRegion, tier)) regionList.push_back(list);
             }
 
             if (regionList.empty()) continue;
@@ -802,12 +899,29 @@ for (const auto& i : QuickArmorRebalance::g_Data.loot->containerGroups) {
         return BuildListFrom("Region Rarity Selection", entries, 0);
     }
 
-    void BuildContainerGroupLoot(ELootType lootType, LootContainerGroup& group, LootContainerGroup::ContainerChanceMap& containers, Region* region) {
+    RE::TESBoundObject* BuildRegionalCurveSelectionList(ELootType lootType, LootContainerGroup& group, Region* region) {
+        std::map<QuickArmorRebalance::LootDistGroup*, RE::TESBoundObject*> contentsLists;
+
+        if (!group.bLeveled) return BuildRegionSelectionList(lootType, group, region, nullptr);
+
+        for (auto tier : g_Data.distGroupsSorted) {
+            // auto tier = &distGroup.second;
+
+            auto list = BuildRegionSelectionList(lootType, group, region, tier);
+            if (list) contentsLists[tier] = list;
+        }
+
+        return BuildCurveList(contentsLists);
+    }
+
+    RE::TESBoundObject* BuildContainerGroupLoot(ELootType lootType, LootContainerGroup& group, LootContainerGroup::ContainerChanceMap& containers, Region* region) {
         RE::TESBoundObject* contentsList = nullptr;
 
-        contentsList = BuildRegionSelectionList(lootType, group, region);
+        // contentsList = BuildRegionSelectionList(lootType, group, region);
+        contentsList = BuildRegionalCurveSelectionList(lootType, group, region);
 
         FillContents(containers, contentsList, group.ench);
+        return contentsList;
     }
 
     void BuildContainerLootLists() {
@@ -833,19 +947,70 @@ for (const auto& i : QuickArmorRebalance::g_Data.loot->containerGroups) {
                 Merge(group.weapon);
             }
 
-            auto Build = [&](ELootType lootType, std::map<Region*, LootContainerGroup::ContainerChanceMap>& regionContainers) {
+            auto Build = [&](ELootType lootType, const std::string& groupName, std::map<Region*, LootContainerGroup::ContainerChanceMap>& regionContainers) {
                 for (auto& it : regionContainers) {
                     if (!it.second.empty()) {
-                        BuildContainerGroupLoot(lootType, group, it.second, it.first);
+                        auto list = BuildContainerGroupLoot(lootType, group, it.second, it.first);
+#if RUN_DISTRIBUTION_TESTS > 0
+                        if (list) {
+                            auto name = std::format("[{}] {} - {}", (int)lootType, groupName.c_str(), it.first->name.c_str());
+                            g_TestList[name] = list;
+                        }
+#else
+                        // Reference params to make warnings go away
+                        list;
+                        groupName;
+#endif
                     }
                 }
             };
 
-            Build(eLoot_Set, group.large);
-            Build(eLoot_Armor, group.small);
-            Build(eLoot_Weapon, group.weapon);
+            Build(eLoot_Set, i.first, group.large);
+            Build(eLoot_Armor, i.first, group.small);
+            Build(eLoot_Weapon, i.first, group.weapon);
         }
     }
+}
+
+void SampleItemDistribution(std::vector<RE::TESBoundObject*>& items, RE::TESForm* form, int level, int count) {
+    if (!form) return;
+    if (auto list = form->As<RE::TESLevItem>()) {
+        if (!list->numEntries) return;
+        if (((int)(RNG() % 100)) < list->chanceNone) return;
+
+        if (list->llFlags & RE::TESLeveledList::kUseAll) {
+            for (int i = 0; i < list->numEntries; i++) SampleItemDistribution(items, list->entries[i].form, level, list->entries[i].count);
+        } else {
+            int lower = 0;
+            int upper = 0;
+            for (upper = 0; upper < list->numEntries && level >= list->entries[upper].level; upper++)
+                ;
+            if (!upper) return;
+
+            if (!(list->llFlags & RE::TESLeveledList::kCalculateFromAllLevelsLTOrEqPCLevel)) {
+                lower = upper - 1;
+                const auto same = list->entries[lower].level;
+                if (list->entries[0].level == same) {
+                    lower = 0;
+                } else {
+                    do lower--;
+                    while (list->entries[lower].level == same);
+                    lower++;
+                }
+            }
+
+            if (list->llFlags & RE::TESLeveledList::kCalculateForEachItemInCount) {
+                while (count--) {
+                    const int i = lower + (RNG() % (upper - lower));
+                    SampleItemDistribution(items, list->entries[i].form, level, list->entries[i].count);
+                }
+            } else {
+                const int i = lower + (RNG() % (upper - lower));
+                SampleItemDistribution(items, list->entries[i].form, level, count * list->entries[i].count);
+            }
+        }
+    } else if (auto item = form->As<RE::TESBoundObject>())
+        items.push_back(item);
 }
 
 void QuickArmorRebalance::SetupLootLists() {
@@ -894,6 +1059,27 @@ void QuickArmorRebalance::SetupLootLists() {
         }
     }
 
+#ifdef TEST_FOR_DUPLICATE_LISTS
+    auto IdenticalLists = [](RE::TESLevItem* a, RE::TESLevItem* b) -> bool {
+        if (a->numEntries != b->numEntries) return false;
+        for (int i = 0; i < a->numEntries; i++) {
+            if (a->entries[i].form != b->entries[i].form) return false;
+        }
+        return true;
+    };
+
+    int nCopies = 0;
+    for (int i = 0; i < g_createdLists.size(); i++) {
+        for (int j = i + 1; j < g_createdLists.size(); j++) {
+            if (IdenticalLists(g_createdLists[i], g_createdLists[j])) {
+                logger::info("Duplicate list found");
+                nCopies++;
+            }
+        }
+    }
+    logger::info("{} duplicate lists", nCopies);
+#endif
+
     logger::trace("Building loot lists");
     // BuildSetLists();
     BuildContainerLootLists();
@@ -902,5 +1088,30 @@ void QuickArmorRebalance::SetupLootLists() {
     for (auto& i : g_nLLTypes) {
         logger::info("   {} lists for {}", i.second, i.first);
     }
+
+#if RUN_DISTRIBUTION_TESTS > 0
+
+    logger::info("Running Distribution tests");
+
+    for (auto& i : g_TestList) {
+        for (int level = 1; level <= 51; level += 5) {
+            logger::info("{} - Level {}", i.first, level);
+            for (int n = 0; n < RUN_DISTRIBUTION_TESTS; n++) {
+                logger::info("   Test {}:", n + 1);
+                std::vector<RE::TESBoundObject*> items;
+                SampleItemDistribution(items, i.second, level, 1);
+                if (items.empty()) {
+                    logger::info("      Empty!");
+                } else {
+                    for (auto item : items) {
+                        logger::info("      {}", item->GetName());
+                    }
+                }
+            }
+        }
+    }
+
+#endif
+
     g_nLLTypes.clear();
 }

@@ -239,15 +239,12 @@ namespace QuickArmorRebalance {
 
         Regions contents;
 
-        //std::map<Region*, std::map<LootDistGroup*, std::vector<RE::TESBoundObject*>[3]>> pieces;
-        //std::map<Region*, std::map<LootDistGroup*, std::vector<const ArmorSet*>[3]>> sets;
-        //std::map<Region*, std::map<LootDistGroup*, std::vector<RE::TESBoundObject*>[3]>> weapons;
-
         std::set<Region*> regions;
         SplitSets<LootContainerGroup, eRegion_RarityCount> migration;
 
         EnchantProbability ench;
 
+        std::string name;
         bool bLeveled = true;
     };
 
@@ -279,8 +276,12 @@ namespace QuickArmorRebalance {
 
         std::unordered_map<RE::TESForm*, std::set<RE::TESForm*>> mapContainerCopy;
 
-        std::map<Region*, std::map<LootContainerGroup*, RE::TESBoundObject*>> tblRegionSourceCache[eLoot_TypeCount];
-        std::map<Region*, std::map<LootContainerGroup*, RE::TESBoundObject*>> tblRegionSourceCurveCache[eLoot_TypeCount];
+        std::unordered_map<const void*, RE::TESBoundObject*> cacheGroupList;
+        std::unordered_map<const void*, RE::TESBoundObject*> cacheRegionalGroupTierList[eLoot_TypeCount];
+        std::map<LootDistGroup*, std::map<const LootContainerGroup*, std::map<Region*, RE::TESBoundObject*>>> cacheSourceSelectionList[eLoot_TypeCount];
+        std::map<const LootContainerGroup*, std::map<Region*, RE::TESBoundObject*[3]>> cacheLowerTierItems[eLoot_TypeCount];
+
+        //std::map<Region*, std::map<LootContainerGroup*, RE::TESBoundObject*>> tblRegionSourceCurveCache[eLoot_TypeCount];
     };
 
     struct KeywordChanges {
@@ -336,6 +337,7 @@ namespace QuickArmorRebalance {
 
         std::unique_ptr<ModLootData> loot;
         std::map<std::string, LootDistGroup> distGroups;
+        std::vector<LootDistGroup*> distGroupsSorted;
 
         std::unordered_map<RE::TESContainer*, EnchantProbability> distContainers;
         std::unordered_set<RE::TESBoundObject*> distItems;

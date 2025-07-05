@@ -340,7 +340,7 @@ bool QuickArmorRebalance::Config::Load() {
             g_Config.bShowAllRecipeConditions = config["settings"]["allrecipereqs"].value_or(false);
             g_Config.bEnableRegionalLoot = config["settings"]["regionalloot"].value_or(true);
             g_Config.bEnableCrossRegionLoot = config["settings"]["crossregionloot"].value_or(true);
-            g_Config.bEnableMigratedLoot = config["settings"]["migrateloot"].value_or(true);
+            g_Config.bEnableMigratedLoot = config["settings"]["migratedloot"].value_or(true);
 
             if (auto code = config["settings"]["language"].as_string()) {
                 if (!code->get().empty()) Localization::Get()->SetTranslation(StringToWString(code->get()));
@@ -471,6 +471,14 @@ bool QuickArmorRebalance::Config::Load() {
     ValidateLootConfig();
     RebuildDisabledWords();
     FinalizeEnchantmentConfig();
+
+    for (auto& i : g_Data.distGroups) g_Data.distGroupsSorted.push_back(&i.second);
+    std::sort(g_Data.distGroupsSorted.begin(), g_Data.distGroupsSorted.end(), [](auto a, auto b) {
+        if (a->level - a->early < b->level - b->early) return true;
+        if (a->level < b->level) return true;
+        return a < b;
+        });
+
 
     for (auto& as : armorSets) {
         if (!as.ench.enchPool) continue;

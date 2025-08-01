@@ -106,7 +106,10 @@ void QuickArmorRebalance::LoadLootChanges(RE::TESBoundObject* item, const Value&
     if (!jsonProfile.IsString()) return;
 
     const auto& itProfile = g_Data.loot->distProfiles.find(jsonProfile.GetString());
-    if (itProfile == g_Data.loot->distProfiles.end()) return;
+    if (itProfile == g_Data.loot->distProfiles.end()) {
+        logger::info("{}: Unknown loot profile '{}'", item->GetName(), jsonProfile.GetString());
+        return;
+    }
 
     if (!jsonLoot.HasMember("rarity") || !jsonLoot["rarity"].IsInt()) return;
 
@@ -115,7 +118,10 @@ void QuickArmorRebalance::LoadLootChanges(RE::TESBoundObject* item, const Value&
     if (!jsonGroup.IsString()) return;
 
     const auto& itGroup = g_Data.distGroups.find(jsonGroup.GetString());
-    if (itGroup == g_Data.distGroups.end()) return;
+    if (itGroup == g_Data.distGroups.end()) {
+        logger::info("{}: Unknown loot group '{}'", item->GetName(), jsonGroup.GetString());
+        return;
+    }
 
     changed |= eChange_Loot;
 

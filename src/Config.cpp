@@ -474,11 +474,12 @@ bool QuickArmorRebalance::Config::Load() {
 
     for (auto& i : g_Data.distGroups) g_Data.distGroupsSorted.push_back(&i.second);
     std::sort(g_Data.distGroupsSorted.begin(), g_Data.distGroupsSorted.end(), [](auto a, auto b) {
-        if (a->level - a->early < b->level - b->early) return true;
-        if (a->level < b->level) return true;
+        int d = (a->level - a->early) - (b->level - b->early);
+        if (d) return d < 0;
+        d = a->level < b->level;
+        if (d) return d < 0;        
         return a < b;
         });
-
 
     for (auto& as : armorSets) {
         if (!as.ench.enchPool) continue;

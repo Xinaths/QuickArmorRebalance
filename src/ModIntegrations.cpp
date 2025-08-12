@@ -396,26 +396,20 @@ bool QuickArmorRebalance::ExportToSkypatcher(const std::vector<RE::TESBoundObjec
 
 namespace po3 {
     static RE::TESForm* FindForm(const char* str) {
-        if (!strncmp(str, "0x", 2)) {
-            RE::FormID formID = 0;
+        char* end;
 
-            if (auto pos = strchr(str, '~')) {
-                auto id = (RE::FormID)strtol(std::string(str + 2, pos - str - 2).c_str(), nullptr, 16);
-                std::string fileName(str, pos + 1);
-                if (auto mod = RE::TESDataHandler::GetSingleton()->LookupModByName(fileName)) {
-                    formID = GetFullId(mod, id);
-                }
-            } else {
-                formID = (RE::FormID)strtol(str + 2, nullptr, 16);
-            }
-
-            if (!formID) return nullptr;
-            return RE::TESForm::LookupByID(formID);
+        auto id = (RE::FormID)strtol(str, &end, 16);
+        if (*end == '\0') {  // Just a hex number, raw id
+            return RE::TESForm::LookupByID(id);
+        } else if (*end == '~') {  // [0x]XXXXX~modname.esp
+            if (auto mod = RE::TESDataHandler::GetSingleton()->LookupModByName(end + 1)) {
+                return RE::TESForm::LookupByID(GetFullId(mod, id));
+            } else  // EditorId
+                return nullptr;
+        } else {
+            return RE::TESForm::LookupByEditorID(str);
         }
-
-        return RE::TESForm::LookupByEditorID(str);
     }
-
 }
 
 namespace {
@@ -434,7 +428,7 @@ namespace {
         return result;
     }
 
-    void ImportBOSSwap(std::unordered_map<RE::TESForm*, RE::TESForm*>& mapSwaps, const std::string& str) {
+    void ImportBOSSwap(std::filesystem::path path, std::unordered_map<RE::TESForm*, RE::TESForm*>& mapSwaps, const std::string& str) {
         auto splitForms = stringSplit(str, '|', 2);
         if (splitForms.size() < 2) return;
 
@@ -444,15 +438,17 @@ namespace {
         for (auto& strForm : strFormsOrig) {
             RE::TESForm* container = nullptr;
             if (auto form = po3::FindForm(strForm.c_str())) {
-                if (form->As<RE::TESContainer>()) container = form;
-            } else if (auto ref = form->As<RE::TESObjectREFR>()) {
-                if (auto base = ref->GetBaseObject()) {
-                    if (base->As<RE::TESContainer>()) container = form;
+                if (form->As<RE::TESContainer>())
+                    container = form;
+                else if (auto ref = form->As<RE::TESObjectREFR>()) {
+                    if (auto base = ref->GetBaseObject()) {
+                        if (base->As<RE::TESContainer>()) container = form;
+                    }
                 }
-            }
+            } else
+                logger::trace("({}) BOS form not found: {}", path.generic_string().c_str(), strForm.c_str());
             if (container) {
-                if (g_Data.loot->mapContainerCopy.contains(container))
-                    formsOrig.insert(container);
+                if (g_Data.loot->mapContainerCopy.contains(container)) formsOrig.insert(container);
             }
         }
 
@@ -471,17 +467,16 @@ namespace {
                 }
             }
             if (container) {
-                if (!g_Data.loot->mapContainerCopy.contains(container))
-                    formsSwap.insert(container);
+                if (!g_Data.loot->mapContainerCopy.contains(container)) formsSwap.insert(container);
             }
         }
 
-        //Just use the first
+        // Just use the first
 
         for (auto i : formsSwap) {
             mapSwaps.insert({i, *formsOrig.begin()});
-            //if (!mapSwaps.contains(i))
-            //    mapSwaps[i] = *formsOrig.begin();
+            // if (!mapSwaps.contains(i))
+            //     mapSwaps[i] = *formsOrig.begin();
         }
     }
 
@@ -516,9 +511,9 @@ namespace {
 
                 if (!values.empty()) {
                     if (splitSection[0] == "Forms") {
-                        //logger::info("\t\t\t{} form swaps found", values.size());
+                        // logger::info("\t\t\t{} form swaps found", values.size());
                         for (const auto& key : values) {
-                            ImportBOSSwap(mapSwaps, key.pItem);
+                            ImportBOSSwap(path, mapSwaps, key.pItem);
                         }
                     } else {
                         // Unused by QAR
@@ -526,6 +521,7 @@ namespace {
                 }
             } else {
                 CSimpleIniA::TNamesDepend values;
+
                 ini.GetAllKeys(section.c_str(), values);
                 values.sort(CSimpleIniA::Entry::LoadOrder());
 
@@ -533,11 +529,13 @@ namespace {
                     if (section == "Transforms" || section == "Properties") {
                         // Unused by QAR
                     } else {
-                        if (section == "Forms" && !g_Config.bEnableBOSFromGeneric) continue;
-                        else if (section == "References" && !g_Config.bEnableBOSFromReference) continue;
+                        if (section == "Forms" && !g_Config.bEnableBOSFromGeneric)
+                            continue;
+                        else if (section == "References" && !g_Config.bEnableBOSFromReference)
+                            continue;
 
                         for (const auto& key : values) {
-                            ImportBOSSwap(mapSwaps, key.pItem);
+                            ImportBOSSwap(path, mapSwaps, key.pItem);
                         }
                     }
                 }

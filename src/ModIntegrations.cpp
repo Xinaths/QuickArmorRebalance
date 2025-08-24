@@ -460,12 +460,15 @@ namespace {
         for (auto& strForm : strFormsSwap) {
             RE::TESForm* container = nullptr;
             if (auto form = po3::FindForm(strForm.c_str())) {
-                if (form->As<RE::TESContainer>()) container = form;
-            } else if (auto ref = form->As<RE::TESObjectREFR>()) {
-                if (auto base = ref->GetBaseObject()) {
-                    if (base->As<RE::TESContainer>()) container = form;
+                if (form->As<RE::TESContainer>())
+                    container = form;
+                else if (auto ref = form->As<RE::TESObjectREFR>()) {
+                    if (auto base = ref->GetBaseObject()) {
+                        if (base->As<RE::TESContainer>()) container = form;
+                    }
                 }
-            }
+            } else
+                logger::trace("({}) BOS form not found: {}", path.generic_string().c_str(), strForm.c_str());
             if (container) {
                 if (!g_Data.loot->mapContainerCopy.contains(container)) formsSwap.insert(container);
             }

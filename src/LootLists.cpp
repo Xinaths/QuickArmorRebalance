@@ -51,10 +51,10 @@ Value QuickArmorRebalance::MakeLootChanges(const ArmorChangeParams& params, RE::
     if (!params.bDistribute || !(params.bMerge || (params.armorSet && params.distProfile && params.rarity >= 0))) return {};
 
     auto& data = *params.data;
-    for (auto item : data.items)  // Don't build loot sets from current armor (aka mixed mod sets) - maybe in the future
-        if (item->GetFile(0) != i->GetFile(0)) return {};
+    //for (auto item : data.items)  // Don't build loot sets from current armor (aka mixed mod sets) - maybe in the future
+    //    if (item->GetFile(0) != i->GetFile(0)) return {};
 
-    if (!data.isWornArmor) {
+    //if (!data.isWornArmor) {
         Value loot(kObjectType);
 
         if (auto armor = i->As<RE::TESObjectARMO>()) {
@@ -63,7 +63,12 @@ Value QuickArmorRebalance::MakeLootChanges(const ArmorChangeParams& params, RE::
                     auto s = BuildSetFrom(i, data.items);
                     if (!s.empty()) {
                         Value setv(kArrayType);
-                        for (auto j : s) setv.PushBack(GetFileId(j), al);
+                        for (auto j : s) {
+                            if (armor->GetFile(0) == j->GetFile(0))
+                                setv.PushBack(GetFileId(j), al);
+                            else
+                                setv.PushBack(Value(QARFormID(j).c_str(), al), al);
+                        }
                         loot.AddMember("set", setv, al);
                     }
                 } else {
@@ -71,7 +76,12 @@ Value QuickArmorRebalance::MakeLootChanges(const ArmorChangeParams& params, RE::
                     // properly on loading
                     if (!data.bMixedSetDone) {
                         Value setv(kArrayType);
-                        for (auto j : data.items) setv.PushBack(GetFileId(j), al);
+                        for (auto j : data.items) {
+                            if (armor->GetFile(0) == j->GetFile(0))
+                                setv.PushBack(GetFileId(j), al);
+                            else
+                                setv.PushBack(Value(QARFormID(j).c_str(), al), al);
+                        }
                         loot.AddMember("set", setv, al);
                         data.bMixedSetDone = true;
                     }
@@ -93,7 +103,7 @@ Value QuickArmorRebalance::MakeLootChanges(const ArmorChangeParams& params, RE::
 
             return loot;
         }
-    }
+    //}
 
     return Value();
 }
@@ -155,7 +165,16 @@ void QuickArmorRebalance::LoadLootChanges(RE::TESBoundObject* item, const Value&
             piece = nullptr;
         } else if (jsonLoot.HasMember("set")) {
             for (const auto& i : jsonLoot["set"].GetArray()) {
-                RE::FormID id = GetFullId(item->GetFile(), i.GetUint());
+                RE::FormID id = 0;
+                if (i.IsUint())
+                    id = GetFullId(item->GetFile(), i.GetUint());
+                else if (i.IsString()) {
+                    if (auto form = FindIn(item->GetFile(), i.GetString())) {
+                        id = form->GetFormID();
+                    }
+                } 
+
+                if (!id) continue;
 
                 if (auto setitem = RE::TESForm::LookupByID<RE::TESObjectARMO>(id)) {
                     if (!DoNotDistribute(setitem)) {
@@ -989,8 +1008,7 @@ void SampleItemDistribution(std::vector<RE::TESBoundObject*>& items, RE::TESForm
         } else {
             int lower = 0;
             int upper = 0;
-            for (upper = 0; upper < list->numEntries && level >= list->entries[upper].level; upper++)
-                ;
+            for (upper = 0; upper < list->numEntries && level >= list->entries[upper].level; upper++);
             if (!upper) return;
 
             if (!(list->llFlags & RE::TESLeveledList::kCalculateFromAllLevelsLTOrEqPCLevel)) {

@@ -72,7 +72,7 @@ namespace QuickArmorRebalance {
         std::vector<RE::TESBoundObject*> filteredItems;
         std::vector<RE::TESBoundObject*> items;
 
-        bool isWornArmor = false;
+        //bool isWornArmor = false;
         mutable bool bMixedSetDone = false;
 
         AnalyzeResults analyzeResults;

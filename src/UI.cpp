@@ -577,18 +577,20 @@ void AddFormsToList(const auto& all, const ItemFilter& filter) {
 }
 
 
-bool GetCurrentListItems(ModData* curMod, int nModSpecial, const ItemFilter& filter, AnalyzeResults& results) {
+bool GetCurrentListItems(std::set<ModData*>& curMod, int nModSpecial, const ItemFilter& filter, AnalyzeResults& results) {
     static short filterRound = -1;
     if (filterRound == g_filterRound) return false;
     filterRound = g_filterRound;
 
     auto& data = *g_Config.acParams.data;
     data.filteredItems.clear();
-    if (curMod) {
-        for (auto i : curMod->items) {
-            if (!filter.Pass(i)) continue;
+    if (!curMod.empty()) {
+        for (auto mod : curMod) {
+            for (auto i : mod->items) {
+                if (!filter.Pass(i)) continue;
 
-            data.filteredItems.push_back(i);
+                data.filteredItems.push_back(i);
+            }
         }
     } else {
         switch (nModSpecial) {
@@ -620,7 +622,8 @@ bool GetCurrentListItems(ModData* curMod, int nModSpecial, const ItemFilter& fil
         std::sort(data.filteredItems.begin(), data.filteredItems.end(),
                   [](RE::TESBoundObject* const a, RE::TESBoundObject* const b) { return _stricmp(a->GetName(), b->GetName()) < 0; });
 
-        if (curMod) AnalyzeArmor(data.filteredItems, results);
+        //if (!curMod.empty()) 
+        AnalyzeArmor(data.filteredItems, results);
     }
 
     return true;
@@ -940,7 +943,7 @@ void QuickArmorRebalance::RenderUI() {
     static std::set<RE::TESBoundObject*> selectedItems;
     static RE::TESBoundObject* lastSelectedItem = nullptr;
     static GivenItems givenItems;
-    static ModData* curMod = nullptr;
+    static std::set<ModData*> curMod;
     static std::set<RE::TESObject*> uncheckedItems;
 
     if (!RE::UI::GetSingleton()->numPausesGame) givenItems.recentEquipSlots = 0;
@@ -992,8 +995,16 @@ void QuickArmorRebalance::RenderUI() {
     static int nShowWords = AnalyzeResults::eWords_EitherVariants;
 
     struct Local {
-        static void SwitchToMod(ModData* mod) {
-            curMod = mod;
+        static void SwitchToMod(ModData* mod, bool bModifySelection = false) {
+            if (!bModifySelection) {
+                curMod.clear();
+                curMod.insert(mod);
+            } else {
+                if (curMod.contains(mod))
+                    curMod.erase(mod);
+                else
+                    curMod.insert(mod);
+            }
             givenItems.items.clear();
             selectedItems.clear();
             lastSelectedItem = nullptr;
@@ -1087,7 +1098,7 @@ void QuickArmorRebalance::RenderUI() {
                         RE::TESFile* blacklist = nullptr;
 
                         ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
-                        if (ImGui::BeginCombo("##Mod", curMod ? curMod->mod->fileName : strModSpecial[nModSpecial], ImGuiComboFlags_HeightLarge)) {
+                        if (ImGui::BeginCombo("##Mod", !curMod.empty() ? (curMod.size()==1 ? (*curMod.begin())->mod->fileName : LZ("<Multiple mods>")) : strModSpecial[nModSpecial], ImGuiComboFlags_HeightLarge)) {
                             ImGui::Text(LZ("Search:"));
                             ImGui::SameLine();
 
@@ -1102,9 +1113,9 @@ void QuickArmorRebalance::RenderUI() {
                             if (!nModFilter) {
                                 for (int i = 0; strModSpecial[i]; i++) {
                                     if (!bModSpecialEnabled[i]) continue;
-                                    bool selected = !curMod && i == nModSpecial;
+                                    bool selected = curMod.empty() && i == nModSpecial;
                                     if (ImGui::Selectable(strModSpecial[i], selected)) {
-                                        curMod = nullptr;
+                                        curMod.clear();
                                         nModSpecial = i;
                                         g_filterRound++;
                                     }
@@ -1113,7 +1124,7 @@ void QuickArmorRebalance::RenderUI() {
                             }
 
                             for (auto i : GetFilteredMods(nModFilter, strModFilter, modModFilterSettings)) {
-                                bool selected = curMod == i;
+                                bool selected = curMod.contains(i);
 
                                 int pop = 0;
                                 if (g_Data.modifiedFiles.contains(i->mod)) {
@@ -1134,7 +1145,7 @@ void QuickArmorRebalance::RenderUI() {
                                         showPopup = true;
                                     }
 
-                                    Local::SwitchToMod(i);
+                                    Local::SwitchToMod(i, isCtrlDown);
                                 }
                                 if (isCtrlDown && isAltDown && ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
                                     blacklist = i->mod;
@@ -1146,7 +1157,7 @@ void QuickArmorRebalance::RenderUI() {
 
                             ImGui::EndCombo();
 
-                            data.isWornArmor = !curMod;
+                            //data.isWornArmor = curMod.empty();
 
                             if (blacklist) g_Config.AddUserBlacklist(blacklist);
                         }
@@ -1158,11 +1169,12 @@ void QuickArmorRebalance::RenderUI() {
                             ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
 
                             if (ImGui::BeginPopupModal(popupTitle, NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
-                                ImGui::Text(LZ("Delete all changes to %s?"), curMod->mod->fileName);
+                                ImGui::Text(LZ("Delete all changes to selected mods?"));
                                 ImGui::Text(LZ("Changes will not revert until after restarting Skyrim"));
 
                                 if (ImGui::Button(LZ("Delete changes"), ImVec2(120, 0))) {
-                                    DeleteAllChanges(curMod->mod);
+                                    for(auto i : curMod)
+                                        DeleteAllChanges(i->mod);
                                     ImGui::CloseCurrentPopup();
                                 }
                                 ImGui::SetItemDefaultFocus();
@@ -1466,11 +1478,11 @@ void QuickArmorRebalance::RenderUI() {
 
                     // Distribution
                     ImGui::Separator();
-                    ImGui::BeginDisabled(!curMod);  // || !params.armorSet);
+                    //ImGui::BeginDisabled(curMod.empty());  // || !params.armorSet);
 
                     // Need to create a dummy table to negate stretching the combo boxes
                     ImGui::Checkbox(LZ("Distribute as "), &params.bDistribute);
-                    if (!curMod) MakeTooltip(LZ("Distribution can only be configured for a single mod at a time."));
+                    if (curMod.empty()) MakeTooltip(LZ("Distribution can only be configured for a single mod at a time."));
                     // else if (!params.armorSet)
                     //     MakeTooltip(LZ("Cannot add or change distribution without a conversion set selected."));
                     else
@@ -1575,12 +1587,12 @@ void QuickArmorRebalance::RenderUI() {
                     MakeTooltip(
                         LZ("Attempts to match sets together - for example, if there are green and blue variants, it will\n"
                            "try to distribute only green or only blue parts as a single set"));
-                    ImGui::EndDisabled();
+                    ImGui::EndDisabled(); //!params.bDistAsSet
 
                     hlDynamicVariants.Push(!analyzeResults.sets[AnalyzeResults::eWords_DynamicVariants].empty() ||
                                            !analyzeResults.sets[AnalyzeResults::eWords_EitherVariants].empty());
 
-                    ImGui::EndDisabled();
+                    ImGui::EndDisabled(); //!params.bDistribute
                     ImGui::SameLine();
 
                     if (ImGui::Button(LZ("Dynamic Variants"))) {
@@ -1590,7 +1602,7 @@ void QuickArmorRebalance::RenderUI() {
 
                     ImGui::Unindent(60);
 
-                    ImGui::EndDisabled();
+                    //ImGui::EndDisabled(); //curMod.empty()
 
                     // Modifications
                     const float tabBoxHeight = 5 * (ImGui::GetFontSize() + 12);
@@ -2029,7 +2041,7 @@ void QuickArmorRebalance::RenderUI() {
                     data.items.clear();
                     data.items.reserve(data.filteredItems.size());
 
-                    bool modChangesDeleted = curMod ? g_Data.modifiedFilesDeleted.contains(curMod->mod) : false;
+                    //bool modChangesDeleted = curMod ? g_Data.modifiedFilesDeleted.contains(curMod->mod) : false;
 
                     ImGui::PushStyleColor(ImGuiCol_NavHighlight, IM_COL32(0, 255, 0, 255));
 
@@ -2067,7 +2079,7 @@ void QuickArmorRebalance::RenderUI() {
                                 }
 
                                 ImGui::Separator();
-                                ImGui::BeginDisabled(curMod);
+                                ImGui::BeginDisabled(curMod.size()!=1);
                                 if (ImGui::Selectable(LZ("Select source mod"))) {
                                     switchToMod = g_Data.modData[(*selectedItems.begin())->GetFile(0)].get();
                                 }
@@ -2190,7 +2202,7 @@ void QuickArmorRebalance::RenderUI() {
                             int popCol = 0;
                             bool isModified = false;
                             if (g_Data.modifiedItems.contains(i)) {
-                                if (modChangesDeleted || g_Data.modifiedItemsDeleted.contains(i))
+                                if (g_Data.modifiedFilesDeleted.contains(i->GetFile(0)) || g_Data.modifiedItemsDeleted.contains(i))
                                     ImGui::PushStyleColor(ImGuiCol_Text, colorDeleted);
                                 else {
                                     ImGui::PushStyleColor(ImGuiCol_Text, colorChanged);
@@ -2411,7 +2423,7 @@ void QuickArmorRebalance::RenderUI() {
                                 if (ImGui::BeginTooltip()) {
                                     ImGui::PushStyleColor(ImGuiCol_Text, colorTextDefault);
 
-                                    if (!curMod) ImGui::Text(LZ("File: %s"), i->GetFile(0)->fileName);
+                                    if (curMod.size()!=1) ImGui::Text(LZ("File: %s"), i->GetFile(0)->fileName);
 
                                     if (auto armor = i->As<RE::TESObjectARMO>()) {
                                         static const char* strArmorType[] = {"Light Armor", "Heavy Armor", "Clothing"};
@@ -2486,7 +2498,7 @@ void QuickArmorRebalance::RenderUI() {
 
                     ImGui::PopStyleColor();
 
-                    ImGui::BeginDisabled(!player || !curMod || isInventoryOpen);
+                    ImGui::BeginDisabled(!player || curMod.empty() || isInventoryOpen);
 
                     if (ImGui::Button(selectedItems.empty() ? LZ("Give All") : LZ("Give Selected"))) {
                         if (selectedItems.empty())

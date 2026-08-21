@@ -219,23 +219,35 @@ namespace {
     }
 }
 
-ArmorSet QuickArmorRebalance::BuildSetFrom(RE::TESBoundObject* baseObj, const std::vector<RE::TESBoundObject*>& items) {
+ArmorSet QuickArmorRebalance::BuildSetFrom(RE::TESBoundObject* baseObj, const std::vector<RE::TESBoundObject*>& items, bool bLimit) {
     auto baseItem = baseObj->As<RE::TESObjectARMO>();
     if (!baseItem) return {};
 
     ArmorSet armorSet;
-    unsigned int slots = (unsigned int)baseItem->GetSlotMask();
+    ArmorSlots slots = (ArmorSlots)baseItem->GetSlotMask();
 
     armorSet.push_back(baseItem);
 
     for (auto i : items) {
         if (auto armor = i->As<RE::TESObjectARMO>()) {
-            auto slot = (unsigned int)armor->GetSlotMask();
+            auto slot = (ArmorSlots)armor->GetSlotMask();
             if ((slots & slot)) continue;
 
             auto best = FindBestMatches(baseItem, items, slot, slots);
-            for (auto j : best) slots |= (unsigned int)j->GetSlotMask();
-            armorSet.insert(armorSet.end(), best.begin(), best.end());
+
+            if (bLimit) {
+            
+            if (!best.empty()) {
+                auto one = best.size() == 1 ? best[0] : best[RNG() % best.size()];
+                slots |= (ArmorSlots)one->GetSlotMask();
+                armorSet.push_back(one);
+            }            
+            } else {
+                //Adds all items
+                for (auto j : best) slots |= (ArmorSlots)j->GetSlotMask();
+                armorSet.insert(armorSet.end(), best.begin(), best.end());
+            }
+
         }
     }
 

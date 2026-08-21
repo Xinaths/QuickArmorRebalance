@@ -27,6 +27,7 @@ using namespace std::literals;
 
 #include "logger.h"
 
+#define FORMAT_HEX_FORMID "0x{:x}"
 
 inline RE::FormID GetFullId(const RE::TESFile* file, RE::FormID id) {
     return ((RE::FormID)file->compileIndex << 24) | (file->smallFileCompileIndex << 12) | id;

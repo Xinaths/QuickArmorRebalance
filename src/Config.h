@@ -164,6 +164,8 @@ namespace QuickArmorRebalance {
         bool bMatchSetPieces = false;
         bool bMerge = true;
 
+        ArmorSlots slotsCosmetic = 0;
+
         mutable ArmorSlots remapMask = 0;
         std::map<int, int> mapArmorSlots;
 
@@ -365,6 +367,7 @@ namespace QuickArmorRebalance {
         Permissions permShared;
 
         ArmorSlots slotsWillChange = 0;
+        ArmorSlots slotsDefaultCosmetic = 0;
 
         struct {
             RE::BGSKeyword* enable;

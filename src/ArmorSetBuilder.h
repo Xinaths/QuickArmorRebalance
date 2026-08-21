@@ -3,7 +3,7 @@
 #include "Data.h"
 
 namespace QuickArmorRebalance {
-    ArmorSet BuildSetFrom(RE::TESBoundObject* baseItem, const std::vector<RE::TESBoundObject*>& items);
+    ArmorSet BuildSetFrom(RE::TESBoundObject* baseItem, const std::vector<RE::TESBoundObject*>& items, bool bLimit = false);
 
     struct AnalyzeResults {
         enum {

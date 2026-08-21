@@ -232,6 +232,7 @@ int QuickArmorRebalance::MakeArmorChanges(const ArmorChangeParams& params) {
         // Build list of base items per slot
         auto [_discard, coveredHeadSlots] = CalcCoveredSlots(params.armorSet->items, params);
         auto [coveredSlots, coveredHeadSlotsChanges] = CalcCoveredSlots(data.items, params, true);
+        coveredSlots &= ~params.slotsCosmetic;
 
         SlotRelativeWeight slotValues[32];
 
@@ -243,6 +244,17 @@ int QuickArmorRebalance::MakeArmorChanges(const ArmorChangeParams& params) {
                                                 (ArmorSlots)RE::BIPED_MODEL::BipedObjectSlot::kRing));
         for (const auto& i : params.curve->tree) PropogateBaseValues(slotValues, nullptr, &i);
         for (const auto& i : params.curve->tree) CalcCoveredValues(slotValues, coveredSlots, &i);
+
+       SlotRelativeWeight* armorBaseCosmetic = nullptr;
+        for (auto i : {32, 33, 37, 30}) {
+           if (auto base = slotValues[i - 30].base) {
+                if (base->weightBase) {
+                   armorBaseCosmetic = base;
+                   break;
+                }
+           }
+        }
+
 
         for (auto i : data.items) {
             Value changes(kObjectType);
@@ -256,8 +268,9 @@ int QuickArmorRebalance::MakeArmorChanges(const ArmorChangeParams& params) {
                 ArmorSlots slotsOrig = MapFindOr(g_Data.modifiedArmorSlots, armor, (ArmorSlots)armor->GetSlotMask());
                 ArmorSlots slotsRemapped = RemapSlots(slotsOrig, params);
                 ArmorSlots slots = slotsRemapped;
-
+                
                 slots = PromoteHeadSlots(slots, coveredHeadSlotsChanges);
+                const auto slotsFinal = slots;
 
                 while (slots) {
                     unsigned long slot;
@@ -267,8 +280,14 @@ int QuickArmorRebalance::MakeArmorChanges(const ArmorChangeParams& params) {
                     auto& v = slotValues[slot];
                     if (v.base && v.base->weightBase) {
                         if (!itemBase) itemBase = v.base;
-                        weight += v.weightUsed;
+
+                        if ((1<<slot) & ~params.slotsCosmetic)
+                            weight += v.weightUsed;
                     }
+                }
+
+                if (!itemBase && (slotsFinal & params.slotsCosmetic) == slotsFinal) {
+                    itemBase = armorBaseCosmetic;
                 }
 
                 if (itemBase) {
@@ -713,7 +732,7 @@ bool ChangeField(bool& bChanged, bool bAllowed, const char* field, const rapidjs
 
         if (jsonScale.IsFloat()) {
             auto scale = jsonScale.GetFloat();
-            if (src->*member && scale > 0.0f)
+            if (src->*member && wSrc > 0.0f && scale > 0.0f)
                 item->*member = fn(wSrc * scale * src->*member);
             else
                 item->*member = 0;

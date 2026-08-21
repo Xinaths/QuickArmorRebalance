@@ -164,17 +164,19 @@ void QuickArmorRebalance::LoadLootChanges(RE::TESBoundObject* item, const Value&
         if (DoNotDistribute(armor)) {
             piece = nullptr;
         } else if (jsonLoot.HasMember("set")) {
+
             for (const auto& i : jsonLoot["set"].GetArray()) {
                 RE::FormID id = 0;
                 if (i.IsUint())
-                    id = GetFullId(item->GetFile(), i.GetUint());
+                    id = GetFullId(item->GetFile(0), i.GetUint());
                 else if (i.IsString()) {
-                    if (auto form = FindIn(item->GetFile(), i.GetString())) {
+                    if (auto form = FindIn(item->GetFile(0), i.GetString())) {
                         id = form->GetFormID();
                     }
                 } 
 
-                if (!id) continue;
+                if (!id) 
+                    continue;                
 
                 if (auto setitem = RE::TESForm::LookupByID<RE::TESObjectARMO>(id)) {
                     if (!DoNotDistribute(setitem)) {

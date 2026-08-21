@@ -33,7 +33,6 @@ namespace QuickArmorRebalance {
 
     void ConfigFileWarning(std::filesystem::path path, const char* str) { logger::warn("{}: {}", path.filename().generic_string(), str); }
 
-
     RE::TESObjectARMO* BaseArmorSet::FindMatching(RE::TESObjectARMO* w) const {
         auto slots = (ArmorSlots)w->GetSlotMask();
 
@@ -96,6 +95,7 @@ namespace QuickArmorRebalance {
         }
         if (bForce || g_Config.bResetSlotRemap) {
             mapArmorSlots.clear();
+            slotsCosmetic = g_Config.slotsDefaultCosmetic;
         }
     }
     void ArmorChangeParams::Clear() {
@@ -135,7 +135,6 @@ namespace QuickArmorRebalance {
         temper.modeItems = temper.modePerks = craft.modeItems = craft.modePerks = ArmorChangeParams::eRequirementReplace;
         craft.skipForms.clear();
         temper.skipForms.clear();
-
     }
 }
 
@@ -171,7 +170,6 @@ Region* QuickArmorRebalance::Config::GetRegion(const char* name) {
     if (region.name.empty()) region.name = name;
     return &region;
 }
-
 
 bool QuickArmorRebalance::Config::Load() {
     bEnableConsoleHook = !REL::Module::IsVR();
@@ -341,6 +339,7 @@ bool QuickArmorRebalance::Config::Load() {
             g_Config.bEnableRegionalLoot = config["settings"]["regionalloot"].value_or(true);
             g_Config.bEnableCrossRegionLoot = config["settings"]["crossregionloot"].value_or(true);
             g_Config.bEnableMigratedLoot = config["settings"]["migratedloot"].value_or(true);
+            g_Config.slotsDefaultCosmetic = config["settings"]["defaultcosmeticslots"].value_or(0ul);
 
             if (auto code = config["settings"]["language"].as_string()) {
                 if (!code->get().empty()) Localization::Get()->SetTranslation(StringToWString(code->get()));
@@ -393,7 +392,7 @@ bool QuickArmorRebalance::Config::Load() {
         if (g_Config.lootProfiles.contains(lootProfile))
             g_Config.acParams.distProfile = g_Config.lootProfiles.find(lootProfile)->c_str();
         else if (!lootProfiles.empty())
-            g_Config.acParams.distProfile = nullptr; //lootProfiles.begin()->c_str();
+            g_Config.acParams.distProfile = nullptr;  // lootProfiles.begin()->c_str();
     }
 
     if (dataHandler->LookupModByName("Frostfall.esp")) {
@@ -477,9 +476,9 @@ bool QuickArmorRebalance::Config::Load() {
         int d = (a->level - a->early) - (b->level - b->early);
         if (d) return d < 0;
         d = a->level < b->level;
-        if (d) return d < 0;        
+        if (d) return d < 0;
         return a < b;
-        });
+    });
 
     for (auto& as : armorSets) {
         if (!as.ench.enchPool) continue;
@@ -501,8 +500,7 @@ bool QuickArmorRebalance::Config::Load() {
     }
 
     for (auto& region : mapRegions) {
-        if (region.second.IsValid())
-            lsRegionsSorted.push_back(&region.second);
+        if (region.second.IsValid()) lsRegionsSorted.push_back(&region.second);
     }
     std::sort(lsRegionsSorted.begin(), lsRegionsSorted.end(), [](Region* a, Region* b) { return strcmp(LZ(a->name.c_str()), LZ(b->name.c_str())) < 0; });
     for (auto& strProfile : lootProfiles) {
@@ -948,17 +946,14 @@ bool QuickArmorRebalance::LoadRegions(const Value& node) {
         auto region = g_Config.GetRegion(jsonRegion.name.GetString());
         region->bVerified = true;
         region->name = jsonRegion.name.GetString();
-        //region->rarity[eRegion_Same].insert(&region);
+        // region->rarity[eRegion_Same].insert(&region);
 
         LoadRegionList(region, jsonRegion.value, "from", true);
         LoadRegionList(region, jsonRegion.value, "to", false);
-
-        
     }
 
-
-    return true; }
-
+    return true;
+}
 
 toml::table SavePermissions(const QuickArmorRebalance::Permissions& p) {
     return toml::table{
@@ -1074,6 +1069,7 @@ void QuickArmorRebalance::Config::Save() {
                                  {"autodisablewords", tomlDisableWords},
                                  {"language", WStringToString(Localization::Get()->language)},
                                  {"exportuntranslated", g_Config.bExportUntranslated},
+                                 {"defaultcosmeticslots", g_Config.slotsDefaultCosmetic},
                                  {"recipeBlacklistConditions", tomlRecipeConditionBlacklist}}},
         {"shortcuts", toml::table{{"escCloseWindow", g_Config.bShortcutEscCloseWindow}}},
         {"integrations",
